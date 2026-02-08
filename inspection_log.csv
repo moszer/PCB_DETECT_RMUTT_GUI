@@ -1,0 +1,8 @@
+time,station_id,operator,image,verdict,ok,missing,wrong,extra,source_path,model
+2026-02-08 23:47:31,Line-01,Operator-A,61NrBMqiNOL._AC_SX679_.jpg,FAIL,47,0,0,5,/Users/pattaraponprakodchue/Desktop/defect detection yolo/image_dataset/61NrBMqiNOL._AC_SX679_.jpg,/Users/pattaraponprakodchue/Desktop/defect detection yolo/best.pt
+2026-02-08 23:48:38,Line-01,Operator-A,61NrBMqiNOL._AC_SX679_.jpg,FAIL,44,3,0,3,/Users/pattaraponprakodchue/Desktop/defect detection yolo/image_dataset/61NrBMqiNOL._AC_SX679_.jpg,/Users/pattaraponprakodchue/Desktop/defect detection yolo/best.pt
+2026-02-08 23:48:40,Line-01,Operator-A,61NrBMqiNOL._AC_SX679_.jpg,FAIL,44,3,0,3,/Users/pattaraponprakodchue/Desktop/defect detection yolo/image_dataset/61NrBMqiNOL._AC_SX679_.jpg,/Users/pattaraponprakodchue/Desktop/defect detection yolo/best.pt
+2026-02-08 23:48:43,Line-01,Operator-A,61NrBMqiNOL._AC_SX679_.jpg,FAIL,44,3,0,3,/Users/pattaraponprakodchue/Desktop/defect detection yolo/image_dataset/61NrBMqiNOL._AC_SX679_.jpg,/Users/pattaraponprakodchue/Desktop/defect detection yolo/best.pt
+2026-02-08 23:50:11,Line-01,Operator-A,8u.jpg,FAIL,0,44,3,30,/Users/pattaraponprakodchue/Desktop/defect detection yolo/image_dataset/8u.jpg,/Users/pattaraponprakodchue/Desktop/defect detection yolo/best.pt
+2026-02-08 23:52:13,Line-01,Operator-A,8u.jpg,FAIL,0,0,0,33,/Users/pattaraponprakodchue/Desktop/defect detection yolo/image_dataset/8u.jpg,/Users/pattaraponprakodchue/Desktop/defect detection yolo/best.pt
+2026-02-08 23:54:27,Line-01,Operator-A,8u.jpg,FAIL,0,1,0,33,/Users/pattaraponprakodchue/Desktop/defect detection yolo/image_dataset/8u.jpg,/Users/pattaraponprakodchue/Desktop/defect detection yolo/best.pt

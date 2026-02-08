@@ -1,0 +1,101 @@
+{
+  "categories": [
+    {
+      "id": 0,
+      "name": "ant"
+    },
+    {
+      "id": 1,
+      "name": "button"
+    },
+    {
+      "id": 2,
+      "name": "capacitor"
+    },
+    {
+      "id": 3,
+      "name": "capacitor_0"
+    },
+    {
+      "id": 4,
+      "name": "chip"
+    },
+    {
+      "id": 5,
+      "name": "connector"
+    },
+    {
+      "id": 6,
+      "name": "connector_0"
+    },
+    {
+      "id": 7,
+      "name": "connector_1"
+    },
+    {
+      "id": 8,
+      "name": "connector_2"
+    },
+    {
+      "id": 9,
+      "name": "diode"
+    },
+    {
+      "id": 10,
+      "name": "hole"
+    },
+    {
+      "id": 11,
+      "name": "inductor"
+    },
+    {
+      "id": 12,
+      "name": "input"
+    },
+    {
+      "id": 13,
+      "name": "led"
+    },
+    {
+      "id": 14,
+      "name": "resistor"
+    },
+    {
+      "id": 15,
+      "name": "resistor_8"
+    },
+    {
+      "id": 16,
+      "name": "sdcard"
+    },
+    {
+      "id": 17,
+      "name": "sot21"
+    },
+    {
+      "id": 18,
+      "name": "sot23"
+    },
+    {
+      "id": 19,
+      "name": "sot31"
+    },
+    {
+      "id": 20,
+      "name": "sot32"
+    },
+    {
+      "id": 21,
+      "name": "usb"
+    },
+    {
+      "id": 22,
+      "name": "xtal"
+    }
+  ],
+  "info": {
+    "year": 2026,
+    "version": "1.0",
+    "contributor": "Label Studio"
+  }
+}

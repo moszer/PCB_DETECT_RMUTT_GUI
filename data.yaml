@@ -1,0 +1,30 @@
+path: main_label
+
+train: images/train
+val: images/val
+
+nc: 23
+names:
+  - ant
+  - button
+  - capacitor
+  - capacitor_0
+  - chip
+  - connector
+  - connector_0
+  - connector_1
+  - connector_2
+  - diode
+  - hole
+  - inductor
+  - input
+  - led
+  - resistor
+  - resistor_8
+  - sdcard
+  - sot21
+  - sot23
+  - sot31
+  - sot32
+  - usb
+  - xtal
