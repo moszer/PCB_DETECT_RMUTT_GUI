@@ -251,6 +251,10 @@ class DefectDetectionGUI(QMainWindow):
         self.btn_load_default_ref.clicked.connect(self.load_default_references)
         self.btn_save_default_ref = QPushButton("Save Refs.json")
         self.btn_save_default_ref.clicked.connect(self.save_default_references)
+        self.btn_add_extra_ref = QPushButton("Add EXTRA -> REF")
+        self.btn_add_extra_ref.clicked.connect(self.add_extra_to_references)
+        self.btn_add_extra_ref_save = QPushButton("Add EXTRA + Save")
+        self.btn_add_extra_ref_save.clicked.connect(self.add_extra_and_save_default)
 
         layout.addWidget(QLabel("Target Class"), 0, 0)
         layout.addWidget(self.combo_classes, 0, 1, 1, 2)
@@ -263,7 +267,9 @@ class DefectDetectionGUI(QMainWindow):
         layout.addWidget(self.ref_path_input, 4, 0, 1, 3)
         layout.addWidget(self.btn_load_default_ref, 5, 0, 1, 2)
         layout.addWidget(self.btn_save_default_ref, 5, 2)
-        layout.addWidget(self.ref_status, 6, 0, 1, 3)
+        layout.addWidget(self.btn_add_extra_ref, 6, 0, 1, 2)
+        layout.addWidget(self.btn_add_extra_ref_save, 6, 2)
+        layout.addWidget(self.ref_status, 7, 0, 1, 3)
         group.setLayout(layout)
         self.left_layout.addWidget(group)
 
@@ -635,6 +641,67 @@ class DefectDetectionGUI(QMainWindow):
 
     def save_default_references(self):
         self.save_reference_file(self.default_refs_path)
+
+    def add_extra_and_save_default(self):
+        self.add_extra_to_references(save_default=True)
+
+    def add_extra_to_references(self, save_default=False):
+        if not self.last_inspection_result:
+            QMessageBox.information(
+                self,
+                "EXTRA to REF",
+                "Run an inspection first so the system can find EXTRA components.",
+            )
+            return
+
+        extras = self.last_inspection_result.get("extra", [])
+        if not extras:
+            QMessageBox.information(self, "EXTRA to REF", "No EXTRA components found in latest inspection.")
+            return
+
+        self.save_state()
+        added = 0
+        skipped = 0
+        dedupe_distance = max(8, int(self.match_dist_spin.value() * 0.2))
+
+        for det in extras:
+            candidate = {"x": int(det["x"]), "y": int(det["y"]), "label": str(det["label"])}
+            if self.is_reference_duplicate(candidate, dedupe_distance):
+                skipped += 1
+                continue
+            self.reference_points.append(candidate)
+            added += 1
+
+        self.update_reference_status()
+        self.refresh_image()
+
+        if save_default:
+            self.save_reference_file(self.default_refs_path)
+
+        if added == 0:
+            self.stats_label.setText("EXTRA->REF skipped: all extra points already exist in references.")
+            QMessageBox.information(
+                self,
+                "EXTRA to REF",
+                f"No new points added. {skipped} point(s) matched existing references.",
+            )
+            return
+
+        msg = f"Added {added} EXTRA component(s) to REF."
+        if skipped:
+            msg += f" Skipped duplicates: {skipped}."
+        if save_default:
+            msg += " Saved to Refs.json."
+        self.stats_label.setText(msg)
+        QMessageBox.information(self, "EXTRA to REF", msg)
+
+    def is_reference_duplicate(self, candidate, distance_threshold):
+        for ref in self.reference_points:
+            if ref["label"] != candidate["label"]:
+                continue
+            if math.hypot(ref["x"] - candidate["x"], ref["y"] - candidate["y"]) <= distance_threshold:
+                return True
+        return False
 
     def save_reference_file(self, file_path):
         try:
