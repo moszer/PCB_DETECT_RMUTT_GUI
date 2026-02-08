@@ -33,6 +33,7 @@ from PyQt6.QtWidgets import (
     QAbstractItemView,
     QScrollArea,
     QFrame,
+    QSizePolicy,
 )
 
 
@@ -56,10 +57,8 @@ class ReferenceLabel(QLabel):
         pos = event.position()
         scaled_w = pixmap.width()
         scaled_h = pixmap.height()
-        x_offset = (self.width() - scaled_w) / 2
-        y_offset = (self.height() - scaled_h) / 2
-        click_x = pos.x() - x_offset
-        click_y = pos.y() - y_offset
+        click_x = pos.x()
+        click_y = pos.y()
 
         if 0 <= click_x <= scaled_w and 0 <= click_y <= scaled_h:
             orig_w, orig_h = self.parent_gui.original_image_size
@@ -96,6 +95,10 @@ class DefectDetectionGUI(QMainWindow):
         self.current_annotated_frame = None
         self.original_image_size = (0, 0)
         self.last_inspection_result = None
+
+        self.zoom_factor = 1.0
+        self.min_zoom_factor = 0.2
+        self.max_zoom_factor = 8.0
 
         self.total_count = 0
         self.pass_count = 0
@@ -323,18 +326,42 @@ class DefectDetectionGUI(QMainWindow):
         self.left_layout.addStretch()
 
     def build_image_view(self):
+        header_row = QHBoxLayout()
         header = QLabel("Inspection View")
         header.setObjectName("mainTitle")
         header.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
+        self.btn_zoom_out = QPushButton("Zoom -")
+        self.btn_zoom_out.clicked.connect(self.zoom_out)
+        self.btn_zoom_fit = QPushButton("Fit")
+        self.btn_zoom_fit.clicked.connect(self.zoom_fit)
+        self.btn_zoom_in = QPushButton("Zoom +")
+        self.btn_zoom_in.clicked.connect(self.zoom_in)
+        self.zoom_value_label = QLabel("100%")
+        self.zoom_value_label.setObjectName("zoomValue")
+
+        header_row.addWidget(header)
+        header_row.addStretch()
+        header_row.addWidget(self.zoom_value_label)
+        header_row.addWidget(self.btn_zoom_out)
+        header_row.addWidget(self.btn_zoom_fit)
+        header_row.addWidget(self.btn_zoom_in)
+
+        self.image_scroll = QScrollArea()
+        self.image_scroll.setObjectName("imageScroll")
+        self.image_scroll.setWidgetResizable(False)
+        self.image_scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
         self.image_display = ReferenceLabel(self)
-        self.image_display.setMinimumHeight(430)
+        self.image_display.setMinimumSize(700, 430)
+        self.image_display.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.image_scroll.setWidget(self.image_display)
 
         self.stats_label = QLabel("System ready.")
         self.stats_label.setObjectName("statusLine")
 
-        self.right_layout.addWidget(header)
-        self.right_layout.addWidget(self.image_display, 1)
+        self.right_layout.addLayout(header_row)
+        self.right_layout.addWidget(self.image_scroll, 1)
         self.right_layout.addWidget(self.stats_label)
 
     def build_history_table(self):
@@ -401,6 +428,15 @@ class DefectDetectionGUI(QMainWindow):
                 font-weight: 700;
                 color: #1f2933;
                 padding: 4px 2px;
+            }
+            QLabel#zoomValue {
+                border: 1px solid #c1ccd8;
+                border-radius: 6px;
+                background: #ffffff;
+                padding: 6px 10px;
+                min-width: 54px;
+                qproperty-alignment: AlignCenter;
+                font-weight: 700;
             }
             QLabel {
                 color: #1f2933;
@@ -488,6 +524,11 @@ class DefectDetectionGUI(QMainWindow):
                 padding: 6px;
                 font-weight: 700;
                 color: #334155;
+            }
+            QScrollArea#imageScroll {
+                background: #f7fafc;
+                border: 1px solid #d2d9e2;
+                border-radius: 6px;
             }
             QLabel#verdictNeutral {
                 border-radius: 8px;
@@ -770,6 +811,8 @@ class DefectDetectionGUI(QMainWindow):
         if not file_path:
             return
         self.current_image_path = file_path
+        self.zoom_factor = 1.0
+        self.update_zoom_display()
         self.run_inference(file_path, record_history=True)
 
     def inspect_current_image(self):
@@ -777,6 +820,27 @@ class DefectDetectionGUI(QMainWindow):
             QMessageBox.warning(self, "Inspection", "Please select an image first.")
             return
         self.run_inference(self.current_image_path, record_history=True)
+
+    def zoom_in(self):
+        self.set_zoom(self.zoom_factor * 1.25)
+
+    def zoom_out(self):
+        self.set_zoom(self.zoom_factor / 1.25)
+
+    def zoom_fit(self):
+        self.set_zoom(1.0, force=True)
+
+    def set_zoom(self, factor, force=False):
+        clamped = max(self.min_zoom_factor, min(self.max_zoom_factor, float(factor)))
+        if (not force) and abs(clamped - self.zoom_factor) < 1e-6:
+            return
+        self.zoom_factor = clamped
+        self.update_zoom_display()
+        self.scale_image_to_label()
+
+    def update_zoom_display(self):
+        zoom_percent = int(round(self.zoom_factor * 100))
+        self.zoom_value_label.setText(f"{zoom_percent}%")
 
     def refresh_image(self):
         if self.current_image_path:
@@ -995,12 +1059,29 @@ class DefectDetectionGUI(QMainWindow):
     def scale_image_to_label(self):
         if not self.current_image_pixmap:
             return
+        pixmap_w = self.current_image_pixmap.width()
+        pixmap_h = self.current_image_pixmap.height()
+        if pixmap_w <= 0 or pixmap_h <= 0:
+            return
+
+        viewport_size = self.image_scroll.viewport().size()
+        if viewport_size.width() <= 0 or viewport_size.height() <= 0:
+            return
+
+        fit_scale = min(viewport_size.width() / pixmap_w, viewport_size.height() / pixmap_h)
+        target_scale = fit_scale * self.zoom_factor
+        target_w = max(1, int(pixmap_w * target_scale))
+        target_h = max(1, int(pixmap_h * target_scale))
+
         scaled = self.current_image_pixmap.scaled(
-            self.image_display.size(),
+            target_w,
+            target_h,
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
         self.image_display.setPixmap(scaled)
+        self.image_display.resize(scaled.size())
+        self.image_display.setMinimumSize(scaled.size())
 
     def update_production_counters(self, inspection_result):
         self.total_count += 1
