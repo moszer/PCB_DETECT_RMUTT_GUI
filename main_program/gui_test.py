@@ -76,10 +76,11 @@ class DefectDetectionGUI(QMainWindow):
         self.setWindowTitle("Factory Defect Inspection Station")
         self.setMinimumSize(1260, 760)
 
-        self.project_root = os.path.dirname(os.path.abspath(__file__))
-        self.default_model_path = os.path.join(self.project_root, "best.pt")
-        self.default_refs_path = os.path.join(self.project_root, "Refs.json")
-        self.default_log_path = os.path.join(self.project_root, "inspection_log.csv")
+        self.script_root = os.path.dirname(os.path.abspath(__file__))
+        self.project_root = os.path.abspath(os.path.join(self.script_root, ".."))
+        self.default_model_path = self.resolve_asset_path("best.pt")
+        self.default_refs_path = self.resolve_asset_path("Refs.json")
+        self.default_log_path = self.resolve_asset_path("inspection_log.csv", create_in_project=True)
 
         self.model = None
         self.model_names = {}
@@ -108,6 +109,18 @@ class DefectDetectionGUI(QMainWindow):
         self.init_ui()
         self.apply_styles()
         self.load_default_assets()
+
+    def resolve_asset_path(self, filename, create_in_project=False):
+        candidates = [
+            os.path.join(self.script_root, filename),
+            os.path.join(self.project_root, filename),
+        ]
+        for path in candidates:
+            if os.path.exists(path):
+                return path
+        if create_in_project:
+            return os.path.join(self.project_root, filename)
+        return candidates[0]
 
     def init_ui(self):
         self.main_widget = QWidget()
