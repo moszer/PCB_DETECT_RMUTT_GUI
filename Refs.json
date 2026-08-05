@@ -1,1 +1,257 @@
-[]
+[
+  {
+    "x": 460,
+    "y": 379,
+    "label": "button"
+  },
+  {
+    "x": 177,
+    "y": 378,
+    "label": "button"
+  },
+  {
+    "x": 41,
+    "y": 804,
+    "label": "connector"
+  },
+  {
+    "x": 597,
+    "y": 449,
+    "label": "connector"
+  },
+  {
+    "x": 474,
+    "y": 642,
+    "label": "sot23"
+  },
+  {
+    "x": 597,
+    "y": 537,
+    "label": "connector"
+  },
+  {
+    "x": 111,
+    "y": 468,
+    "label": "capacitor"
+  },
+  {
+    "x": 424,
+    "y": 479,
+    "label": "capacitor"
+  },
+  {
+    "x": 153,
+    "y": 629,
+    "label": "capacitor"
+  },
+  {
+    "x": 40,
+    "y": 451,
+    "label": "connector"
+  },
+  {
+    "x": 41,
+    "y": 716,
+    "label": "connector"
+  },
+  {
+    "x": 39,
+    "y": 363,
+    "label": "connector"
+  },
+  {
+    "x": 39,
+    "y": 96,
+    "label": "connector"
+  },
+  {
+    "x": 597,
+    "y": 361,
+    "label": "connector"
+  },
+  {
+    "x": 41,
+    "y": 628,
+    "label": "connector"
+  },
+  {
+    "x": 40,
+    "y": 185,
+    "label": "connector"
+  },
+  {
+    "x": 213,
+    "y": 705,
+    "label": "capacitor"
+  },
+  {
+    "x": 39,
+    "y": 273,
+    "label": "connector"
+  },
+  {
+    "x": 597,
+    "y": 800,
+    "label": "connector"
+  },
+  {
+    "x": 110,
+    "y": 630,
+    "label": "capacitor"
+  },
+  {
+    "x": 115,
+    "y": 220,
+    "label": "capacitor"
+  },
+  {
+    "x": 596,
+    "y": 95,
+    "label": "connector"
+  },
+  {
+    "x": 110,
+    "y": 700,
+    "label": "capacitor"
+  },
+  {
+    "x": 40,
+    "y": 539,
+    "label": "connector"
+  },
+  {
+    "x": 323,
+    "y": 811,
+    "label": "ant"
+  },
+  {
+    "x": 597,
+    "y": 712,
+    "label": "connector"
+  },
+  {
+    "x": 154,
+    "y": 699,
+    "label": "capacitor"
+  },
+  {
+    "x": 159,
+    "y": 467,
+    "label": "capacitor"
+  },
+  {
+    "x": 597,
+    "y": 272,
+    "label": "connector"
+  },
+  {
+    "x": 597,
+    "y": 625,
+    "label": "connector"
+  },
+  {
+    "x": 597,
+    "y": 184,
+    "label": "connector"
+  },
+  {
+    "x": 510,
+    "y": 717,
+    "label": "capacitor"
+  },
+  {
+    "x": 370,
+    "y": 718,
+    "label": "capacitor"
+  },
+  {
+    "x": 133,
+    "y": 547,
+    "label": "xtal"
+  },
+  {
+    "x": 314,
+    "y": 157,
+    "label": "usb"
+  },
+  {
+    "x": 439,
+    "y": 718,
+    "label": "capacitor"
+  },
+  {
+    "x": 287,
+    "y": 531,
+    "label": "chip"
+  },
+  {
+    "x": 426,
+    "y": 549,
+    "label": "resistor"
+  },
+  {
+    "x": 524,
+    "y": 292,
+    "label": "resistor"
+  },
+  {
+    "x": 523,
+    "y": 505,
+    "label": "diode"
+  },
+  {
+    "x": 304,
+    "y": 718,
+    "label": "capacitor"
+  },
+  {
+    "x": 524,
+    "y": 147,
+    "label": "resistor"
+  },
+  {
+    "x": 524,
+    "y": 219,
+    "label": "resistor"
+  },
+  {
+    "x": 223,
+    "y": 654,
+    "label": "capacitor"
+  },
+  {
+    "x": 319,
+    "y": 377,
+    "label": "led"
+  },
+  {
+    "x": 468,
+    "y": 481,
+    "label": "capacitor"
+  },
+  {
+    "x": 115,
+    "y": 149,
+    "label": "resistor"
+  },
+  {
+    "x": 476,
+    "y": 646,
+    "label": "chip"
+  },
+  {
+    "x": 115,
+    "y": 290,
+    "label": "resistor"
+  },
+  {
+    "x": 218,
+    "y": 768,
+    "label": "usb"
+  },
+  {
+    "x": 322,
+    "y": 810,
+    "label": "button"
+  }
+]
