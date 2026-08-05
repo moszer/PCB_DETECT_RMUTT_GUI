@@ -5,23 +5,26 @@ from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 
-from ..inspection_logic import draw_reference_overlay, evaluate_inspection
+from ..inspection_logic import (
+    draw_detections_overlay,
+    draw_reference_overlay,
+    detection_status_map,
+    evaluate_inspection,
+)
 from ..animations import fade_in, pulse_glow
 from ..styles import tokens_for
 
 
 class InferenceWorker(QThread):
-    finished = pyqtSignal(list, object, dict)  # detections, annotated_frame, speed
+    finished = pyqtSignal(list, object, dict)  # detections, base_frame (clean), speed
     error = pyqtSignal(str)
 
-    def __init__(self, model, image_path, conf_value, model_names, show_labels, show_coords):
+    def __init__(self, model, image_path, conf_value, model_names):
         super().__init__()
         self.model = model
         self.image_path = image_path
         self.conf_value = conf_value
         self.model_names = model_names
-        self.show_labels = show_labels
-        self.show_coords = show_coords
 
     def run(self):
         try:
@@ -32,12 +35,17 @@ class InferenceWorker(QThread):
             self.error.emit(f"Could not run inference:\n{exc}")
             return
 
-        annotated_frame = None
+        # Keep the base frame clean — no baked-in ultralytics boxes/labels. The
+        # GUI composites its own thin, class-colored overlay on top of this so
+        # it can be redrawn instantly (e.g. on selection change) without
+        # re-running inference, and so confidence/label text can live in the
+        # contextual panel instead of cluttering the image.
+        base_frame = None
         detections = []
         speed = {"preprocess": 0.0, "inference": 0.0, "postprocess": 0.0}
 
         for result in results:
-            annotated_frame = result.plot(labels=self.show_labels)
+            base_frame = result.orig_img.copy()
             for k in speed:
                 speed[k] += result.speed.get(k, 0.0)
             for box in result.boxes:
@@ -49,27 +57,15 @@ class InferenceWorker(QThread):
                 detections.append(
                     {"x": cx, "y": cy, "label": cls_name, "conf": confidence, "box": (x1, y1, x2, y2)}
                 )
-                if self.show_coords:
-                    cv2.circle(annotated_frame, (cx, cy), 3, (255, 80, 0), -1)
-                    cv2.putText(
-                        annotated_frame,
-                        f"({cx},{cy})",
-                        (cx + 5, cy - 5),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.4,
-                        (255, 255, 255),
-                        1,
-                        cv2.LINE_AA,
-                    )
 
-        if annotated_frame is None:
+        if base_frame is None:
             fallback = cv2.imread(self.image_path)
             if fallback is None:
                 self.error.emit("Unable to open selected image file.")
                 return
-            annotated_frame = fallback
+            base_frame = fallback
 
-        self.finished.emit(detections, annotated_frame, speed)
+        self.finished.emit(detections, base_frame, speed)
 
 
 class InspectionMixin:
@@ -154,8 +150,6 @@ class InspectionMixin:
             image_path,
             conf_value,
             self.model_names,
-            self.check_labels.isChecked(),
-            self.check_coords.isChecked(),
         )
         self._inference_worker = worker  # keep reference to prevent GC
         worker.finished.connect(
@@ -164,7 +158,7 @@ class InspectionMixin:
         worker.error.connect(self._on_inference_error)
         worker.start()
 
-    def _on_inference_done(self, detections, annotated_frame, speed, image_path, record_history):
+    def _on_inference_done(self, detections, base_frame, speed, image_path, record_history):
         self._inference_running = False
         self._set_inference_busy(False)
         if hasattr(self, "busy_overlay"):
@@ -177,25 +171,15 @@ class InspectionMixin:
             fail_on_extra=self.check_fail_extra.isChecked(),
         )
         self.last_inspection_result = inspection_result
-        draw_reference_overlay(annotated_frame, inspection_result, self.check_labels.isChecked())
+        self._detection_status = detection_status_map(inspection_result)
+        self._base_frame = base_frame
+        self._last_detections = detections
+        self.selected_detection_index = None
+        if hasattr(self, "update_right_panel"):
+            self.update_right_panel(None)
 
-        if self.check_show_extra.isChecked():
-            for det in inspection_result["extra"]:
-                cv2.circle(annotated_frame, (det["x"], det["y"]), 12, (0, 255, 255), 2)
-                cv2.putText(
-                    annotated_frame,
-                    f"EXTRA:{det['label']}",
-                    (det["x"] + 8, det["y"] - 8),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.45,
-                    (0, 255, 255),
-                    1,
-                    cv2.LINE_AA,
-                )
-
-        self.current_annotated_frame = annotated_frame.copy()
+        self._recompose_and_display()
         self.update_result_panel(inspection_result, image_path)
-        self.display_cv_image(annotated_frame)
 
         total_ms = sum(speed.values())
         self.perf_label.setText(
@@ -206,7 +190,7 @@ class InspectionMixin:
         )
 
         # Override status if any reference points fall outside image bounds
-        img_h, img_w = annotated_frame.shape[:2]
+        img_h, img_w = base_frame.shape[:2]
         out_of_bounds = [
             pt for pt in self.reference_points
             if pt["x"] >= img_w or pt["y"] >= img_h
@@ -249,6 +233,11 @@ class InspectionMixin:
         widget.update()
 
     def update_result_panel(self, inspection_result, image_path):
+        # There's a result now, so the badge earns its place over the viewport.
+        # Must precede _animate_verdict() below: fade_in() animates an opacity
+        # effect, which would run invisibly on a still-hidden widget.
+        self.verdict_card.setVisible(True)
+
         verdict = inspection_result["verdict"]
         if verdict == "PASS":
             self._repolish(self.verdict_card, "verdictCardPass")
@@ -267,7 +256,7 @@ class InspectionMixin:
         ok_count = inspection_result["ok"]
 
         image_name = os.path.basename(image_path) if image_path else "—"
-        self.verdict_image_name.setText(image_name)
+        self.set_verdict_image_name(image_name)
         self.verdict_reason.setText(inspection_result["reason"])
         self._set_pill(self.pill_expect, inspection_result["total_refs"])
         self._set_pill(self.pill_ok, ok_count)
@@ -275,11 +264,9 @@ class InspectionMixin:
         self._set_pill(self.pill_wrong, wrong_count)
         self._set_pill(self.pill_extra, extra_count)
 
-        self.stats_label.setText(
-            f"Inspection complete  ·  {verdict}  ·  "
-            f"Expected {inspection_result['total_refs']} / OK {ok_count} / "
-            f"Missing {missing_count} / Wrong {wrong_count} / Extra {extra_count}"
-        )
+        # Kept short — the full OK/Missing/Wrong/Extra breakdown already lives in
+        # the verdict badge's pill row, no need to repeat it in the status bar.
+        self.stats_label.setText(f"Inspection complete  ·  {verdict}  ·  {image_name}")
         self._animate_verdict(verdict)
 
     def _animate_verdict(self, verdict):
@@ -294,6 +281,88 @@ class InspectionMixin:
                                                    blur=30, cycles=1, duration=900))
         else:
             fade_in(self.verdict_card, duration=220)
+
+    def _recompose_and_display(self):
+        """Redraw the viewport's overlay layers (class-colored detection boxes,
+        reference-match markers, selection highlight) on top of the cached clean
+        base frame. Cheap enough to call on every selection change without
+        re-running inference."""
+        base_frame = getattr(self, "_base_frame", None)
+        if base_frame is None:
+            return
+        frame = base_frame.copy()
+        detections = getattr(self, "_last_detections", [])
+        draw_detections_overlay(
+            frame, detections, selected_index=getattr(self, "selected_detection_index", None)
+        )
+
+        inspection_result = self.last_inspection_result
+        if inspection_result is not None:
+            draw_reference_overlay(frame, inspection_result, self.check_labels.isChecked())
+            if self.check_show_extra.isChecked():
+                for det in inspection_result["extra"]:
+                    cv2.circle(frame, (det["x"], det["y"]), 12, (0, 255, 255), 2)
+
+        if self.check_coords.isChecked():
+            for det in detections:
+                cv2.circle(frame, (det["x"], det["y"]), 3, (255, 80, 0), -1)
+
+        self.current_annotated_frame = frame.copy()
+        self.display_cv_image(frame)
+
+    def select_detection_at(self, x, y):
+        """Hit-test a click (in original-image coordinates) against the last
+        inference's raw detections and populate the contextual right panel with
+        whichever box contains it (smallest box wins on overlap). Clicking empty
+        space deselects."""
+        detections = getattr(self, "_last_detections", [])
+        best_idx = None
+        best_area = None
+        for idx, det in enumerate(detections):
+            x1, y1, x2, y2 = det["box"]
+            if x1 <= x <= x2 and y1 <= y <= y2:
+                area = (x2 - x1) * (y2 - y1)
+                if best_area is None or area < best_area:
+                    best_area = area
+                    best_idx = idx
+
+        self.selected_detection_index = best_idx
+        self._recompose_and_display()
+        self.update_right_panel(detections[best_idx] if best_idx is not None else None)
+
+    def update_right_panel(self, detection):
+        if not hasattr(self, "right_panel"):
+            return
+        if detection is None:
+            self.right_panel.setVisible(False)
+            self.right_panel_placeholder.setVisible(True)
+            for value_label in (
+                self.detail_class_value,
+                self.detail_conf_value,
+                self.detail_coords_value,
+                self.detail_status_value,
+            ):
+                value_label.setText("—")
+                value_label.setStyleSheet("")
+            return
+
+        status_map = getattr(self, "_detection_status", {})
+        status = status_map.get(id(detection), "UNMATCHED")
+        self.detail_class_value.setText(str(detection["label"]))
+        self.detail_conf_value.setText(f"{detection['conf'] * 100:.1f}%")
+        self.detail_coords_value.setText(f"({detection['x']}, {detection['y']})")
+        self.detail_status_value.setText(status)
+
+        tokens = tokens_for(getattr(self, "_current_theme", "light"))
+        status_color_key = {
+            "OK": "pass_strong",
+            "WRONG": "warn_strong",
+            "EXTRA": "info_strong",
+        }.get(status, "text_muted")
+        self.detail_status_value.setStyleSheet(f"color: {tokens[status_color_key]};")
+
+        self.right_panel_placeholder.setVisible(False)
+        self.right_panel.setVisible(True)
 
     def display_cv_image(self, frame):
         # Normalise to 3-channel BGR before converting
@@ -374,6 +443,8 @@ class InspectionMixin:
             self.image_display.resize(viewport)
 
     def resizeEvent(self, event):
+        if hasattr(self, "apply_responsive_layout"):
+            self.apply_responsive_layout()
         if self.current_image_pixmap:
             self.scale_image_to_label()
         else:

@@ -1,0 +1,14 @@
+# PCB Defect Detection (YOLOv8 GUI) — Python dependencies
+# Versions pinned to the project's tested venv (Python 3.14).
+# Install with:  pip install -r requirements.txt
+
+# --- Core: used directly by the app ---
+ultralytics==8.4.92        # YOLO model: training + inference
+opencv-python==5.0.0.93    # imported as cv2 — image I/O and overlay drawing
+PyQt6==6.11.0              # GUI framework
+
+# --- ML stack (pulled in by ultralytics; pinned for reproducibility) ---
+torch==2.13.0
+torchvision==0.28.0
+numpy==2.5.1
+pillow==12.3.0

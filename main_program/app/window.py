@@ -25,7 +25,7 @@ class DefectDetectionGUI(
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Defect Inspection Station")
-        self.setMinimumSize(1300, 800)
+        self.setMinimumSize(1100, 700)
 
         self.script_root = os.path.dirname(os.path.abspath(__file__))
         self.main_program_root = os.path.abspath(os.path.join(self.script_root, ".."))
@@ -58,6 +58,11 @@ class DefectDetectionGUI(
         self.current_annotated_frame = None
         self.original_image_size = (0, 0)
         self.last_inspection_result = None
+
+        self._base_frame = None
+        self._last_detections = []
+        self._detection_status = {}
+        self.selected_detection_index = None
 
         self.zoom_factor = 1.0
         self.min_zoom_factor = 0.2

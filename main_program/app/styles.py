@@ -116,20 +116,22 @@ QLabel#fieldLabel {{
 }}
 
 /* ── Verdict HUD Card ── */
+/* Backgrounds are deliberately translucent: this badge floats over the board
+   image, so an opaque card would hide the very components being inspected. */
 QFrame#verdictCard {{
     border-radius: 16px;
     border: 1px solid {border};
-    background: {bg_card};
+    background: {badge_bg};
 }}
 QFrame#verdictCardPass {{
     border-radius: 16px;
     border: 1px solid {pass_border};
-    background: {pass_soft};
+    background: {badge_pass_bg};
 }}
 QFrame#verdictCardFail {{
     border-radius: 16px;
     border: 1px solid {fail_border};
-    background: {fail_soft};
+    background: {badge_fail_bg};
 }}
 QLabel#verdictBig {{
     font-size: 34px;
@@ -233,9 +235,9 @@ QPushButton#iconBtn {{
     background: {bg_card};
     border: 1px solid {border};
     border-radius: 10px;
-    min-width: 40px;
-    min-height: 36px;
-    padding: 6px 10px;
+    min-width: 32px;
+    min-height: 34px;
+    padding: 4px 8px;
     font-weight: 700;
 }}
 QPushButton#iconBtn:hover {{ background: {btn_hover}; border-color: {accent}; }}
@@ -245,8 +247,8 @@ QLabel#zoomValue {{
     border: 1px solid {border};
     border-radius: 10px;
     background: {bg_card};
-    padding: 6px 10px;
-    min-width: 52px;
+    padding: 4px 6px;
+    min-width: 40px;
     qproperty-alignment: AlignCenter;
     font-weight: 800;
     color: {accent};
@@ -404,6 +406,73 @@ QScrollArea#imageScroll {{
     border: 1px solid {border};
     border-radius: 14px;
 }}
+
+/* ── Contextual right panel (selected component detail) ── */
+QFrame#rightPanel {{
+    background: {bg_panel};
+    border: 1px solid {border};
+    border-radius: 14px;
+}}
+QLabel#rightPanelTitle {{
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 1.2px;
+    color: {text_muted};
+}}
+QPushButton#panelCloseBtn {{
+    background: transparent;
+    border: none;
+    color: {text_muted};
+    font-weight: 800;
+    min-height: 24px;
+    min-width: 24px;
+    padding: 0px;
+}}
+QPushButton#panelCloseBtn:hover {{ color: {fail_strong}; }}
+QLabel#detailLabel {{
+    color: {text_muted};
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+}}
+QLabel#detailValue {{
+    color: {text_heading};
+    font-size: 15px;
+    font-weight: 800;
+}}
+
+/* ── Toggleable history panel ── */
+QFrame#historyPanel {{
+    background: {bg_panel};
+    border: 1px solid {border};
+    border-radius: 14px;
+}}
+
+/* ── Edit-mode toggle: warn amber once active, since it changes what clicks do ── */
+QPushButton#editModeBtn:checked {{
+    background: {warn_strong};
+    color: #1a1206;
+    border-color: {warn_strong};
+}}
+
+/* ── Native QMainWindow status bar (bottom bar) ── */
+QStatusBar {{
+    background: {bg_status};
+    border-top: 1px solid {border};
+    color: {text_secondary};
+    font-size: 11px;
+    font-weight: 600;
+}}
+QStatusBar::item {{ border: none; }}
+QStatusBar QLabel {{ color: {text_secondary}; font-size: 11px; font-weight: 600; }}
+QLabel#statusBarText {{
+    background: transparent;
+    border: none;
+    padding: 0px 4px;
+    color: {text_secondary};
+    font-size: 11px;
+    font-weight: 600;
+}}
 """
 
 LIGHT_TOKENS = dict(
@@ -451,53 +520,62 @@ LIGHT_TOKENS = dict(
     table_alt="#f8fafc",
     table_header_bg="#f4f7fb",
     row_selected="#e6e9fb",
+    toggle_track_off="#cbd5e1",
+    badge_bg="rgba(255, 255, 255, 0.86)",
+    badge_pass_bg="rgba(226, 248, 238, 0.88)",
+    badge_fail_bg="rgba(253, 232, 232, 0.88)",
 )
 
 DARK_TOKENS = dict(
-    bg_main="#0b0d13",
-    bg_panel="#14171f",
-    bg_card="#1a1e29",
-    bg_elevated="#20263a",
-    bg_topbar="#161a24",
-    bg_status="#161a24",
-    bg_readonly="#1f2534",
-    bg_image_area="#0e1017",
-    logo_bg="#1e2438",
-    border="#2a3145",
-    btn_border="#333c54",
-    btn_bg="#20263a",
-    btn_hover="#2a3352",
-    btn_pressed="#323c5e",
-    input_border="#333c54",
-    input_bg="#1a1e29",
-    text_primary="#e2e8f0",
-    text_secondary="#9aa7bd",
-    text_heading="#f1f5f9",
-    text_muted="#6b788f",
-    text_disabled="#4a5568",
-    accent="#6366f1",
-    accent_dark="#4f46e5",
-    accent_darker="#4338ca",
-    pass_strong="#34d399",
-    pass_soft="#12281f",
-    pass_border="#1f5b41",
-    fail_strong="#f87171",
-    fail_soft="#2a1518",
-    fail_border="#6b2a2f",
-    warn_strong="#fbbf24",
-    warn_soft="#2a2011",
-    warn_border="#5f4718",
+    # "Clean Industrial Dashboard" palette — slate-900/800/700 + blue-500 accent.
+    bg_main="#0f172a",
+    bg_panel="#0f172a",
+    bg_card="#1e293b",
+    bg_elevated="#1e293b",
+    bg_topbar="#1e293b",
+    bg_status="#1e293b",
+    bg_readonly="#17202f",
+    bg_image_area="#0b1220",
+    logo_bg="#1e293b",
+    border="#334155",
+    btn_border="#334155",
+    btn_bg="#1e293b",
+    btn_hover="#243244",
+    btn_pressed="#2c3b52",
+    input_border="#334155",
+    input_bg="#131c2e",
+    text_primary="#f1f5f9",
+    text_secondary="#94a3b8",
+    text_heading="#f8fafc",
+    text_muted="#64748b",
+    text_disabled="#475569",
+    accent="#3b82f6",
+    accent_dark="#2563eb",
+    accent_darker="#1d4ed8",
+    pass_strong="#10b981",
+    pass_soft="#0f2a22",
+    pass_border="#155e46",
+    fail_strong="#ef4444",
+    fail_soft="#2a1215",
+    fail_border="#7f1d1d",
+    warn_strong="#f59e0b",
+    warn_soft="#2a1f0a",
+    warn_border="#78350f",
     info_strong="#38bdf8",
-    info_soft="#0f2733",
-    info_border="#1c5069",
-    chip_bg="#20263a",
-    scrollbar_handle="#333c54",
-    scrollbar_hover="#4a5678",
-    slider_groove="#2a3145",
-    table_grid="#232a3c",
-    table_alt="#161a24",
-    table_header_bg="#1a1e29",
-    row_selected="#282f4d",
+    info_soft="#0c2436",
+    info_border="#0e7490",
+    chip_bg="#1e293b",
+    scrollbar_handle="#334155",
+    scrollbar_hover="#475569",
+    slider_groove="#334155",
+    table_grid="#1e293b",
+    table_alt="#131c2e",
+    table_header_bg="#1e293b",
+    row_selected="#1e2b45",
+    toggle_track_off="#334155",
+    badge_bg="rgba(30, 41, 59, 0.82)",
+    badge_pass_bg="rgba(6, 46, 34, 0.84)",
+    badge_fail_bg="rgba(60, 16, 20, 0.84)",
 )
 
 

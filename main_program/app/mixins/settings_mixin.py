@@ -21,12 +21,13 @@ class SettingsMixin:
             "model_path": self.model_path_input.text().strip(),
             "ref_path": self.ref_path_input.text().strip(),
             "cards": {
-                "actions": self.actions_card.is_expanded(),
                 "station": self.station_card.is_expanded(),
                 "inspection": self.inspection_card.is_expanded(),
+                "display": self.display_card.is_expanded(),
                 "reference": self.reference_card.is_expanded(),
-                "history": self.history_card.is_expanded(),
             },
+            "history_visible": self.history_panel.isVisible(),
+            "left_panel_visible": self.left_scroll.isVisible(),
         }
         try:
             with open(self._settings_path(), "w", encoding="utf-8") as f:
@@ -73,14 +74,18 @@ class SettingsMixin:
             self.ref_path_input.setText(data["ref_path"])
         cards = data.get("cards", {})
         for name, card in (
-            ("actions", getattr(self, "actions_card", None)),
             ("station", getattr(self, "station_card", None)),
             ("inspection", getattr(self, "inspection_card", None)),
+            ("display", getattr(self, "display_card", None)),
             ("reference", getattr(self, "reference_card", None)),
-            ("history", getattr(self, "history_card", None)),
         ):
             if card is not None and name in cards:
                 card.set_expanded(bool(cards[name]), animate=False)
+
+        if "history_visible" in data and bool(data["history_visible"]) != self.history_panel.isVisible():
+            self.toggle_history_panel()
+        if "left_panel_visible" in data:
+            self.left_scroll.setVisible(bool(data["left_panel_visible"]))
 
     def closeEvent(self, event):
         self.save_settings()

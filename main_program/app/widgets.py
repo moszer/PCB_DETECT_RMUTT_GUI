@@ -12,9 +12,7 @@ class ReferenceLabel(QLabel):
         self.setStyleSheet("border: 2px dashed #b0b8c4; background-color: #f6f8fa; color: #4b5563; border-radius: 8px;")
 
     def mousePressEvent(self, event: QMouseEvent):
-        if not self.parent_gui:
-            return
-        if not self.parent_gui.is_edit_mode or not self.parent_gui.current_image_pixmap:
+        if not self.parent_gui or not self.parent_gui.current_image_pixmap:
             return
         pixmap = self.pixmap()
         if not pixmap:
@@ -32,5 +30,9 @@ class ReferenceLabel(QLabel):
                 return
             real_x = int(click_x * (orig_w / scaled_w))
             real_y = int(click_y * (orig_h / scaled_h))
-            selected_class = self.parent_gui.combo_classes.currentText()
-            self.parent_gui.add_reference_point(real_x, real_y, selected_class)
+
+            if self.parent_gui.is_edit_mode:
+                selected_class = self.parent_gui.combo_classes.currentText()
+                self.parent_gui.add_reference_point(real_x, real_y, selected_class)
+            elif hasattr(self.parent_gui, "select_detection_at"):
+                self.parent_gui.select_detection_at(real_x, real_y)

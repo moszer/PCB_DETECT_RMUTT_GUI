@@ -2,6 +2,72 @@ import math
 
 import cv2
 
+# ── Category colors (Clean Industrial Dashboard palette), BGR order for OpenCV ──
+_HEX_COLORS = {
+    "ic": "#3B82F6",        # blue-500   — chips, connectors, sockets
+    "capacitor": "#F59E0B", # amber-500
+    "resistor": "#10B981",  # emerald-500
+    "default": "#94A3B8",   # slate-400  — everything else
+}
+
+_CLASS_KEYWORDS = {
+    "capacitor": ("capacitor",),
+    "resistor": ("resistor",),
+    "ic": ("chip", "sot", "connector", "usb", "sdcard", "xtal", "input"),
+}
+
+
+def _hex_to_bgr(hex_color):
+    hex_color = hex_color.lstrip("#")
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+    return (b, g, r)
+
+
+CLASS_COLORS_BGR = {key: _hex_to_bgr(value) for key, value in _HEX_COLORS.items()}
+
+
+def class_color(label):
+    """Map a YOLO class label to a category color (BGR) for the detection overlay."""
+    lowered = str(label).lower()
+    for category, keywords in _CLASS_KEYWORDS.items():
+        if any(keyword in lowered for keyword in keywords):
+            return CLASS_COLORS_BGR[category]
+    return CLASS_COLORS_BGR["default"]
+
+
+def draw_detections_overlay(frame, detections, selected_index=None, thickness=2, alpha=0.30):
+    """Layer 2 of the viewport: thin, semi-transparent, class-colored bounding boxes
+    for every raw YOLO detection. No confidence/label text is baked in here — that
+    detail lives in the contextual side panel once a box is clicked (see
+    detection_status_map / the GUI's select_detection_at)."""
+    if not detections:
+        return
+    overlay = frame.copy()
+    for det in detections:
+        x1, y1, x2, y2 = (int(v) for v in det["box"])
+        cv2.rectangle(overlay, (x1, y1), (x2, y2), class_color(det["label"]), -1)
+    cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, dst=frame)
+
+    for idx, det in enumerate(detections):
+        x1, y1, x2, y2 = (int(v) for v in det["box"])
+        color = class_color(det["label"])
+        cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
+        if idx == selected_index:
+            cv2.rectangle(frame, (x1 - 3, y1 - 3), (x2 + 3, y2 + 3), (255, 255, 255), 2)
+
+
+def detection_status_map(inspection_result):
+    """id(detection) -> status ('OK'|'WRONG'|'EXTRA'), for labelling a raw detection
+    in the contextual panel without re-deriving the match against references."""
+    status_map = {}
+    for entry in inspection_result.get("reference_eval", []):
+        det = entry.get("det")
+        if det is not None:
+            status_map[id(det)] = entry["status"]
+    for det in inspection_result.get("extra", []):
+        status_map[id(det)] = "EXTRA"
+    return status_map
+
 
 def evaluate_inspection(reference_points, detections, match_dist, fail_on_extra):
     if not reference_points:
@@ -76,14 +142,14 @@ def draw_reference_overlay(frame, inspection_result, show_labels):
         rx, ry = int(ref["x"]), int(ref["y"])
         status = entry["status"]
         if status == "OK":
-            color = (50, 205, 50)
+            color = _hex_to_bgr("#10B981")  # emerald-500
             label = f"{ref['label']} OK"
         elif status == "WRONG":
-            color = (0, 165, 255)
+            color = _hex_to_bgr("#EF4444")  # red-500
             found = entry["det"]["label"] if entry["det"] else "none"
             label = f"{ref['label']}!= {found}"
         else:
-            color = (0, 0, 255)
+            color = _hex_to_bgr("#EF4444")  # red-500
             label = f"{ref['label']} MISS"
 
         cv2.circle(frame, (rx, ry), 14, color, 2)

@@ -1,7 +1,7 @@
-"""Custom-painted widgets: yield bar, busy overlay spinner, collapsible card."""
-from PyQt6.QtCore import Qt, QTimer, QRectF, QEvent, QEasingCurve, QPropertyAnimation
+"""Custom-painted widgets: yield bar, busy overlay spinner, collapsible card, toggle switch."""
+from PyQt6.QtCore import Qt, QTimer, QRectF, QSize, QEvent, QEasingCurve, QPropertyAnimation, pyqtProperty
 from PyQt6.QtGui import QColor, QPainter, QPen, QBrush, QFont
-from PyQt6.QtWidgets import QWidget, QFrame, QPushButton, QVBoxLayout
+from PyQt6.QtWidgets import QWidget, QFrame, QPushButton, QCheckBox, QVBoxLayout
 
 
 class CollapsibleCard(QFrame):
@@ -182,3 +182,87 @@ class BusyOverlay(QWidget):
         text_rect = QRectF(0, cy + radius + 8, self.width(), 30)
         p.drawText(text_rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, f"{self._message}…")
         p.end()
+
+
+class ToggleSwitch(QCheckBox):
+    """A sliding pill-shaped toggle switch. QSS can't paint this shape convincingly,
+    so — like YieldBar/BusyOverlay — it's custom-painted and themed via set_colors()."""
+
+    _WIDTH = 40
+    _HEIGHT = 22
+
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._track_off = QColor("#cbd5e1")
+        self._track_on = QColor("#6366f1")
+        self._knob = QColor("#ffffff")
+        self._pos = 1.0 if self.isChecked() else 0.0
+        self._anim = QPropertyAnimation(self, b"handlePosition", self)
+        self._anim.setDuration(160)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.toggled.connect(self._animate_to)
+        self.setMinimumHeight(self._HEIGHT + 4)
+
+    def set_colors(self, track_off, track_on, knob):
+        self._track_off = QColor(track_off)
+        self._track_on = QColor(track_on)
+        self._knob = QColor(knob)
+        self.update()
+
+    def _animate_to(self, checked):
+        self._anim.stop()
+        self._anim.setStartValue(self._pos)
+        self._anim.setEndValue(1.0 if checked else 0.0)
+        self._anim.start()
+
+    def _get_handle_position(self):
+        return self._pos
+
+    def _set_handle_position(self, value):
+        self._pos = value
+        self.update()
+
+    handlePosition = pyqtProperty(float, fget=_get_handle_position, fset=_set_handle_position)
+
+    def sizeHint(self):
+        base = super().sizeHint()
+        text_w = self.fontMetrics().horizontalAdvance(self.text()) if self.text() else 0
+        extra = self._WIDTH + 10 + text_w if self.text() else self._WIDTH
+        return QSize(extra + 4, max(base.height(), self._HEIGHT + 4))
+
+    def hitButton(self, pos):
+        return self.contentsRect().contains(pos)
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        y = (self.height() - self._HEIGHT) // 2
+        track_rect = QRectF(0, y, self._WIDTH, self._HEIGHT)
+        radius = self._HEIGHT / 2
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(self._blend(self._track_off, self._track_on, self._pos)))
+        painter.drawRoundedRect(track_rect, radius, radius)
+
+        knob_d = self._HEIGHT - 6
+        knob_x = 3 + self._pos * (self._WIDTH - knob_d - 6)
+        painter.setBrush(QBrush(self._knob))
+        painter.drawEllipse(QRectF(knob_x, y + 3, knob_d, knob_d))
+
+        if self.text():
+            painter.setPen(QPen(self.palette().windowText().color()))
+            painter.setFont(QFont(self.font()))
+            text_rect = self.rect().adjusted(self._WIDTH + 10, 0, 0, 0)
+            painter.drawText(
+                text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, self.text()
+            )
+        painter.end()
+
+    @staticmethod
+    def _blend(c1, c2, t):
+        r = c1.red() + (c2.red() - c1.red()) * t
+        g = c1.green() + (c2.green() - c1.green()) * t
+        b = c1.blue() + (c2.blue() - c1.blue()) * t
+        return QColor(int(r), int(g), int(b))
