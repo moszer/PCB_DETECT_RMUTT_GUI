@@ -3,6 +3,8 @@ import os
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QMainWindow
 
+from .mixins.browse_mixin import BrowseMixin
+from .mixins.camera_mixin import CameraMixin
 from .mixins.history_mixin import HistoryMixin
 from .mixins.inspection_mixin import InspectionMixin
 from .mixins.interaction_mixin import InteractionMixin
@@ -18,6 +20,8 @@ class DefectDetectionGUI(
     UIMixin,
     ModelReferenceMixin,
     InspectionMixin,
+    BrowseMixin,
+    CameraMixin,
     HistoryMixin,
     SettingsMixin,
     QMainWindow,
@@ -54,6 +58,9 @@ class DefectDetectionGUI(
         self.is_edit_mode = False
 
         self.current_image_path = None
+        self.folder_path = ""
+        self.folder_images = []
+        self.folder_index = -1
         self.current_image_pixmap = None
         self.current_annotated_frame = None
         self.original_image_size = (0, 0)
@@ -67,6 +74,9 @@ class DefectDetectionGUI(
         self.zoom_factor = 1.0
         self.min_zoom_factor = 0.2
         self.max_zoom_factor = 8.0
+
+        self._camera_worker = None
+        self._camera_latest_frame = None
 
         self.total_count = 0
         self.pass_count = 0

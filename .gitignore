@@ -19,8 +19,10 @@ Thumbs.db
 inspection_log.csv
 inspection_history_*.csv
 main_program/settings.json
+main_program/captures/
 
 # Editor
 .idea/
 .vscode/
 *.swp
+runs/

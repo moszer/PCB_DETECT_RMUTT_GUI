@@ -8,7 +8,11 @@ class ReferenceLabel(QLabel):
         super().__init__(parent)
         self.parent_gui = parent
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setText("Load image to start inspection\n\nDrag & drop an image here  ·  Ctrl+O")
+        self.setText(
+            "Load image to start inspection\n\n"
+            "Drag & drop an image here  ·  Ctrl+O\n"
+            "or start the camera from the left panel"
+        )
         self.setStyleSheet("border: 2px dashed #b0b8c4; background-color: #f6f8fa; color: #4b5563; border-radius: 8px;")
 
     def mousePressEvent(self, event: QMouseEvent):

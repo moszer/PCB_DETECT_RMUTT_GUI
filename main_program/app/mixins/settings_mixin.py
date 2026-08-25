@@ -23,9 +23,11 @@ class SettingsMixin:
             "cards": {
                 "station": self.station_card.is_expanded(),
                 "inspection": self.inspection_card.is_expanded(),
+                "camera": self.camera_card.is_expanded(),
                 "display": self.display_card.is_expanded(),
                 "reference": self.reference_card.is_expanded(),
             },
+            "folder_path": self.folder_path,
             "history_visible": self.history_panel.isVisible(),
             "left_panel_visible": self.left_scroll.isVisible(),
         }
@@ -72,10 +74,16 @@ class SettingsMixin:
             self.model_path_input.setText(data["model_path"])
         if "ref_path" in data and data["ref_path"]:
             self.ref_path_input.setText(data["ref_path"])
+        # Only the dialog's starting directory is restored — no folder is
+        # re-scanned or re-inspected on launch.
+        folder = data.get("folder_path", "")
+        if folder and os.path.isdir(folder):
+            self.folder_path = folder
         cards = data.get("cards", {})
         for name, card in (
             ("station", getattr(self, "station_card", None)),
             ("inspection", getattr(self, "inspection_card", None)),
+            ("camera", getattr(self, "camera_card", None)),
             ("display", getattr(self, "display_card", None)),
             ("reference", getattr(self, "reference_card", None)),
         ):
@@ -89,6 +97,8 @@ class SettingsMixin:
 
     def closeEvent(self, event):
         self.save_settings()
+        if getattr(self, "_camera_worker", None) is not None:
+            self.stop_camera()
         # Wait for any running inference worker before closing
         if hasattr(self, "_inference_worker") and self._inference_worker.isRunning():
             self._inference_worker.wait(3000)

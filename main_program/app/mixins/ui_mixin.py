@@ -61,7 +61,9 @@ class UIMixin:
         body.addWidget(self.right_panel, 0)
 
         self._build_statusbar()
+        self.update_nav_controls()
         self._update_action_buttons()
+        self._update_zoom_controls_enabled()
         self.apply_responsive_layout()
 
     def apply_responsive_layout(self):
@@ -230,6 +232,7 @@ class UIMixin:
         self.left_scroll.setWidget(self.left_panel)
 
         self.build_inspection_group()
+        self.build_camera_group()
         self.build_display_group()
         self.build_reference_group()
         self.build_station_group()
@@ -261,6 +264,39 @@ class UIMixin:
         layout.addWidget(self._field_label("Match distance"), 2, 0)
         layout.addWidget(self.match_dist_spin, 2, 1)
         self.inspection_card = card
+        card.set_expanded(card._default_expanded, animate=False)
+        self.left_layout.addWidget(card)
+
+    def build_camera_group(self):
+        card, layout = self._sidebar_card("📷  Camera", expanded=False, grid=True)
+        layout.setVerticalSpacing(8)
+        layout.setHorizontalSpacing(9)
+
+        self.camera_index_spin = QSpinBox()
+        self.camera_index_spin.setRange(0, 9)
+        self.camera_index_spin.setValue(0)
+
+        self.btn_camera_toggle = QPushButton("▶  Start Camera")
+        self.btn_camera_toggle.setObjectName("ghostBtn")
+        self.btn_camera_toggle.setCheckable(True)
+        self.btn_camera_toggle.setToolTip("Start / stop the live camera preview")
+        self.btn_camera_toggle.clicked.connect(self.toggle_camera)
+
+        self.btn_camera_capture = QPushButton("📸  Capture & Inspect")
+        self.btn_camera_capture.setObjectName("primaryBtn")
+        self.btn_camera_capture.setToolTip("Freeze the current camera frame and run inspection on it")
+        self.btn_camera_capture.setEnabled(False)
+        self.btn_camera_capture.clicked.connect(self.capture_and_inspect)
+
+        self.camera_status = QLabel("Camera: idle")
+        self.camera_status.setObjectName("sectionHint")
+
+        layout.addWidget(self._field_label("Camera index"), 0, 0)
+        layout.addWidget(self.camera_index_spin, 0, 1)
+        layout.addWidget(self.btn_camera_toggle, 1, 0, 1, 2)
+        layout.addWidget(self.btn_camera_capture, 2, 0, 1, 2)
+        layout.addWidget(self.camera_status, 3, 0, 1, 2)
+        self.camera_card = card
         card.set_expanded(card._default_expanded, animate=False)
         self.left_layout.addWidget(card)
 
@@ -424,8 +460,47 @@ class UIMixin:
         self.center_layout.setContentsMargins(0, 0, 0, 0)
         self.center_layout.setSpacing(12)
 
+        self.build_browse_bar()
         self.build_image_view()
         self.build_history_panel()
+
+    def build_browse_bar(self):
+        """Slim strip above the viewport for folder work: open a folder, see
+        which one is open, and step through it. It lives here rather than in the
+        already-packed top bar, and sits next to the image it navigates."""
+        bar = QFrame()
+        bar.setObjectName("browseBar")
+        row = QHBoxLayout(bar)
+        row.setContentsMargins(10, 6, 10, 6)
+        row.setSpacing(8)
+        self.browse_bar = bar
+
+        self.btn_select_folder = QPushButton("📁  Open Folder")
+        self.btn_select_folder.setObjectName("ghostBtn")
+        self.btn_select_folder.setToolTip("Open a whole folder of images  (Ctrl+Shift+O)")
+        self.btn_select_folder.clicked.connect(self.select_folder)
+        row.addWidget(self.btn_select_folder)
+
+        self.folder_name_label = QLabel("No folder open")
+        self.folder_name_label.setObjectName("sectionHint")
+        row.addWidget(self.folder_name_label, 1)
+
+        # Stepper — inert until a folder is indexed (counter reads "—").
+        self.btn_prev_image = QPushButton("◀")
+        self.btn_prev_image.setObjectName("iconBtn")
+        self.btn_prev_image.setToolTip("Previous image in folder  (Ctrl+← / PgUp)")
+        self.btn_prev_image.clicked.connect(self.show_prev_image)
+        self.nav_value_label = QLabel("—")
+        self.nav_value_label.setObjectName("navValue")
+        self.btn_next_image = QPushButton("▶")
+        self.btn_next_image.setObjectName("iconBtn")
+        self.btn_next_image.setToolTip("Next image in folder  (Ctrl+→ / PgDown)")
+        self.btn_next_image.clicked.connect(self.show_next_image)
+        row.addWidget(self.btn_prev_image)
+        row.addWidget(self.nav_value_label)
+        row.addWidget(self.btn_next_image)
+
+        self.center_layout.addWidget(bar, 0)
 
     def build_image_view(self):
         viewport = QWidget()
@@ -717,6 +792,14 @@ class UIMixin:
         self.btn_reinspect.setEnabled(has_model)
         self.btn_add_extra_ref.setEnabled(has_model)
         self.btn_add_extra_ref_save.setEnabled(has_model)
+
+    def _update_zoom_controls_enabled(self):
+        """Zoom is meaningless with no image on screen — keep the controls
+        (and the % readout) inert instead of letting them drift to a
+        confusing value like 512% on an empty canvas."""
+        has_image = bool(self.current_image_pixmap)
+        for widget in (self.btn_zoom_in, self.btn_zoom_out, self.btn_zoom_fit):
+            widget.setEnabled(has_image)
 
     def _update_theme_button_text(self):
         theme = getattr(self, "_current_theme", "light")

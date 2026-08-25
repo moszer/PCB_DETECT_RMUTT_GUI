@@ -22,7 +22,8 @@ python3 train.py
 # Test inference on a single image
 python3 test.py
 
-# Real-time webcam detection
+# Real-time webcam detection (standalone script; the GUI's Camera panel
+# covers the capture-and-inspect workflow without leaving the app)
 python3 camera.py
 ```
 
@@ -43,14 +44,16 @@ The GUI application uses **mixin-based composition**. The main window class `Def
 ```
 DefectDetectionGUI (main_program/app/window.py)
     ├── InteractionMixin (mixins/interaction_mixin.py) — Keyboard shortcuts, drag & drop, Ctrl+scroll zoom, launch/theme fades
-    ├── UIMixin (mixins/ui_mixin.py)         — Builds the top bar, 280px left accordion panel, center viewport, 320px contextual right panel, toggleable history panel, status bar
+    ├── UIMixin (mixins/ui_mixin.py)         — Builds the top bar, 280px left accordion panel, center browse bar + viewport, 320px contextual right panel, toggleable history panel, status bar
     ├── ModelReferenceMixin (mixins/model_reference_mixin.py) — Lazy YOLO loading, Refs.json management, undo/redo, toasts
     ├── InspectionMixin (mixins/inspection_mixin.py)   — Debounced inference, overlay compositing, click-to-select detection detail, busy overlay, animated verdict reveal, zoom, image display
+    ├── BrowseMixin (mixins/browse_mixin.py)           — Folder indexing (`load_image_folder`), Prev/Next stepping, `open_image_path()` (the single "show and inspect this file" entry point)
+    ├── CameraMixin (mixins/camera_mixin.py)           — Live webcam preview on a QThread (`CameraWorker`), capture-then-inspect flow
     ├── HistoryMixin (mixins/history_mixin.py)         — CSV logging, animated counters/yield, history-row flash
     └── SettingsMixin (mixins/settings_mixin.py)       — Persist/restore settings.json on close
 ```
 
-**Layout** ("Clean Industrial Dashboard"): a top bar (branding, global TOTAL/PASS/FAIL/YIELD KPI strip, and file/zoom/theme actions) sits above a 3-column body — a collapsible 280px control panel (accordion sections: Inspection, Display, Reference Profile, Station & Model) on the left, the image viewport centered and dominant (with a floating PASS/FAIL verdict badge over its top-left corner and an on-demand history panel below it), and a 320px contextual panel on the right that's hidden until a detection is clicked. The native `QMainWindow` status bar carries short status text and per-run timing. `Display` toggles use the custom `ToggleSwitch` widget rather than checkboxes.
+**Layout** ("Clean Industrial Dashboard"): a top bar (branding, global TOTAL/PASS/FAIL/YIELD KPI strip, and file/zoom/theme actions) sits above a 3-column body — a collapsible 280px control panel (accordion sections: Inspection, Camera, Display, Reference Profile, Station & Model) on the left, the image viewport centered and dominant (with a slim browse bar above it — Open Folder, the open folder's name, and the ◀ *n / total* ▶ stepper — a floating PASS/FAIL verdict badge over its top-left corner, and an on-demand history panel below it), and a 320px contextual panel on the right that's hidden until a detection is clicked. The native `QMainWindow` status bar carries short status text and per-run timing. `Display` toggles use the custom `ToggleSwitch` widget rather than checkboxes.
 
 **Presentation / animation modules** (Qt stylesheets can't animate, so motion lives in Python):
 - `styles.py` — token-based light/dark design system (`get_stylesheet`, `tokens_for`, `reference_label_style`); dark theme is the slate-900/800/700 + blue-500 accent palette
@@ -62,7 +65,7 @@ DefectDetectionGUI (main_program/app/window.py)
 The YOLO backend is imported lazily; if `ultralytics` is unavailable the UI still launches in a degraded, view-only state instead of crashing.
 
 **Inspection data flow:**
-1. User loads image → `run_inference()` calls `model.predict()` → a clean base frame (`result.orig_img`, no baked-in ultralytics boxes/labels) plus a raw `detections` list (`x, y, label, conf, box`)
+1. User loads an image (file picker, 📁 folder picker, drag & drop of a file *or* a folder) or captures one from the Camera panel — `capture_and_inspect()` in `camera_mixin.py` grabs the live preview's latest frame, writes it to `main_program/captures/`, then feeds that path through the same path as a file selection. Every route funnels into `open_image_path()` in `browse_mixin.py`, which indexes the containing folder (natural filename order, non-recursive) so the browse bar's ◀ *n / total* ▶ stepper can walk the rest of it — each step is a full inspection that logs to history → `run_inference()` calls `model.predict()` → a clean base frame (`result.orig_img`, no baked-in ultralytics boxes/labels) plus a raw `detections` list (`x, y, label, conf, box`)
 2. `evaluate_inspection()` in `inspection_logic.py` matches detections to reference points (nearest-neighbor within `match_dist` pixels) → `{verdict, ok, missing, wrong, extra, reference_eval}`
 3. `_recompose_and_display()` in `inspection_mixin.py` layers the viewport image on every redraw (including selection changes, without re-running inference): `draw_detections_overlay()` — thin, semi-transparent, class-colored boxes (IC/connector-like classes blue, capacitor amber, resistor emerald, others slate) — then `draw_reference_overlay()` — small OK (emerald) / WRONG or MISSING (red) markers at reference points
 4. Clicking a detection box (`ReferenceLabel` → `select_detection_at()`, disabled while in edit mode) populates the right contextual panel (class, confidence, coordinates, status) via `detection_status_map()`

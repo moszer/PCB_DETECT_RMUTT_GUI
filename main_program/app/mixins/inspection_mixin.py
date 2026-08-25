@@ -78,10 +78,8 @@ class InspectionMixin:
         )
         if not file_path:
             return
-        self.current_image_path = file_path
-        self.zoom_factor = 1.0
-        self.update_zoom_display()
-        self.run_inference(file_path, record_history=True)
+        # Index the file's folder too, so Prev/Next works straight away.
+        self.open_image_path(file_path)
 
     def inspect_current_image(self):
         if not self.current_image_path:
@@ -99,6 +97,8 @@ class InspectionMixin:
         self.set_zoom(1.0, force=True)
 
     def set_zoom(self, factor, force=False):
+        if not self.current_image_pixmap:
+            return
         clamped = max(self.min_zoom_factor, min(self.max_zoom_factor, float(factor)))
         if (not force) and abs(clamped - self.zoom_factor) < 1e-6:
             return
@@ -225,6 +225,8 @@ class InspectionMixin:
     def _set_inference_busy(self, busy):
         self.btn_select.setEnabled(not busy)
         self.btn_reinspect.setEnabled(not busy and self.model is not None)
+        if hasattr(self, "update_nav_controls"):
+            self.update_nav_controls()
 
     def _repolish(self, widget, object_name):
         widget.setObjectName(object_name)
@@ -380,6 +382,8 @@ class InspectionMixin:
         # Drop the dashed empty-state border now that we have a real image.
         self.image_display.setText("")
         self.image_display.setStyleSheet("QLabel#imageDisplay { border: none; background: transparent; }")
+        if hasattr(self, "_update_zoom_controls_enabled"):
+            self._update_zoom_controls_enabled()
         self.scale_image_to_label()
 
     def scale_image_to_label(self):

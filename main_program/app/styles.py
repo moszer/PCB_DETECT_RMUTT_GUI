@@ -254,6 +254,25 @@ QLabel#zoomValue {{
     color: {accent};
 }}
 
+/* ── Folder browse bar (above the viewport) ── */
+QFrame#browseBar {{
+    background: {bg_card};
+    border: 1px solid {border};
+    border-radius: 12px;
+}}
+
+/* ── Folder position badge ── */
+QLabel#navValue {{
+    border: 1px solid {border};
+    border-radius: 10px;
+    background: {bg_card};
+    padding: 4px 6px;
+    min-width: 52px;
+    qproperty-alignment: AlignCenter;
+    font-weight: 800;
+    color: {text_muted};
+}}
+
 /* ── Inputs ── */
 QLineEdit, QComboBox, QSpinBox {{
     border: 1px solid {input_border};

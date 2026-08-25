@@ -1,10 +1,11 @@
 """Keyboard shortcuts, drag-and-drop, Ctrl+scroll zoom, and launch/theme fades."""
+import os
+
 from PyQt6.QtCore import Qt, QEvent
 from PyQt6.QtGui import QKeySequence, QShortcut
 
 from ..animations import fade_in
-
-_VALID_EXT = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+from ..utils import IMAGE_EXTENSIONS
 
 
 class InteractionMixin:
@@ -22,6 +23,11 @@ class InteractionMixin:
             return shortcut
 
         bind("Ctrl+O", self.select_image)
+        bind("Ctrl+Shift+O", self.select_folder)
+        bind("Ctrl+Right", self.show_next_image)
+        bind("Ctrl+Left", self.show_prev_image)
+        bind("PgDown", self.show_next_image)
+        bind("PgUp", self.show_prev_image)
         bind("Ctrl+R", self.inspect_current_image)
         bind("F5", self.inspect_current_image)
         bind("Ctrl+S", self.save_annotated_image)
@@ -40,6 +46,7 @@ class InteractionMixin:
             if (
                 event.type() == QEvent.Type.Wheel
                 and event.modifiers() & Qt.KeyboardModifier.ControlModifier
+                and self.current_image_pixmap
             ):
                 if event.angleDelta().y() > 0:
                     self.zoom_in()
@@ -52,7 +59,7 @@ class InteractionMixin:
                 self._sync_placeholder_size()
         return super().eventFilter(obj, event)
 
-    # ── Drag & drop an image onto the window ──
+    # ── Drag & drop an image (or a folder of images) onto the window ──
     def dragEnterEvent(self, event):
         if self._drop_path(event) is not None:
             event.acceptProposedAction()
@@ -65,10 +72,10 @@ class InteractionMixin:
             event.ignore()
             return
         event.acceptProposedAction()
-        self.current_image_path = path
-        self.zoom_factor = 1.0
-        self.update_zoom_display()
-        self.run_inference(path, record_history=True)
+        if os.path.isdir(path):
+            self.load_image_folder(path)
+        else:
+            self.open_image_path(path)
 
     def _drop_path(self, event):
         mime = event.mimeData()
@@ -76,7 +83,9 @@ class InteractionMixin:
             return None
         for url in mime.urls():
             local = url.toLocalFile()
-            if local and local.lower().endswith(_VALID_EXT):
+            if not local:
+                continue
+            if os.path.isdir(local) or local.lower().endswith(IMAGE_EXTENSIONS):
                 return local
         return None
 
