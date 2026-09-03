@@ -1,189 +1,163 @@
-# Defect Detection YOLO
+# PCB Defect Inspection Station (YOLO + PyQt6)
 
-A YOLO-based object detection project for PCB component and defect detection.
+A desktop **inspection station** for printed circuit boards. It runs a YOLO detector over a
+board image, matches what it found against a **reference profile** of expected components,
+and returns a **PASS / FAIL** verdict with the missing, wrong and extra parts listed.
 
-## 📁 Project Structure
-
-```
-defect detection yolo/
-├── train.py          # Training script
-├── test.py           # Inference/testing script
-├── prepare.py        # Data preparation script
-├── data.yaml         # Dataset configuration
-├── main_label/       # Dataset folder
-│   └── images/
-│       ├── train/
-│       └── val/
-└── trained/          # Output folder for trained models
-    ├── best.pt
-    ├── last.pt
-    ├── best.onnx
-    └── results.csv
-```
+Companion desktop app to [PCB_DETECT_RMUTT](https://github.com/moszer/PCB_DETECT_RMUTT).
+Undergraduate project at **RMUTT** (Rajamangala University of Technology Thanyaburi).
 
 ---
 
-## 🖥️ Local Setup
+## What it does
+
+Detection alone doesn't tell you whether a board is good. This app adds the comparison step:
+
+1. **Detect** — YOLO inference over the loaded image → raw detections (`x, y, label, conf, box`)
+2. **Match** — each reference point is greedily matched to its nearest unclaimed detection.
+   If that detection is within `match_dist` pixels **and** carries the right label, it's `OK`.
+   Right place but wrong class is reported as **`WRONG`**, not `MISSING` — a distinction that
+   matters when a board is populated but populated incorrectly.
+3. **Verdict** — `PASS` / `FAIL` plus `ok` / `missing` / `wrong` / `extra` lists
+4. **Log** — appended to `inspection_log.csv` (time, station, operator, verdict, counts)
+
+The reference profile lives in `Refs.json` as `{"x", "y", "label"}` points and is edited in
+the app by clicking on the board in edit mode.
+
+## Running
 
 ```bash
-# Install dependencies
-pip install ultralytics
-
-# Train model
-python3 train.py
-
-# Test on image
-python3 test.py
-
-# Real-time detection (Webcam)
-python3 camera.py
-
-# GUI Application (Select and Preview)
-python3 gui_test.py
+pip install -r requirements.txt
+python3 main_program/gui_test.py
 ```
+
+> `gui_test.py` is the **application entry point** despite the name — there is no automated
+> test suite in this repo; verification is manual against `test/pass.jpg` and `test/fail.png`.
+
+Other scripts:
+
+```bash
+python3 prepare.py    # split main_label/ into train/val (80/20, moves files in place)
+python3 train.py      # train (edit weights + hyperparams inside the script)
+python3 test.py       # single-image inference
+python3 camera.py     # standalone webcam detection
+```
+
+## Requirements
+
+Pinned to the tested Python 3.14 venv:
+
+`ultralytics==8.4.92` · `opencv-python==5.0.0.93` · `PyQt6==6.11.0` ·
+`torch==2.13.0` · `torchvision==0.28.0` · `numpy==2.5.1` · `pillow==12.3.0`
+
+The YOLO backend is imported **lazily** — if `ultralytics` is missing the UI still launches
+in a degraded view-only state instead of crashing.
 
 ---
 
-## ☁️ Google Colab Setup
+## The GUI
 
-### 1. Mount Google Drive
-```python
-from google.colab import drive
-drive.mount('/content/drive')
+A "Clean Industrial Dashboard" layout: a top bar carrying branding and a global
+**TOTAL / PASS / FAIL / YIELD** KPI strip, above a three-column body —
+
+- **left, 280px** — collapsible accordion: Inspection, Camera, Display, Reference Profile,
+  Station & Model
+- **center** — the image viewport, dominant, with a browse bar above it
+  (Open Folder · folder name · ◀ *n / total* ▶ stepper), a floating PASS/FAIL verdict badge,
+  and an on-demand history panel below
+- **right, 320px** — contextual detection panel, hidden until you click a box
+
+Images arrive by file picker, folder picker, drag & drop (file *or* folder), or a webcam
+capture — every route funnels through `open_image_path()`, which indexes the containing
+folder so the stepper can walk the rest of it, each step a full inspection.
+
+**Overlays** are recomposited on every redraw without re-running inference: thin,
+semi-transparent class-colored detection boxes (IC/connector blue, capacitor amber,
+resistor emerald, everything else slate) plus small OK / WRONG / MISSING markers at each
+reference point.
+
+**Tunable in the GUI:** confidence 1–100% (default 25%), match distance 5–250 px
+(default 50 px), fail-on-extra toggle, zoom 20–800%.
+
+### Architecture
+
+The main window is composed from mixins rather than one monolithic class:
+
+```
+DefectDetectionGUI              main_program/app/window.py
+├── InteractionMixin            shortcuts, drag & drop, Ctrl+scroll zoom, fades
+├── UIMixin                     builds top bar, panels, viewport, status bar
+├── ModelReferenceMixin         lazy YOLO load, Refs.json, undo/redo, toasts
+├── InspectionMixin             debounced inference, overlay compositing, verdict reveal
+├── BrowseMixin                 folder indexing, Prev/Next, open_image_path()
+├── CameraMixin                 threaded webcam preview, capture-then-inspect
+├── HistoryMixin                CSV logging, animated counters, yield
+└── SettingsMixin               persist/restore settings.json
 ```
 
-### 2. Change to project directory
-```python
-import os
-os.chdir('/content/drive/MyDrive/defect detection yolo')
+Qt stylesheets can't animate, so motion lives in Python:
+`styles.py` (token-based light/dark design system) ·
+`animations.py` (`fade_in`, `pulse_glow`, `animate_number`, `animate_bar`) ·
+`components.py` (custom-painted `YieldBar`, `BusyOverlay`, `CollapsibleCard`, `ToggleSwitch`) ·
+`toast.py` · `splash.py`
+
+`widgets.py` holds `ReferenceLabel`, a `QLabel` that maps click coordinates from displayed
+space back to original-image space across zoom levels — click-to-place reference points in
+edit mode, click-to-inspect a detection otherwise.
+
+The matching algorithm itself is isolated in `main_program/app/inspection_logic.py`:
+`evaluate_inspection()`, `draw_detections_overlay()`, `draw_reference_overlay()`,
+`detection_status_map()`.
+
+---
+
+## Dataset — 23 classes
+
+```
+ant  button  capacitor  capacitor_0  chip  connector  connector_0  connector_1
+connector_2  diode  hole  inductor  input  led  resistor  resistor_8  sdcard
+sot21  sot23  sot31  sot32  usb  xtal
 ```
 
-### 3. Install dependencies
-```python
-!pip install ultralytics
-```
+Labelled in Label Studio; `main_label/` holds the images and YOLO-format labels,
+`prepare.py` produces the 80/20 split.
 
-### 4. Update data.yaml path (if needed)
-```python
-# Edit data.yaml to use absolute path
-data_yaml = """
-path: /content/drive/MyDrive/defect detection yolo/main_label
+## Training
 
-train: images/train
-val: images/val
-
-nc: 23
-names:
-  - ant
-  - button
-  - capacitor
-  - capacitor_0
-  - chip
-  - connector
-  - connector_0
-  - connector_1
-  - connector_2
-  - diode
-  - hole
-  - inductor
-  - input
-  - led
-  - resistor
-  - resistor_8
-  - sdcard
-  - sot21
-  - sot23
-  - sot31
-  - sot32
-  - usb
-  - xtal
-"""
-
-with open('data.yaml', 'w') as f:
-    f.write(data_yaml)
-```
-
-### 5. Train with GPU (Best Settings)
 ```python
 from ultralytics import YOLO
 
 model = YOLO("yolo26x.pt")
-
-results = model.train(
-    data="data.yaml",
-    epochs=300,           # More epochs for better learning
-    imgsz=640,            # Image size
-    batch=16,             # Batch size (adjust based on GPU memory)
-    device=0,             # Use GPU
-    
-    # Optimizer settings
-    optimizer="AdamW",    # Best optimizer
-    lr0=0.001,            # Initial learning rate
-    lrf=0.01,             # Final learning rate factor
-    momentum=0.937,       # SGD momentum
-    weight_decay=0.0005,  # Weight decay
-    warmup_epochs=3,      # Warmup epochs
-    
-    # Data augmentation
-    hsv_h=0.015,          # Hue augmentation
-    hsv_s=0.7,            # Saturation augmentation
-    hsv_v=0.4,            # Value augmentation
-    degrees=10,           # Rotation degrees
-    translate=0.1,        # Translation
-    scale=0.5,            # Scale augmentation
-    shear=2.0,            # Shear augmentation
-    flipud=0.5,           # Flip up-down probability
-    fliplr=0.5,           # Flip left-right probability
-    mosaic=1.0,           # Mosaic augmentation
-    mixup=0.1,            # Mixup augmentation
-    
-    # Training options
-    cos_lr=True,          # Cosine learning rate scheduler
-    patience=50,          # Early stopping patience
-    save=True,            # Save checkpoints
-    save_period=10,       # Save every N epochs
-    val=True,             # Validate during training
-    plots=True,           # Generate plots
-    
-    # Performance
-    workers=8,            # Data loader workers
-    cache=True,           # Cache images in RAM for faster training
-    amp=True,             # Mixed precision training
+model.train(
+    data="data.yaml", epochs=300, imgsz=640, batch=16, device=0,
+    optimizer="AdamW", lr0=0.001, lrf=0.01, cos_lr=True, patience=50,
+    hsv_h=0.015, hsv_s=0.7, hsv_v=0.4, degrees=10, translate=0.1,
+    scale=0.5, shear=2.0, flipud=0.5, fliplr=0.5, mosaic=1.0, mixup=0.1,
+    cache=True, amp=True, workers=8, plots=True,
 )
-
-### 6. Test inference
-```python
-model = YOLO("trained/best.pt")
-results = model.predict(source="test_image.jpg", conf=0.25, save=True)
 ```
 
----
+On Colab, mount Drive, `os.chdir` into the project, `pip install ultralytics`, and rewrite
+`data.yaml` with an absolute `path:` before training.
 
-## 📊 Classes (23 total)
+> **The run committed in `trained/` is a smoke test, not the real model** — `args.yaml`
+> shows 10 epochs on `device: cpu` with `yolo26n.pt`, and `results.csv` reports mAP 0.0
+> throughout. Retrain before trusting any numbers from it. `trained/best.pt` and
+> `trained/last.pt` are Git LFS pointers; `trained/best.onnx` is the real exported graph.
 
-| ID | Class | ID | Class |
-|----|-------|----|----|
-| 0 | ant | 12 | input |
-| 1 | button | 13 | led |
-| 2 | capacitor | 14 | resistor |
-| 3 | capacitor_0 | 15 | resistor_8 |
-| 4 | chip | 16 | sdcard |
-| 5 | connector | 17 | sot21 |
-| 6 | connector_0 | 18 | sot23 |
-| 7 | connector_1 | 19 | sot31 |
-| 8 | connector_2 | 20 | sot32 |
-| 9 | diode | 21 | usb |
-| 10 | hole | 22 | xtal |
-| 11 | inductor | | |
+| Weights | Size | Speed | Accuracy |
+| --- | --- | --- | --- |
+| `yolo26n.pt` | Nano | Fastest | Lowest |
+| `yolo26s.pt` | Small | Fast | Low |
+| `yolo26m.pt` | Medium | Medium | Medium |
+| `yolo26l.pt` | Large | Slow | High |
+| `yolo26x.pt` | XLarge | Slowest | Highest |
 
----
+## Key files
 
-## 🚀 Model Variants
-
-| Model | Size | Speed | Accuracy |
-|-------|------|-------|----------|
-| yolo26n.pt | Nano | Fastest | Lowest |
-| yolo26s.pt | Small | Fast | Low |
-| yolo26m.pt | Medium | Medium | Medium |
-| yolo26l.pt | Large | Slow | High |
-| yolo26x.pt | XLarge | Slowest | Highest |
+| File | Role |
+| --- | --- |
+| `Refs.json` | Reference profile — expected components as `{x, y, label}` |
+| `data.yaml` | Dataset config, 23 classes |
+| `inspection_log.csv` | Generated inspection history |
+| `trained/best.onnx` | Exported model graph |
