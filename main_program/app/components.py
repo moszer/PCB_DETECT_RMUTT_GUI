@@ -40,6 +40,8 @@ class CollapsibleCard(QFrame):
         self.set_expanded(not self._expanded, animate=True)
 
     def set_expanded(self, expanded, animate=True):
+        if hasattr(self, "_anim"):
+            self._anim.stop()
         self._expanded = bool(expanded)
         self._update_header()
         if not animate:
@@ -59,7 +61,7 @@ class CollapsibleCard(QFrame):
 
     def _update_header(self):
         chevron = "▾" if self._expanded else "▸"
-        self._header.setText(f"{chevron}   {self._title.upper()}")
+        self._header.setText(f"{chevron}   {self._title.upper().replace("&", "&&")}")
 
 
 class YieldBar(QWidget):

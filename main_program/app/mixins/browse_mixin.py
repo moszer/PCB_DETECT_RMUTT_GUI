@@ -50,23 +50,27 @@ class BrowseMixin:
 
     def open_image_path(self, path, track_folder=True):
         """Single entry point for 'show and inspect this image file'."""
+        if getattr(self, "_inference_running", False) or getattr(self, "_camera_worker", None) is not None:
+            self.stats_label.setText("Finish the current inspection or stop the camera before opening an image.")
+            return
+        if self.history_panel.isVisible():
+            self.toggle_history_panel()
+        frame = cv2.imread(path)
+        if frame is None:
+            QMessageBox.warning(self, "Open image", "This image could not be read. Choose another image.")
+            return
         self.current_image_path = path
+        self._reset_result_summary(
+            "PENDING" if self.model else "VIEW ONLY",
+            os.path.basename(path),
+            "Analyzing the selected image…" if self.model else "Load a model in Station & model to inspect this image.",
+        )
+        self._base_frame = frame
         self.zoom_factor = 1.0
         self.update_zoom_display()
+        self.display_cv_image(frame)
         if track_folder:
             self.track_image_folder(path)
-        if not self.model:
-            # Degraded (view-only) mode: still show the image so stepping
-            # through a folder does something. run_inference() below then
-            # reports the missing model in the status bar.
-            frame = cv2.imread(path)
-            if frame is not None:
-                self._base_frame = frame
-                self._last_detections = []
-                self._detection_status = {}
-                self.last_inspection_result = None
-                self.selected_detection_index = None
-                self.display_cv_image(frame)
         self.run_inference(path, record_history=True)
 
     def track_image_folder(self, image_path):
@@ -154,7 +158,7 @@ class BrowseMixin:
             self.folder_name_label.setToolTip("")
         else:
             self.folder_name_label.setText(
-                f"📂  {os.path.basename(self.folder_path.rstrip(os.sep)) or self.folder_path}"
+                f"{os.path.basename(self.folder_path.rstrip(os.sep)) or self.folder_path}"
                 f"  ·  {total} images"
             )
             self.folder_name_label.setToolTip(self.folder_path)

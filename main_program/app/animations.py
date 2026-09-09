@@ -17,6 +17,9 @@ from PyQt6.QtWidgets import QGraphicsOpacityEffect, QGraphicsDropShadowEffect
 
 def fade_in(widget, duration=280, start=0.0, end=1.0, on_finished=None, clear_effect=True):
     """Fade a widget's opacity. Removes the effect when done so painting stays crisp."""
+    previous = getattr(widget, "_fade_anim", None)
+    if previous is not None:
+        previous.stop()
     effect = QGraphicsOpacityEffect(widget)
     widget.setGraphicsEffect(effect)
     anim = QPropertyAnimation(effect, b"opacity", widget)
@@ -39,6 +42,9 @@ def fade_in(widget, duration=280, start=0.0, end=1.0, on_finished=None, clear_ef
 
 def pulse_glow(widget, color, blur=46, cycles=2, duration=1500, on_finished=None):
     """Pulse a coloured glow around a widget (used to draw the eye to a FAIL)."""
+    previous = getattr(widget, "_glow_anim", None)
+    if previous is not None:
+        previous.stop()
     shadow = QGraphicsDropShadowEffect(widget)
     shadow.setOffset(0, 0)
     shadow.setColor(QColor(color))
@@ -76,6 +82,9 @@ def reveal_then_glow(widget, glow_color=None, duration=260):
 
 def animate_number(label, end_value, fmt="{}", duration=520, start_value=None):
     """Tween an integer displayed in a QLabel from its current value to end_value."""
+    previous = getattr(label, "_num_anim", None)
+    if previous is not None:
+        previous.stop()
     if start_value is None:
         start_value = getattr(label, "_num_value", 0)
     start_value = int(start_value)
@@ -101,8 +110,8 @@ def animate_number(label, end_value, fmt="{}", duration=520, start_value=None):
 class _BarValue(QObject):
     """Wrapper exposing an animatable float that redraws a progress bar."""
 
-    def __init__(self, apply_fn):
-        super().__init__()
+    def __init__(self, apply_fn, parent):
+        super().__init__(parent)
         self._value = 0.0
         self._apply = apply_fn
 
@@ -120,11 +129,14 @@ def animate_bar(holder_attr_owner, attr_name, apply_fn, end_ratio, duration=560)
     """Animate a 0..1 ratio, calling apply_fn(ratio) each step. Keeps the wrapper alive."""
     wrapper = getattr(holder_attr_owner, attr_name, None)
     if wrapper is None:
-        wrapper = _BarValue(apply_fn)
+        wrapper = _BarValue(apply_fn, holder_attr_owner)
         setattr(holder_attr_owner, attr_name, wrapper)
     else:
         wrapper._apply = apply_fn
 
+    previous = getattr(wrapper, "_anim", None)
+    if previous is not None:
+        previous.stop()
     start = wrapper.get_value()
     end_ratio = max(0.0, min(1.0, float(end_ratio)))
     anim = QPropertyAnimation(wrapper, b"value", wrapper)

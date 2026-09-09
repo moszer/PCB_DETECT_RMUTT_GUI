@@ -70,10 +70,11 @@ class SettingsMixin:
             self._current_theme = data["theme"]
             self._update_theme_button_text()
             self.apply_styles()
-        if "model_path" in data and data["model_path"]:
-            self.model_path_input.setText(data["model_path"])
-        if "ref_path" in data and data["ref_path"]:
-            self.ref_path_input.setText(data["ref_path"])
+        if data.get("model_path") and os.path.isfile(data["model_path"]):
+            if os.path.abspath(data["model_path"]) != os.path.abspath(self.current_model_path or self.default_model_path):
+                self.load_model(data["model_path"])
+        if data.get("ref_path") and os.path.isfile(data["ref_path"]):
+            self.load_reference_file(data["ref_path"], push_state=False, show_messages=False)
         # Only the dialog's starting directory is restored — no folder is
         # re-scanned or re-inspected on launch.
         folder = data.get("folder_path", "")
@@ -90,7 +91,7 @@ class SettingsMixin:
             if card is not None and name in cards:
                 card.set_expanded(bool(cards[name]), animate=False)
 
-        if "history_visible" in data and bool(data["history_visible"]) != self.history_panel.isVisible():
+        if "history_visible" in data and bool(data["history_visible"]) != (not self.history_panel.isHidden()):
             self.toggle_history_panel()
         if "left_panel_visible" in data:
             self.left_scroll.setVisible(bool(data["left_panel_visible"]))

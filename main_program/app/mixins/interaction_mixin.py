@@ -1,7 +1,7 @@
 """Keyboard shortcuts, drag-and-drop, Ctrl+scroll zoom, and launch/theme fades."""
 import os
 
-from PyQt6.QtCore import Qt, QEvent
+from PyQt6.QtCore import Qt, QEvent, QTimer
 from PyQt6.QtGui import QKeySequence, QShortcut
 
 from ..animations import fade_in
@@ -57,6 +57,8 @@ class InteractionMixin:
                 # Layout changes (e.g. collapsing the history card) resize the
                 # viewer without a window resize — keep the placeholder filling it.
                 self._sync_placeholder_size()
+                if self.current_image_pixmap:
+                    QTimer.singleShot(0, self.scale_image_to_label)
         return super().eventFilter(obj, event)
 
     # ── Drag & drop an image (or a folder of images) onto the window ──

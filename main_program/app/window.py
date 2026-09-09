@@ -28,8 +28,9 @@ class DefectDetectionGUI(
 ):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Defect Inspection Station")
-        self.setMinimumSize(1100, 700)
+        self.setWindowTitle("PCB Inspect · RMUTT")
+        self.setMinimumSize(1100, 760)
+        self.resize(1440, 900)
 
         self.script_root = os.path.dirname(os.path.abspath(__file__))
         self.main_program_root = os.path.abspath(os.path.join(self.script_root, ".."))

@@ -1,6 +1,27 @@
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QMouseEvent
-from PyQt6.QtWidgets import QLabel
+from PyQt6.QtCore import Qt, QRectF, QPointF
+from PyQt6.QtGui import QMouseEvent, QPainter, QColor, QPen, QFont, QPainterPath
+from PyQt6.QtWidgets import QLabel, QSizePolicy
+
+
+class ElidedLabel(QLabel):
+    """Keep full text available on hover without forcing the window wider."""
+
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self.setMinimumWidth(0)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setToolTip(text)
+
+    def setText(self, text):
+        super().setText(text)
+        self.setToolTip(text)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setFont(self.font())
+        painter.setPen(self.palette().color(self.foregroundRole()))
+        text = self.fontMetrics().elidedText(self.text(), Qt.TextElideMode.ElideMiddle, self.contentsRect().width())
+        painter.drawText(self.contentsRect(), self.alignment() | Qt.AlignmentFlag.AlignVCenter, text)
 
 
 class ReferenceLabel(QLabel):
@@ -8,12 +29,54 @@ class ReferenceLabel(QLabel):
         super().__init__(parent)
         self.parent_gui = parent
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setText(
-            "Load image to start inspection\n\n"
-            "Drag & drop an image here  ·  Ctrl+O\n"
-            "or start the camera from the left panel"
-        )
-        self.setStyleSheet("border: 2px dashed #b0b8c4; background-color: #f6f8fa; color: #4b5563; border-radius: 8px;")
+        self._tokens = {}
+        self.setAccessibleName("PCB inspection canvas. Drop an image or use Open image.")
+
+    def set_theme(self, tokens):
+        self._tokens = tokens
+        self.update()
+
+    def paintEvent(self, event):
+        if self.parent_gui and self.parent_gui.current_image_pixmap:
+            super().paintEvent(event)
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        clip = QPainterPath()
+        clip.addRoundedRect(QRectF(self.rect()), 9, 9)
+        p.setClipPath(clip)
+        p.fillRect(self.rect(), QColor("#101e2a"))
+        p.setPen(QPen(QColor("#243544"), 1))
+        for x in range(20, self.width(), 24):
+            for y in range(20, self.height(), 24):
+                p.drawPoint(x, y)
+        cx, cy = self.width() / 2, self.height() / 2 - 32
+        if self.height() >= 260:
+            p.setBrush(QColor("#132f38"))
+            p.setPen(QPen(QColor("#2b6267"), 1.5))
+            p.drawRoundedRect(QRectF(cx - 36, cy - 70, 72, 72), 18, 18)
+            p.setBrush(QColor("#173f45"))
+            p.setPen(QPen(QColor("#5ed4be"), 2))
+            p.drawRoundedRect(QRectF(cx - 15, cy - 49, 30, 30), 4, 4)
+            for offset in (-8, 0, 8):
+                p.drawLine(QPointF(cx + offset, cy - 56), QPointF(cx + offset, cy - 49))
+                p.drawLine(QPointF(cx + offset, cy - 19), QPointF(cx + offset, cy - 12))
+                p.drawLine(QPointF(cx - 22, cy - 34 + offset), QPointF(cx - 15, cy - 34 + offset))
+                p.drawLine(QPointF(cx + 15, cy - 34 + offset), QPointF(cx + 22, cy - 34 + offset))
+        font = QFont(self.font())
+        font.setPixelSize(23 if self.width() > 500 else 19)
+        font.setBold(True)
+        p.setFont(font)
+        p.setPen(QColor("#e8f0f6"))
+        p.drawText(QRectF(0, cy + 20, self.width(), 32), Qt.AlignmentFlag.AlignCenter, "Your next inspection starts here")
+        font.setPixelSize(12)
+        font.setBold(False)
+        p.setFont(font)
+        p.setPen(QColor("#9eb2c4"))
+        p.drawText(QRectF(0, cy + 62, self.width(), 22), Qt.AlignmentFlag.AlignCenter, "Drop a PCB image or folder into this workspace")
+        p.setPen(QColor("#66cdbd"))
+        p.drawText(QRectF(0, cy + 91, self.width(), 22), Qt.AlignmentFlag.AlignCenter, "Open image  ·  Ctrl+O     /     Camera source in setup")
+        p.end()
 
     def mousePressEvent(self, event: QMouseEvent):
         if not self.parent_gui or not self.parent_gui.current_image_pixmap:

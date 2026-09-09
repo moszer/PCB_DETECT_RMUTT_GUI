@@ -1,7 +1,7 @@
 _SHARED_BASE = """
 * {{
     font-family: 'SF Pro Display', 'SF Pro Text', 'Segoe UI', 'Inter', 'Helvetica Neue', Arial, sans-serif;
-    outline: none;
+
 }}
 QMainWindow, QWidget#rootWidget {{
     background-color: {bg_main};
@@ -25,8 +25,8 @@ QWidget#topBar {{
     border-radius: 14px;
 }}
 QLabel#appTitle {{
-    font-size: 19px;
-    font-weight: 800;
+    font-size: 17px;
+    font-weight: 600;
     color: {text_heading};
     letter-spacing: -0.4px;
 }}
@@ -69,8 +69,8 @@ QGroupBox#panelGroup::title {{
     padding: 2px 8px;
     color: {text_muted};
     font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 1.2px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
     background: transparent;
 }}
 
@@ -86,10 +86,10 @@ QPushButton#collapseHeader {{
     border-radius: 12px;
     color: {text_muted};
     font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 1.2px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
     text-align: left;
-    padding: 11px 14px 9px 14px;
+    padding: 14px 12px;
     min-height: 0px;
 }}
 QPushButton#collapseHeader:hover {{
@@ -121,26 +121,26 @@ QLabel#fieldLabel {{
 QFrame#verdictCard {{
     border-radius: 16px;
     border: 1px solid {border};
-    background: {badge_bg};
+    background: {bg_card};
 }}
 QFrame#verdictCardPass {{
     border-radius: 16px;
     border: 1px solid {pass_border};
-    background: {badge_pass_bg};
+    background: {pass_soft};
 }}
 QFrame#verdictCardFail {{
     border-radius: 16px;
     border: 1px solid {fail_border};
-    background: {badge_fail_bg};
+    background: {fail_soft};
 }}
 QLabel#verdictBig {{
-    font-size: 34px;
-    font-weight: 900;
+    font-size: 25px;
+    font-weight: 700;
     letter-spacing: 1px;
     color: {text_muted};
 }}
-QLabel#verdictBigPass {{ font-size: 34px; font-weight: 900; letter-spacing: 1px; color: {pass_strong}; }}
-QLabel#verdictBigFail {{ font-size: 34px; font-weight: 900; letter-spacing: 1px; color: {fail_strong}; }}
+QLabel#verdictBigPass {{ font-size: 25px; font-weight: 700; letter-spacing: 1px; color: {pass_strong}; }}
+QLabel#verdictBigFail {{ font-size: 25px; font-weight: 700; letter-spacing: 1px; color: {fail_strong}; }}
 QLabel#verdictReason {{
     font-size: 12px;
     font-weight: 600;
@@ -157,7 +157,7 @@ QLabel#pillOk, QLabel#pillMiss, QLabel#pillWrong, QLabel#pillExtra, QLabel#pillE
     border-radius: 9px;
     padding: 6px 4px;
     font-size: 12px;
-    font-weight: 800;
+    font-weight: 600;
     qproperty-alignment: AlignCenter;
 }}
 QLabel#pillExpect {{ background: {chip_bg}; color: {text_secondary}; }}
@@ -173,11 +173,11 @@ QFrame#statCard {{
     border: 1px solid {border};
     background: {bg_card};
 }}
-QLabel#statValue {{ font-size: 26px; font-weight: 900; color: {text_heading}; }}
-QLabel#statValuePass {{ font-size: 26px; font-weight: 900; color: {pass_strong}; }}
-QLabel#statValueFail {{ font-size: 26px; font-weight: 900; color: {fail_strong}; }}
-QLabel#statValueAccent {{ font-size: 26px; font-weight: 900; color: {accent}; }}
-QLabel#statLabel {{ font-size: 10px; font-weight: 800; letter-spacing: 1px; color: {text_muted}; }}
+QLabel#statValue {{ font-size: 26px; font-weight: 700; color: {text_heading}; }}
+QLabel#statValuePass {{ font-size: 26px; font-weight: 700; color: {pass_strong}; }}
+QLabel#statValueFail {{ font-size: 26px; font-weight: 700; color: {fail_strong}; }}
+QLabel#statValueAccent {{ font-size: 26px; font-weight: 700; color: {accent}; }}
+QLabel#statLabel {{ font-size: 10px; font-weight: 600; letter-spacing: 1px; color: {text_muted}; }}
 
 /* ── Buttons ── */
 QPushButton {{
@@ -187,7 +187,7 @@ QPushButton {{
     color: {text_primary};
     padding: 8px 14px;
     font-weight: 600;
-    min-height: 34px;
+    min-height: 20px;
 }}
 QPushButton:hover {{
     background: {btn_hover};
@@ -210,9 +210,9 @@ QPushButton#primaryBtn {{
     background: {accent};
     color: #ffffff;
     border: 1px solid {accent_dark};
-    font-weight: 800;
+    font-weight: 600;
     font-size: 14px;
-    min-height: 44px;
+    min-height: 20px;
 }}
 QPushButton#primaryBtn:hover {{ background: {accent_dark}; border-color: {accent_dark}; }}
 QPushButton#primaryBtn:pressed {{ background: {accent_darker}; }}
@@ -221,7 +221,7 @@ QPushButton#ghostBtn {{
     background: transparent;
     border: 1px solid {border};
     color: {text_secondary};
-    min-height: 30px;
+    min-height: 20px;
     padding: 6px 12px;
 }}
 QPushButton#ghostBtn:hover {{ background: {btn_hover}; color: {text_primary}; border-color: {accent}; }}
@@ -236,7 +236,7 @@ QPushButton#iconBtn {{
     border: 1px solid {border};
     border-radius: 10px;
     min-width: 32px;
-    min-height: 34px;
+    min-height: 20px;
     padding: 4px 8px;
     font-weight: 700;
 }}
@@ -250,7 +250,7 @@ QLabel#zoomValue {{
     padding: 4px 6px;
     min-width: 40px;
     qproperty-alignment: AlignCenter;
-    font-weight: 800;
+    font-weight: 600;
     color: {accent};
 }}
 
@@ -269,7 +269,7 @@ QLabel#navValue {{
     padding: 4px 6px;
     min-width: 52px;
     qproperty-alignment: AlignCenter;
-    font-weight: 800;
+    font-weight: 600;
     color: {text_muted};
 }}
 
@@ -282,7 +282,7 @@ QLineEdit, QComboBox, QSpinBox {{
     color: {text_primary};
     selection-color: #ffffff;
     selection-background-color: {accent};
-    min-height: 30px;
+    min-height: 20px;
 }}
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus {{
     border-color: {accent};
@@ -412,7 +412,7 @@ QHeaderView::section {{
     border: none;
     border-bottom: 2px solid {table_grid};
     padding: 9px 6px;
-    font-weight: 800;
+    font-weight: 600;
     font-size: 11px;
     letter-spacing: 0.4px;
     color: {text_muted};
@@ -434,15 +434,15 @@ QFrame#rightPanel {{
 }}
 QLabel#rightPanelTitle {{
     font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 1.2px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
     color: {text_muted};
 }}
 QPushButton#panelCloseBtn {{
     background: transparent;
     border: none;
     color: {text_muted};
-    font-weight: 800;
+    font-weight: 600;
     min-height: 24px;
     min-width: 24px;
     padding: 0px;
@@ -451,13 +451,13 @@ QPushButton#panelCloseBtn:hover {{ color: {fail_strong}; }}
 QLabel#detailLabel {{
     color: {text_muted};
     font-size: 10px;
-    font-weight: 800;
+    font-weight: 600;
     letter-spacing: 0.8px;
 }}
 QLabel#detailValue {{
     color: {text_heading};
     font-size: 15px;
-    font-weight: 800;
+    font-weight: 600;
 }}
 
 /* ── Toggleable history panel ── */
@@ -492,18 +492,48 @@ QLabel#statusBarText {{
     font-size: 11px;
     font-weight: 600;
 }}
+/* Workspace hierarchy and consistent 36–40 px interaction targets. */
+QFrame#topBar {{ background: #122733; border: 1px solid #1d3947; border-radius: 12px; }}
+QFrame#topBar QLabel#appTitle {{ color: #f1f6fa; letter-spacing: 1px; }}
+QFrame#topBar QLabel#appSubtitle {{ color: #aac0cb; }}
+QFrame#topBar QPushButton#ghostBtn, QFrame#topBar QPushButton#iconBtn {{
+    background: #1b3542; color: #dce8ef; border-color: #34505e;
+}}
+QFrame#topBar QPushButton:hover {{ border-color: #64d3c0; }}
+QFrame#topBar QPushButton#ghostBtn:checked {{ background: #087f75; color: white; }}
+QLabel#modelBadge {{ color: #b5c7d0; font-size: 11px; padding: 6px 12px; }}
+QLabel#modelBadge[ready="true"] {{ color: #70dec1; }}
+QLabel#eyebrow {{ color: {text_heading}; font-size: 11px; font-weight: 700; letter-spacing: 1px; padding-left: 3px; }}
+QLabel#sidebarFootnote {{ color: {text_muted}; font-size: 10px; padding: 12px 4px 0px 4px; }}
+QLabel#metricHint {{ color: {text_muted}; font-size: 10px; }}
+QLabel#workspaceTitle {{ color: {text_heading}; font-weight: 700; font-size: 15px; }}
+QFrame#statCard {{ border-radius: 10px; }}
+QPushButton {{ border-radius: 7px; padding: 7px 12px; }}
+QPushButton#primaryBtn {{ border-radius: 7px; padding: 9px 16px; font-size: 13px; }}
+QPushButton#ghostBtn {{ border-radius: 7px; padding: 6px 10px; }}
+QPushButton#iconBtn {{ border-radius: 7px; min-width: 20px; padding: 6px 8px; }}
+QPushButton:focus {{ border: 2px solid {accent}; }}
+QPushButton#ghostBtn:disabled, QPushButton#iconBtn:disabled {{ color: {text_disabled}; background: {bg_readonly}; border-color: {border}; }}
+QPushButton#ghostBtn:checked, QPushButton#iconBtn:checked {{ background: {accent}; color: #ffffff; }}
+QLineEdit, QComboBox, QSpinBox {{ border-radius: 7px; padding: 6px 8px; }}
+QLabel#zoomValue, QLabel#navValue {{ border: none; background: transparent; border-radius: 0px; }}
+QLabel#pillOk, QLabel#pillMiss, QLabel#pillWrong, QLabel#pillExtra, QLabel#pillExpect {{ min-width: 38px; font-size: 17px; padding: 6px 5px; }}
+QLabel#pillCap {{ font-size: 9px; letter-spacing: 0px; }}
+QScrollArea#imageScroll {{ border: 1px solid #263b49; border-radius: 10px; }}
+QStatusBar {{ min-height: 28px; }}
+
 """
 
 LIGHT_TOKENS = dict(
-    bg_main="#eaeef4",
-    bg_panel="#f6f8fb",
+    bg_main="#eef2f5",
+    bg_panel="#f8fafb",
     bg_card="#ffffff",
     bg_elevated="#ffffff",
     bg_topbar="#ffffff",
     bg_status="#f1f5f9",
     bg_readonly="#f1f4f9",
-    bg_image_area="#f4f7fb",
-    logo_bg="#eef2ff",
+    bg_image_area="#101e2a",
+    logo_bg="#ffffff",
     border="#dde3ec",
     btn_border="#cdd6e2",
     btn_bg="#ffffff",
@@ -514,11 +544,11 @@ LIGHT_TOKENS = dict(
     text_primary="#1e293b",
     text_secondary="#475569",
     text_heading="#0f172a",
-    text_muted="#94a3b8",
+    text_muted="#637587",
     text_disabled="#a9b4c2",
-    accent="#4f46e5",
-    accent_dark="#4338ca",
-    accent_darker="#3730a3",
+    accent="#087f75",
+    accent_dark="#06695f",
+    accent_darker="#07574f",
     pass_strong="#059669",
     pass_soft="#e7f7ef",
     pass_border="#a7e3c8",
@@ -538,7 +568,7 @@ LIGHT_TOKENS = dict(
     table_grid="#eef2f7",
     table_alt="#f8fafc",
     table_header_bg="#f4f7fb",
-    row_selected="#e6e9fb",
+    row_selected="#dff1ed",
     toggle_track_off="#cbd5e1",
     badge_bg="rgba(255, 255, 255, 0.86)",
     badge_pass_bg="rgba(226, 248, 238, 0.88)",
@@ -554,7 +584,7 @@ DARK_TOKENS = dict(
     bg_topbar="#1e293b",
     bg_status="#1e293b",
     bg_readonly="#17202f",
-    bg_image_area="#0b1220",
+    bg_image_area="#101e2a",
     logo_bg="#1e293b",
     border="#334155",
     btn_border="#334155",
@@ -566,11 +596,11 @@ DARK_TOKENS = dict(
     text_primary="#f1f5f9",
     text_secondary="#94a3b8",
     text_heading="#f8fafc",
-    text_muted="#64748b",
+    text_muted="#9aacc0",
     text_disabled="#475569",
-    accent="#3b82f6",
-    accent_dark="#2563eb",
-    accent_darker="#1d4ed8",
+    accent="#16a394",
+    accent_dark="#128577",
+    accent_darker="#08756a",
     pass_strong="#10b981",
     pass_soft="#0f2a22",
     pass_border="#155e46",

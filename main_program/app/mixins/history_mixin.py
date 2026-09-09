@@ -2,6 +2,7 @@ import csv
 import datetime as dt
 import os
 
+from PyQt6 import sip
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor, QBrush
 from PyQt6.QtWidgets import QFileDialog, QMessageBox, QTableWidgetItem
@@ -62,6 +63,7 @@ class HistoryMixin:
         }
         self.history_rows.insert(0, row)
         self.insert_history_row(row)
+        self._update_action_buttons()
 
         if self.history_table.rowCount() > 300:
             self.history_table.removeRow(self.history_table.rowCount() - 1)
@@ -71,6 +73,8 @@ class HistoryMixin:
             self.append_to_log_file(row)
 
     def insert_history_row(self, row):
+        self.history_empty.hide()
+        self.history_table.show()
         tokens = tokens_for(getattr(self, "_current_theme", "light"))
         self.history_table.insertRow(0)
         values = [
@@ -112,10 +116,14 @@ class HistoryMixin:
 
         def _clear():
             for item in items:
-                if item is not None:
+                if item is not None and not sip.isdeleted(item):
                     item.setBackground(QBrush())
 
-        QTimer.singleShot(650, _clear)
+        timer = QTimer(self.history_table)
+        timer.setSingleShot(True)
+        timer.timeout.connect(_clear)
+        timer.timeout.connect(timer.deleteLater)
+        timer.start(650)
 
     def append_to_log_file(self, row):
         write_header = not os.path.exists(self.default_log_path)

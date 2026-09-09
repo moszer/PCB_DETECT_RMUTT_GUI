@@ -11,7 +11,7 @@ from ..inspection_logic import (
     detection_status_map,
     evaluate_inspection,
 )
-from ..animations import fade_in, pulse_glow
+from ..animations import fade_in
 from ..styles import tokens_for
 
 
@@ -205,6 +205,8 @@ class InspectionMixin:
             self.update_production_counters(inspection_result)
             self.append_history(image_path, inspection_result)
 
+        self._update_action_buttons()
+
         # Run any request that arrived while this inference was in flight.
         pending = getattr(self, "_pending_inference", None)
         if pending is not None:
@@ -218,13 +220,14 @@ class InspectionMixin:
         if hasattr(self, "busy_overlay"):
             self.busy_overlay.stop()
         self._pending_inference = None
+        self.stats_label.setText("Inspection failed. Check the model and source image, then try again.")
+        self._reset_result_summary("ERROR", "Inspection failed", "Check the model and source image, then try again.")
         if hasattr(self, "toasts"):
             self.toasts.show("Inference failed", "error")
         QMessageBox.critical(self, "Inference Error", message)
 
     def _set_inference_busy(self, busy):
-        self.btn_select.setEnabled(not busy)
-        self.btn_reinspect.setEnabled(not busy and self.model is not None)
+        self._update_action_buttons()
         if hasattr(self, "update_nav_controls"):
             self.update_nav_controls()
 
@@ -235,10 +238,8 @@ class InspectionMixin:
         widget.update()
 
     def update_result_panel(self, inspection_result, image_path):
-        # There's a result now, so the badge earns its place over the viewport.
-        # Must precede _animate_verdict() below: fade_in() animates an opacity
-        # effect, which would run invisibly on a still-hidden widget.
-        self.verdict_card.setVisible(True)
+        # Result summary lives below the canvas and never covers the board.
+        self.verdict_card.setVisible(not self.history_panel.isVisible())
 
         verdict = inspection_result["verdict"]
         if verdict == "PASS":
@@ -269,20 +270,12 @@ class InspectionMixin:
         # Kept short — the full OK/Missing/Wrong/Extra breakdown already lives in
         # the verdict badge's pill row, no need to repeat it in the status bar.
         self.stats_label.setText(f"Inspection complete  ·  {verdict}  ·  {image_name}")
+        self._update_action_buttons()
         self._animate_verdict(verdict)
 
     def _animate_verdict(self, verdict):
-        tokens = tokens_for(getattr(self, "_current_theme", "light"))
-        if verdict == "FAIL":
-            fade_in(self.verdict_card, duration=220,
-                    on_finished=lambda: pulse_glow(self.verdict_label, tokens["fail_strong"],
-                                                   blur=40, cycles=2))
-        elif verdict == "PASS":
-            fade_in(self.verdict_card, duration=220,
-                    on_finished=lambda: pulse_glow(self.verdict_label, tokens["pass_strong"],
-                                                   blur=30, cycles=1, duration=900))
-        else:
-            fade_in(self.verdict_card, duration=220)
+        # Keep the verdict legible; a short entrance is sufficient feedback.
+        fade_in(self.verdict_card, duration=180)
 
     def _recompose_and_display(self):
         """Redraw the viewport's overlay layers (class-colored detection boxes,
@@ -376,6 +369,9 @@ class InspectionMixin:
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, channels = rgb_frame.shape
         self.original_image_size = (w, h)
+        live = getattr(self, "_camera_worker", None) is not None
+        name = "Live camera" if live else os.path.basename(self.current_image_path or "Image")
+        self.canvas_hint.setText(f"{name}  ·  {w} × {h} px")
         bytes_per_line = channels * w
         image = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
         self.current_image_pixmap = QPixmap.fromImage(image)
@@ -385,6 +381,7 @@ class InspectionMixin:
         if hasattr(self, "_update_zoom_controls_enabled"):
             self._update_zoom_controls_enabled()
         self.scale_image_to_label()
+        self._update_action_buttons()
 
     def scale_image_to_label(self):
         if not self.current_image_pixmap:

@@ -46,6 +46,11 @@ class CameraMixin:
             self.start_camera()
 
     def start_camera(self):
+        if getattr(self, "_inference_running", False):
+            return
+        if self.history_panel.isVisible():
+            self.toggle_history_panel()
+        self._reset_result_summary("LIVE", "Camera preview", "Capture a frame to inspect this board.")
         index = self.camera_index_spin.value()
         worker = CameraWorker(index)
         worker.frame_ready.connect(self._on_camera_frame)
@@ -61,6 +66,7 @@ class CameraMixin:
         self.camera_index_spin.setEnabled(False)
         self.update_nav_controls()
         self.camera_status.setText(f"Camera: live (index {index})")
+        self._update_action_buttons()
         self.stats_label.setText("Camera live — click Capture & Inspect to run inspection.")
 
     def stop_camera(self):
@@ -80,6 +86,7 @@ class CameraMixin:
         self.camera_index_spin.setEnabled(True)
         self.update_nav_controls()
         self.camera_status.setText("Camera: idle")
+        self._update_action_buttons()
 
     def _on_camera_frame(self, frame):
         self._camera_latest_frame = frame

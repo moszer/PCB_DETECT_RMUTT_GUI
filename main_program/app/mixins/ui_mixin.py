@@ -1,7 +1,7 @@
 import os
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFontMetrics, QPixmap
+from PyQt6.QtGui import QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -22,16 +22,12 @@ from PyQt6.QtWidgets import (
 )
 
 from ..styles import get_stylesheet, reference_label_style, tokens_for
-from ..widgets import ReferenceLabel
+from ..widgets import ReferenceLabel, ElidedLabel
 from ..components import YieldBar, BusyOverlay, CollapsibleCard, ToggleSwitch
 
 
 class UIMixin:
-    """Clean Industrial Dashboard layout: a 64px-ish top bar (branding, KPIs,
-    actions), a 280px collapsible control panel, a center viewport (the image
-    is the dominant element) with a floating verdict badge and an on-demand
-    history panel, a 320px contextual panel for the selected component, and
-    the native QMainWindow status bar for timing/status text."""
+    """Inspection workspace with dedicated command, metric and canvas regions."""
 
     def init_ui(self):
         self._toggle_switches = []
@@ -41,11 +37,13 @@ class UIMixin:
         self.setCentralWidget(self.main_widget)
 
         outer = QVBoxLayout(self.main_widget)
-        outer.setContentsMargins(14, 14, 14, 14)
+        outer.setContentsMargins(20, 16, 20, 12)
         outer.setSpacing(12)
 
         self.build_topbar()
         outer.addWidget(self.topbar)
+        self.build_metrics_strip()
+        outer.addWidget(self.metrics_strip)
 
         body = QHBoxLayout()
         body.setSpacing(14)
@@ -67,144 +65,101 @@ class UIMixin:
         self.apply_responsive_layout()
 
     def apply_responsive_layout(self):
-        """Scale the side panels and history panel with the window size instead
-        of leaving them pinned to fixed pixel dimensions. Floors match the
-        narrowest size the sidebar's button rows are verified to fit at."""
+        """Keep setup and component details compact while prioritizing the canvas."""
         width = self.width()
-        height = self.height()
 
         if width > 0 and hasattr(self, "left_scroll"):
-            self.left_scroll.setFixedWidth(max(300, min(380, round(width * 0.20))))
+            self.left_scroll.setFixedWidth(max(280, min(320, round(width * 0.21))))
 
         if width > 0 and hasattr(self, "right_panel"):
-            self.right_panel.setFixedWidth(max(300, min(400, round(width * 0.22))))
+            self.right_panel.setFixedWidth(max(248, min(300, round(width * 0.20))))
 
-        if height > 0 and hasattr(self, "history_panel"):
-            self.history_panel.setMaximumHeight(max(200, min(420, round(height * 0.30))))
 
     # ────────────────────────────────────────────────────────── top bar
     def build_topbar(self):
-        bar = QFrame()
-        bar.setObjectName("topBar")
-        bar.setFixedHeight(70)
-        row = QHBoxLayout(bar)
-        row.setContentsMargins(10, 6, 10, 6)
-        row.setSpacing(8)
-        self.topbar = bar
-
+        self.topbar = QFrame()
+        self.topbar.setObjectName("topBar")
+        self.topbar.setFixedHeight(68)
+        row = QHBoxLayout(self.topbar)
+        row.setContentsMargins(16, 8, 16, 8)
+        row.setSpacing(10)
         self.btn_toggle_left = QPushButton("☰")
         self.btn_toggle_left.setObjectName("iconBtn")
-        self.btn_toggle_left.setToolTip("Show / hide the control panel")
+        self.btn_toggle_left.setToolTip("Show / hide inspection setup")
+        self.btn_toggle_left.setAccessibleName("Toggle inspection setup")
         self.btn_toggle_left.clicked.connect(self.toggle_left_panel)
         row.addWidget(self.btn_toggle_left)
-
         self.logo_label = QLabel()
         self.logo_label.setObjectName("appLogo")
-        self.logo_label.setFixedSize(40, 40)
+        self.logo_label.setFixedSize(40, 44)
         self.logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._load_logo()
-
-        title_col = QVBoxLayout()
-        title_col.setSpacing(1)
-        title = QLabel("Defect Inspection Station")
-        title.setObjectName("appTitle")
-        self.topbar_subtitle = QLabel("PCB component verification")
-        self.topbar_subtitle.setObjectName("appSubtitle")
-        title_col.addWidget(title)
-        title_col.addWidget(self.topbar_subtitle)
-
         row.addWidget(self.logo_label)
-        row.addLayout(title_col)
-        row.addSpacing(6)
-        row.addWidget(self._vline())
-
-        # KPI strip — global production stats, single source of truth (not
-        # repeated elsewhere in the UI). Wrapped in its own card so the numbers
-        # read as one grouped stat cluster instead of loose floating text.
-        stat_card = QFrame()
-        stat_card.setObjectName("statCard")
-        stat_row = QHBoxLayout(stat_card)
-        stat_row.setContentsMargins(10, 4, 10, 4)
-        stat_row.setSpacing(9)
-
-        block, self.total_label = self._stat_block("TOTAL", "statValueAccent")
-        stat_row.addWidget(block)
-        stat_row.addWidget(self._vline())
-        block, self.pass_label = self._stat_block("PASS", "statValuePass")
-        stat_row.addWidget(block)
-        stat_row.addWidget(self._vline())
-        block, self.fail_label = self._stat_block("FAIL", "statValueFail")
-        stat_row.addWidget(block)
-        stat_row.addWidget(self._vline())
-        yield_block, self.yield_value = self._stat_block("YIELD", "statValue")
-        self.yield_bar = YieldBar()
-        self.yield_bar.setFixedWidth(60)
-        yield_block.layout().insertWidget(2, self.yield_bar)
-        self.yield_value.setText("—")
-        stat_row.addWidget(yield_block)
-
-        row.addWidget(stat_card)
-        row.addStretch()
-
-        self.btn_select = QPushButton("Select")
-        self.btn_select.setObjectName("primaryBtn")
-        self.btn_select.setToolTip("Open an inspection image  (Ctrl+O)")
-        self.btn_select.clicked.connect(self.select_image)
-        row.addWidget(self.btn_select)
-
-        self.btn_reinspect = QPushButton("↻")
-        self.btn_reinspect.setObjectName("iconBtn")
-        self.btn_reinspect.setToolTip("Re-run inspection on the current image  (Ctrl+R)")
-        self.btn_reinspect.clicked.connect(self.inspect_current_image)
-        row.addWidget(self.btn_reinspect)
-
-        self.btn_save_annotated = QPushButton("⤓")
-        self.btn_save_annotated.setObjectName("iconBtn")
-        self.btn_save_annotated.setToolTip("Save the annotated image  (Ctrl+S)")
-        self.btn_save_annotated.clicked.connect(self.save_annotated_image)
-        row.addWidget(self.btn_save_annotated)
-
-        self.btn_export_history = QPushButton("CSV")
-        self.btn_export_history.setObjectName("iconBtn")
-        self.btn_export_history.setToolTip("Export inspection history to CSV")
-        self.btn_export_history.clicked.connect(self.export_history_csv)
-        row.addWidget(self.btn_export_history)
-
+        titles = QVBoxLayout()
+        titles.setSpacing(2)
+        title = QLabel("PCB INSPECT  /  RMUTT")
+        title.setObjectName("appTitle")
+        self.topbar_subtitle = ElidedLabel("PCB component verification")
+        self.topbar_subtitle.setObjectName("appSubtitle")
+        titles.addWidget(title)
+        titles.addWidget(self.topbar_subtitle)
+        row.addLayout(titles, 1)
+        self.model_badge = QLabel("●  Model offline")
+        self.model_badge.setObjectName("modelBadge")
+        row.addWidget(self.model_badge)
         self.btn_toggle_history = QPushButton("History")
-        self.btn_toggle_history.setObjectName("iconBtn")
+        self.btn_toggle_history.setObjectName("ghostBtn")
         self.btn_toggle_history.setCheckable(True)
-        self.btn_toggle_history.setToolTip("Show / hide inspection history")
         self.btn_toggle_history.clicked.connect(self.toggle_history_panel)
         row.addWidget(self.btn_toggle_history)
-
-        row.addWidget(self._vline())
-
         self.btn_theme_toggle = QPushButton()
-        self.btn_theme_toggle.setObjectName("iconBtn")
-        self.btn_theme_toggle.setToolTip("Toggle Dark / Light Mode  (Ctrl+D)")
+        self.btn_theme_toggle.setObjectName("ghostBtn")
+        self.btn_theme_toggle.setToolTip("Switch appearance  (Ctrl+D)")
         self.btn_theme_toggle.clicked.connect(self.toggle_theme)
         self._update_theme_button_text()
         row.addWidget(self.btn_theme_toggle)
+        self.btn_select = QPushButton("＋  Open image")
+        self.btn_select.setObjectName("primaryBtn")
+        self.btn_select.setToolTip("Open an image and inspect it  (Ctrl+O)")
+        self.btn_select.clicked.connect(self.select_image)
+        row.addWidget(self.btn_select)
 
-        self.zoom_value_label = QLabel("100%")
-        self.zoom_value_label.setObjectName("zoomValue")
-        self.btn_zoom_out = QPushButton("－")
-        self.btn_zoom_out.setObjectName("iconBtn")
-        self.btn_zoom_out.setToolTip("Zoom out  (Ctrl+-)")
-        self.btn_zoom_out.clicked.connect(self.zoom_out)
-        self.btn_zoom_fit = QPushButton("Fit")
-        self.btn_zoom_fit.setObjectName("iconBtn")
-        self.btn_zoom_fit.setToolTip("Fit to view  (Ctrl+0)")
-        self.btn_zoom_fit.clicked.connect(self.zoom_fit)
-        self.btn_zoom_in = QPushButton("＋")
-        self.btn_zoom_in.setObjectName("iconBtn")
-        self.btn_zoom_in.setToolTip("Zoom in  (Ctrl++)")
-        self.btn_zoom_in.clicked.connect(self.zoom_in)
-
-        row.addWidget(self.btn_zoom_out)
-        row.addWidget(self.zoom_value_label)
-        row.addWidget(self.btn_zoom_in)
-        row.addWidget(self.btn_zoom_fit)
+    def build_metrics_strip(self):
+        self.metrics_strip = QWidget()
+        row = QHBoxLayout(self.metrics_strip)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(12)
+        specs = [
+            ("INSPECTED", "total_label", "statValueAccent", "This session"),
+            ("PASSED", "pass_label", "statValuePass", "Meets reference profile"),
+            ("REJECTED", "fail_label", "statValueFail", "Requires review"),
+            ("PASS YIELD", "yield_value", "statValue", "Passed / inspected"),
+        ]
+        for caption, attr, style, hint in specs:
+            card = QFrame()
+            card.setObjectName("statCard")
+            card.setFixedHeight(86)
+            layout = QVBoxLayout(card)
+            layout.setContentsMargins(16, 10, 16, 10)
+            layout.setSpacing(2)
+            cap = QLabel(caption)
+            cap.setObjectName("statLabel")
+            layout.addWidget(cap)
+            values = QHBoxLayout()
+            value = QLabel("—" if attr == "yield_value" else "0")
+            value.setObjectName(style)
+            setattr(self, attr, value)
+            values.addWidget(value)
+            values.addStretch()
+            if attr == "yield_value":
+                self.yield_bar = YieldBar()
+                self.yield_bar.setFixedWidth(72)
+                values.addWidget(self.yield_bar)
+            layout.addLayout(values)
+            subtitle = QLabel(hint)
+            subtitle.setObjectName("metricHint")
+            layout.addWidget(subtitle)
+            row.addWidget(card, 1)
 
     # ────────────────────────────────────────────────────────── left control panel
     def _sidebar_card(self, title, expanded, grid=False):
@@ -219,7 +174,7 @@ class UIMixin:
         self.left_panel = QWidget()
         self.left_panel.setObjectName("leftPanel")
         self.left_layout = QVBoxLayout(self.left_panel)
-        self.left_layout.setContentsMargins(12, 12, 12, 12)
+        self.left_layout.setContentsMargins(12, 16, 12, 16)
         self.left_layout.setSpacing(12)
 
         self.left_scroll = QScrollArea()
@@ -231,29 +186,42 @@ class UIMixin:
         self.left_scroll.setFixedWidth(304)
         self.left_scroll.setWidget(self.left_panel)
 
+        heading = QLabel("INSPECTION SETUP")
+        heading.setObjectName("eyebrow")
+        self.left_layout.addWidget(heading)
+        hint = QLabel("Configure your inspection station")
+        hint.setObjectName("sectionHint")
+        self.left_layout.addWidget(hint)
         self.build_inspection_group()
         self.build_camera_group()
         self.build_display_group()
         self.build_reference_group()
         self.build_station_group()
         self.left_layout.addStretch()
+        note = QLabel("RMUTT  ·  PCB inspection lab\nImage, folder and camera workflows")
+        note.setObjectName("sidebarFootnote")
+        self.left_layout.addWidget(note)
 
     def toggle_left_panel(self):
         self.left_scroll.setVisible(not self.left_scroll.isVisible())
 
     def build_inspection_group(self):
-        card, layout = self._sidebar_card("🔍  Inspection", expanded=True, grid=True)
+        card, layout = self._sidebar_card("Detection thresholds", expanded=True, grid=True)
         layout.setVerticalSpacing(8)
         layout.setHorizontalSpacing(9)
 
         self.conf_label = QLabel("Confidence: 25%")
         self.conf_label.setObjectName("fieldLabel")
         self.conf_slider = QSlider(Qt.Orientation.Horizontal)
+        self.conf_slider.setAccessibleName("Detection confidence threshold")
+        self.conf_slider.setToolTip("Minimum confidence required to include a detection.")
         self.conf_slider.setRange(1, 100)
         self.conf_slider.setValue(25)
         self.conf_slider.valueChanged.connect(self.update_confidence)
 
         self.match_dist_spin = QSpinBox()
+        self.match_dist_spin.setAccessibleName("Reference match distance in pixels")
+        self.match_dist_spin.setToolTip("Maximum distance between a detection and its reference point, in original-image pixels.")
         self.match_dist_spin.setRange(5, 250)
         self.match_dist_spin.setValue(50)
         self.match_dist_spin.setSuffix(" px")
@@ -268,7 +236,7 @@ class UIMixin:
         self.left_layout.addWidget(card)
 
     def build_camera_group(self):
-        card, layout = self._sidebar_card("📷  Camera", expanded=False, grid=True)
+        card, layout = self._sidebar_card("Camera source", expanded=False, grid=True)
         layout.setVerticalSpacing(8)
         layout.setHorizontalSpacing(9)
 
@@ -282,7 +250,7 @@ class UIMixin:
         self.btn_camera_toggle.setToolTip("Start / stop the live camera preview")
         self.btn_camera_toggle.clicked.connect(self.toggle_camera)
 
-        self.btn_camera_capture = QPushButton("📸  Capture & Inspect")
+        self.btn_camera_capture = QPushButton("Capture && inspect")
         self.btn_camera_capture.setObjectName("primaryBtn")
         self.btn_camera_capture.setToolTip("Freeze the current camera frame and run inspection on it")
         self.btn_camera_capture.setEnabled(False)
@@ -301,7 +269,7 @@ class UIMixin:
         self.left_layout.addWidget(card)
 
     def build_display_group(self):
-        card, layout = self._sidebar_card("👁️  Display", expanded=False)
+        card, layout = self._sidebar_card("Display & logging", expanded=False)
         layout.setSpacing(11)
 
         self.check_labels = ToggleSwitch("Show YOLO labels")
@@ -339,7 +307,7 @@ class UIMixin:
         self.left_layout.addWidget(card)
 
     def build_station_group(self):
-        card, layout = self._sidebar_card("⚙️  Station & Model", expanded=False, grid=True)
+        card, layout = self._sidebar_card("Station & model", expanded=False, grid=True)
         layout.setVerticalSpacing(9)
         layout.setHorizontalSpacing(9)
 
@@ -352,6 +320,7 @@ class UIMixin:
         self.model_path_input = QLineEdit()
         self.model_path_input.setPlaceholderText("Select YOLO model (.pt)")
         self.model_path_input.setReadOnly(True)
+        self.model_path_input.textChanged.connect(self.model_path_input.setToolTip)
         self.model_status = QLabel("Model: not loaded")
         self.model_status.setObjectName("statusBad")
         self.model_status.setWordWrap(True)
@@ -380,7 +349,7 @@ class UIMixin:
         self.left_layout.addWidget(card)
 
     def build_reference_group(self):
-        card, layout = self._sidebar_card("✏️  Reference Profile", expanded=False, grid=True)
+        card, layout = self._sidebar_card("Reference profile", expanded=False, grid=True)
         layout.setVerticalSpacing(8)
         layout.setHorizontalSpacing(9)
 
@@ -465,109 +434,125 @@ class UIMixin:
         self.build_history_panel()
 
     def build_browse_bar(self):
-        """Slim strip above the viewport for folder work: open a folder, see
-        which one is open, and step through it. It lives here rather than in the
-        already-packed top bar, and sits next to the image it navigates."""
         bar = QFrame()
         bar.setObjectName("browseBar")
-        row = QHBoxLayout(bar)
-        row.setContentsMargins(10, 6, 10, 6)
-        row.setSpacing(8)
+        layout = QVBoxLayout(bar)
+        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setSpacing(8)
         self.browse_bar = bar
-
-        self.btn_select_folder = QPushButton("📁  Open Folder")
+        heading = QHBoxLayout()
+        title = QLabel("Inspection workspace")
+        title.setObjectName("workspaceTitle")
+        heading.addWidget(title)
+        heading.addStretch()
+        self.btn_reinspect = QPushButton("↻  Inspect again")
+        self.btn_reinspect.setObjectName("ghostBtn")
+        self.btn_reinspect.setToolTip("Inspect the current image again  (Ctrl+R / F5)")
+        self.btn_reinspect.clicked.connect(self.inspect_current_image)
+        heading.addWidget(self.btn_reinspect)
+        self.btn_save_annotated = QPushButton("Save image")
+        self.btn_save_annotated.setObjectName("ghostBtn")
+        self.btn_save_annotated.setToolTip("Save annotated image  (Ctrl+S)")
+        self.btn_save_annotated.clicked.connect(self.save_annotated_image)
+        heading.addWidget(self.btn_save_annotated)
+        layout.addLayout(heading)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self.btn_select_folder = QPushButton("Open folder")
         self.btn_select_folder.setObjectName("ghostBtn")
-        self.btn_select_folder.setToolTip("Open a whole folder of images  (Ctrl+Shift+O)")
+        self.btn_select_folder.setToolTip("Browse a folder of images  (Ctrl+Shift+O)")
         self.btn_select_folder.clicked.connect(self.select_folder)
         row.addWidget(self.btn_select_folder)
-
-        self.folder_name_label = QLabel("No folder open")
+        self.folder_name_label = ElidedLabel("No folder open")
         self.folder_name_label.setObjectName("sectionHint")
         row.addWidget(self.folder_name_label, 1)
-
-        # Stepper — inert until a folder is indexed (counter reads "—").
-        self.btn_prev_image = QPushButton("◀")
+        self.btn_prev_image = QPushButton("‹")
         self.btn_prev_image.setObjectName("iconBtn")
-        self.btn_prev_image.setToolTip("Previous image in folder  (Ctrl+← / PgUp)")
+        self.btn_prev_image.setAccessibleName("Previous image")
+        self.btn_prev_image.setToolTip("Previous image  (Ctrl+← / PgUp)")
         self.btn_prev_image.clicked.connect(self.show_prev_image)
         self.nav_value_label = QLabel("—")
         self.nav_value_label.setObjectName("navValue")
-        self.btn_next_image = QPushButton("▶")
+        self.btn_next_image = QPushButton("›")
         self.btn_next_image.setObjectName("iconBtn")
-        self.btn_next_image.setToolTip("Next image in folder  (Ctrl+→ / PgDown)")
+        self.btn_next_image.setAccessibleName("Next image")
+        self.btn_next_image.setToolTip("Next image  (Ctrl+→ / PgDown)")
         self.btn_next_image.clicked.connect(self.show_next_image)
         row.addWidget(self.btn_prev_image)
         row.addWidget(self.nav_value_label)
         row.addWidget(self.btn_next_image)
-
-        self.center_layout.addWidget(bar, 0)
+        layout.addLayout(row)
+        self.center_layout.addWidget(bar)
 
     def build_image_view(self):
-        viewport = QWidget()
-        grid = QGridLayout(viewport)
-        grid.setContentsMargins(12, 12, 12, 12)
-        grid.setSpacing(0)
-
         self.image_scroll = QScrollArea()
         self.image_scroll.setObjectName("imageScroll")
         self.image_scroll.setWidgetResizable(False)
+        self.image_scroll.viewport().setStyleSheet("background: #101e2a;")
         self.image_scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
+        self.image_scroll.setMinimumSize(260, 150)
         self.image_display = ReferenceLabel(self)
         self.image_display.setObjectName("imageDisplay")
-        self.image_display.setMinimumSize(320, 220)
         self.image_display.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.image_scroll.setWidget(self.image_display)
-        grid.addWidget(self.image_scroll, 0, 0)
-
-        self._build_verdict_badge()
-        grid.addWidget(self.verdict_card, 0, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-
         self.busy_overlay = BusyOverlay(self.image_scroll)
+        self.center_layout.addWidget(self.image_scroll, 1)
 
-        self.center_layout.addWidget(viewport, 1)
+        self.canvas_toolbar = QWidget()
+        tools = QHBoxLayout(self.canvas_toolbar)
+        tools.setContentsMargins(0, 0, 0, 0)
+        self.canvas_hint = ElidedLabel("CANVAS  /  Drop an image to begin")
+        self.canvas_hint.setObjectName("sectionHint")
+        tools.addWidget(self.canvas_hint, 1)
+        self.zoom_value_label = QLabel("100%")
+        self.zoom_value_label.setObjectName("zoomValue")
+        for attr, text, tip, handler in (
+            ("btn_zoom_out", "−", "Zoom out  (Ctrl+-)", self.zoom_out),
+            ("btn_zoom_in", "+", "Zoom in  (Ctrl++)", self.zoom_in),
+            ("btn_zoom_fit", "Fit", "Fit to view  (Ctrl+0)", self.zoom_fit),
+        ):
+            button = QPushButton(text)
+            button.setObjectName("iconBtn")
+            button.setToolTip(tip)
+            button.setAccessibleName(tip.split("  ")[0])
+            button.clicked.connect(handler)
+            setattr(self, attr, button)
+        tools.addWidget(self.btn_zoom_out)
+        tools.addWidget(self.zoom_value_label)
+        tools.addWidget(self.btn_zoom_in)
+        tools.addWidget(self.btn_zoom_fit)
+        self.center_layout.addWidget(self.canvas_toolbar)
+        self._build_verdict_badge()
+        self.center_layout.addWidget(self.verdict_card)
 
     def _build_verdict_badge(self):
-        """The PASS/FAIL result — a compact badge floating over the top-left
-        corner of the viewport, instead of a full-width card competing with
-        the image for attention.
-
-        Hidden until the first inspection produces a result (revealed by
-        update_result_panel), so the empty viewport shows only its own
-        placeholder rather than a second 'load an image' message sitting on
-        top of it next to a row of meaningless zero counts."""
+        """A stable result strip outside the image so no components are obscured."""
         self.verdict_card = QFrame()
         self.verdict_card.setObjectName("verdictCard")
-        self.verdict_card.setMaximumWidth(300)
-        self.verdict_card.setVisible(False)
-        vc = QVBoxLayout(self.verdict_card)
-        vc.setContentsMargins(16, 11, 16, 12)
-        vc.setSpacing(5)
-
+        vc = QHBoxLayout(self.verdict_card)
+        vc.setContentsMargins(14, 12, 14, 12)
+        vc.setSpacing(18)
+        summary = QVBoxLayout()
+        summary.setSpacing(3)
         self.verdict_label = QLabel("READY")
         self.verdict_label.setObjectName("verdictBig")
-        vc.addWidget(self.verdict_label)
-
-        # Not word-wrapped: dataset filenames run 80+ chars and would stack the
-        # badge three lines taller, covering more of the board. Elided instead,
-        # with the full name on hover (see set_verdict_image_name).
-        self.verdict_image_name = QLabel("No image loaded")
+        self.verdict_image_name = ElidedLabel("Awaiting first inspection")
         self.verdict_image_name.setObjectName("verdictImage")
-        vc.addWidget(self.verdict_image_name)
-
-        self.verdict_reason = QLabel("Load an image to begin inspection.")
+        self.verdict_reason = ElidedLabel("Open an image or capture a camera frame.")
         self.verdict_reason.setObjectName("verdictReason")
-        self.verdict_reason.setWordWrap(True)
-        vc.addWidget(self.verdict_reason)
-
+        summary.addWidget(self.verdict_label)
+        summary.addWidget(self.verdict_image_name)
+        summary.addWidget(self.verdict_reason)
+        vc.addLayout(summary, 1)
         pills = QHBoxLayout()
-        pills.setSpacing(6)
+        pills.setSpacing(8)
         self.pill_expect = self._detail_pill("EXPECT", "pillExpect")
         self.pill_ok = self._detail_pill("OK", "pillOk")
         self.pill_miss = self._detail_pill("MISSING", "pillMiss")
         self.pill_wrong = self._detail_pill("WRONG", "pillWrong")
         self.pill_extra = self._detail_pill("EXTRA", "pillExtra")
         for holder in (self.pill_expect, self.pill_ok, self.pill_miss, self.pill_wrong, self.pill_extra):
+            holder._value_label.setText("—")
             pills.addWidget(holder)
         vc.addLayout(pills)
 
@@ -577,7 +562,6 @@ class UIMixin:
         self.history_panel = QFrame()
         self.history_panel.setObjectName("historyPanel")
         self.history_panel.setVisible(False)
-        self.history_panel.setMaximumHeight(280)
         layout = QVBoxLayout(self.history_panel)
         layout.setContentsMargins(16, 12, 16, 14)
         layout.setSpacing(8)
@@ -587,6 +571,10 @@ class UIMixin:
         title.setObjectName("rightPanelTitle")
         header.addWidget(title)
         header.addStretch()
+        self.btn_export_history = QPushButton("Export CSV")
+        self.btn_export_history.setObjectName("ghostBtn")
+        self.btn_export_history.clicked.connect(self.export_history_csv)
+        header.addWidget(self.btn_export_history)
         self.btn_reset_counter = QPushButton("Reset Counters")
         self.btn_reset_counter.setObjectName("ghostBtn")
         self.btn_reset_counter.clicked.connect(self.reset_counters)
@@ -613,15 +601,25 @@ class UIMixin:
         self.history_table.setAlternatingRowColors(True)
         self.history_table.verticalHeader().setVisible(False)
         self.history_table.setShowGrid(False)
-        self.history_table.setMinimumHeight(140)
+        self.history_empty = QLabel("No inspections yet\nOpen an image or capture a board to build your session history.")
+        self.history_empty.setObjectName("sectionHint")
+        self.history_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.history_empty.setWordWrap(True)
+        self.history_table.setMinimumHeight(100)
+        self.history_table.verticalHeader().setDefaultSectionSize(36)
         layout.addWidget(self.history_table)
+        layout.addWidget(self.history_empty, 1)
+        self.history_table.hide()
 
-        self.center_layout.addWidget(self.history_panel, 0)
+        self.center_layout.addWidget(self.history_panel, 1)
 
     def toggle_history_panel(self):
         visible = not self.history_panel.isVisible()
         self.history_panel.setVisible(visible)
         self.btn_toggle_history.setChecked(visible)
+        for widget in (self.browse_bar, self.image_scroll, self.canvas_toolbar, self.verdict_card):
+            widget.setVisible(not visible)
+        self.right_panel.setVisible(not visible and self.selected_detection_index is not None)
 
     # ────────────────────────────────────────────────────────── right contextual panel
     def build_right_panel(self):
@@ -682,7 +680,7 @@ class UIMixin:
 
     # ────────────────────────────────────────────────────────── status bar
     def _build_statusbar(self):
-        self.stats_label = QLabel("System ready.")
+        self.stats_label = ElidedLabel("System ready.")
         self.stats_label.setObjectName("statusBarText")
         self.perf_label = QLabel("")
         self.perf_label.setObjectName("perfLabel")
@@ -711,27 +709,6 @@ class UIMixin:
         holder._value_label = value
         return holder
 
-    def _stat_block(self, caption, value_object_name):
-        holder = QWidget()
-        col = QVBoxLayout(holder)
-        col.setContentsMargins(0, 0, 0, 0)
-        col.setSpacing(2)
-        col.addStretch()
-        value = QLabel("0")
-        value.setObjectName(value_object_name)
-        cap = QLabel(caption)
-        cap.setObjectName("statLabel")
-        col.addWidget(value)
-        col.addWidget(cap)
-        col.addStretch()
-        return holder, value
-
-    def _vline(self):
-        line = QFrame()
-        line.setObjectName("vline")
-        line.setFixedWidth(1)
-        return line
-
     def _load_logo(self):
         if getattr(self, "logo_path", None) and os.path.exists(self.logo_path):
             logo_pixmap = QPixmap(self.logo_path)
@@ -749,16 +726,8 @@ class UIMixin:
         holder._value_label.setText(str(value))
 
     def set_verdict_image_name(self, name):
-        """Fit a filename onto the badge's single name line. Elides in the
-        middle so both the descriptive head and the distinguishing tail
-        (dataset id + extension) stay readable; full name goes to the tooltip."""
-        metrics = QFontMetrics(self.verdict_image_name.font())
-        # Badge max width less its 16px side margins and 1px borders.
-        available = max(80, self.verdict_card.maximumWidth() - 36)
-        self.verdict_image_name.setText(
-            metrics.elidedText(name, Qt.TextElideMode.ElideMiddle, available)
-        )
-        self.verdict_image_name.setToolTip(name)
+        """Retain the full filename; ElidedLabel fits it to the available width."""
+        self.verdict_image_name.setText(name)
 
     def apply_styles(self):
         theme = getattr(self, "_current_theme", "light")
@@ -772,6 +741,11 @@ class UIMixin:
             self.busy_overlay.set_theme(
                 QColorFromTokens(tokens["bg_image_area"], 205), tokens["accent"], tokens["text_primary"]
             )
+        self.image_display.set_theme(tokens)
+        for button in self.findChildren(QPushButton):
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+        if self.selected_detection_index is not None:
+            self.update_right_panel(self._last_detections[self.selected_detection_index])
         for toggle in getattr(self, "_toggle_switches", []):
             toggle.set_colors(tokens["toggle_track_off"], tokens["accent"], "#ffffff")
         if hasattr(self, "toasts"):
@@ -787,11 +761,35 @@ class UIMixin:
         if hasattr(self, "toasts"):
             self.toasts.show(f"{self._current_theme.capitalize()} mode", "info", duration=1400)
 
+    def _reset_result_summary(self, verdict="READY", title="Awaiting inspection", reason="Open an image or capture a camera frame."):
+        self.last_inspection_result = None
+        self.current_annotated_frame = None
+        self.selected_detection_index = None
+        self._last_detections = []
+        self._detection_status = {}
+        self.update_right_panel(None)
+        self._repolish(self.verdict_card, "verdictCard")
+        self._repolish(self.verdict_label, "verdictBig")
+        self.verdict_label.setText(verdict)
+        self.verdict_image_name.setText(title)
+        self.verdict_reason.setText(reason)
+        for pill in (self.pill_expect, self.pill_ok, self.pill_miss, self.pill_wrong, self.pill_extra):
+            pill._value_label.setText("—")
+        self._update_action_buttons()
+
     def _update_action_buttons(self):
         has_model = self.model is not None
-        self.btn_reinspect.setEnabled(has_model)
-        self.btn_add_extra_ref.setEnabled(has_model)
-        self.btn_add_extra_ref_save.setEnabled(has_model)
+        busy = getattr(self, "_inference_running", False)
+        camera_live = getattr(self, "_camera_worker", None) is not None
+        self.btn_select.setEnabled(not busy and not camera_live)
+        self.btn_reinspect.setEnabled(has_model and bool(self.current_image_path) and not busy and not camera_live)
+        self.btn_save_annotated.setEnabled(self.current_annotated_frame is not None and not busy and not camera_live)
+        has_extras = bool(self.last_inspection_result and self.last_inspection_result["extra"])
+        self.btn_add_extra_ref.setEnabled(has_model and has_extras and not busy and not camera_live)
+        self.btn_add_extra_ref_save.setEnabled(has_model and has_extras and not busy and not camera_live)
+        self.btn_export_history.setEnabled(bool(self.history_rows))
+        self.btn_camera_toggle.setEnabled(not busy)
+        self.btn_camera_capture.setEnabled(camera_live and self._camera_latest_frame is not None and has_model)
 
     def _update_zoom_controls_enabled(self):
         """Zoom is meaningless with no image on screen — keep the controls

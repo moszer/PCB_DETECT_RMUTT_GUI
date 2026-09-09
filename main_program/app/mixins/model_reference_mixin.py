@@ -35,6 +35,11 @@ class ModelReferenceMixin:
 
     def set_model_status(self, message, ok):
         self.model_status.setText(message)
+        self.model_badge.setText("●  Model ready" if ok else "●  Model offline")
+        self.model_badge.setProperty("ready", bool(ok))
+        self.model_badge.setToolTip(message)
+        self.model_badge.style().unpolish(self.model_badge)
+        self.model_badge.style().polish(self.model_badge)
         self.model_status.setObjectName("statusLine" if ok else "statusBad")
         self.model_status.style().unpolish(self.model_status)
         self.model_status.style().polish(self.model_status)
