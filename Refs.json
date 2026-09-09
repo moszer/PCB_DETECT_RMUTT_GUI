@@ -1,47 +1,267 @@
 [
   {
-    "x": 1454,
-    "y": 1618,
+    "x": 832,
+    "y": 489,
+    "label": "IC"
+  },
+  {
+    "x": 235,
+    "y": 405,
+    "label": "connector"
+  },
+  {
+    "x": 983,
+    "y": 119,
+    "label": "connector"
+  },
+  {
+    "x": 1251,
+    "y": 846,
+    "label": "connector"
+  },
+  {
+    "x": 1625,
+    "y": 845,
+    "label": "connector"
+  },
+  {
+    "x": 466,
+    "y": 421,
+    "label": "clock"
+  },
+  {
+    "x": 1719,
+    "y": 693,
     "label": "capacitor"
   },
   {
-    "x": 1042,
-    "y": 2589,
-    "label": "resistor"
-  },
-  {
-    "x": 1100,
-    "y": 2738,
-    "label": "resistor"
-  },
-  {
-    "x": 771,
-    "y": 1595,
+    "x": 1374,
+    "y": 287,
     "label": "capacitor"
   },
   {
-    "x": 1262,
-    "y": 2595,
-    "label": "resistor"
-  },
-  {
-    "x": 939,
-    "y": 2585,
-    "label": "resistor"
-  },
-  {
-    "x": 1151,
-    "y": 2594,
-    "label": "resistor"
-  },
-  {
-    "x": 781,
-    "y": 2218,
+    "x": 1661,
+    "y": 319,
     "label": "capacitor"
   },
   {
-    "x": 1423,
-    "y": 2238,
-    "label": "LED"
+    "x": 1671,
+    "y": 505,
+    "label": "IC"
+  },
+  {
+    "x": 137,
+    "y": 646,
+    "label": "IC"
+  },
+  {
+    "x": 1906,
+    "y": 462,
+    "label": "connector"
+  },
+  {
+    "x": 1787,
+    "y": 533,
+    "label": "capacitor"
+  },
+  {
+    "x": 1452,
+    "y": 287,
+    "label": "capacitor"
+  },
+  {
+    "x": 1578,
+    "y": 280,
+    "label": "capacitor"
+  },
+  {
+    "x": 1792,
+    "y": 653,
+    "label": "resistor"
+  },
+  {
+    "x": 458,
+    "y": 321,
+    "label": "resistor"
+  },
+  {
+    "x": 541,
+    "y": 626,
+    "label": "resistor"
+  },
+  {
+    "x": 1792,
+    "y": 620,
+    "label": "resistor"
+  },
+  {
+    "x": 1769,
+    "y": 275,
+    "label": "resistor"
+  },
+  {
+    "x": 1427,
+    "y": 831,
+    "label": "capacitor"
+  },
+  {
+    "x": 1434,
+    "y": 246,
+    "label": "IC"
+  },
+  {
+    "x": 1594,
+    "y": 554,
+    "label": "capacitor"
+  },
+  {
+    "x": 560,
+    "y": 326,
+    "label": "resistor"
+  },
+  {
+    "x": 1742,
+    "y": 534,
+    "label": "capacitor"
+  },
+  {
+    "x": 704,
+    "y": 773,
+    "label": "capacitor"
+  },
+  {
+    "x": 436,
+    "y": 228,
+    "label": "resistor"
+  },
+  {
+    "x": 850,
+    "y": 746,
+    "label": "capacitor"
+  },
+  {
+    "x": 663,
+    "y": 812,
+    "label": "diode"
+  },
+  {
+    "x": 478,
+    "y": 226,
+    "label": "resistor"
+  },
+  {
+    "x": 389,
+    "y": 815,
+    "label": "connector"
+  },
+  {
+    "x": 787,
+    "y": 753,
+    "label": "resistor"
+  },
+  {
+    "x": 541,
+    "y": 655,
+    "label": "capacitor"
+  },
+  {
+    "x": 56,
+    "y": 643,
+    "label": "capacitor"
+  },
+  {
+    "x": 1770,
+    "y": 211,
+    "label": "resistor"
+  },
+  {
+    "x": 1769,
+    "y": 247,
+    "label": "resistor"
+  },
+  {
+    "x": 1721,
+    "y": 631,
+    "label": "resistor"
+  },
+  {
+    "x": 775,
+    "y": 726,
+    "label": "capacitor"
+  },
+  {
+    "x": 164,
+    "y": 695,
+    "label": "resistor"
+  },
+  {
+    "x": 1542,
+    "y": 554,
+    "label": "capacitor"
+  },
+  {
+    "x": 1320,
+    "y": 500,
+    "label": "IC"
+  },
+  {
+    "x": 468,
+    "y": 496,
+    "label": "capacitor"
+  },
+  {
+    "x": 1697,
+    "y": 228,
+    "label": "resistor"
+  },
+  {
+    "x": 1567,
+    "y": 451,
+    "label": "transistor"
+  },
+  {
+    "x": 159,
+    "y": 606,
+    "label": "resistor"
+  },
+  {
+    "x": 1582,
+    "y": 357,
+    "label": "diode"
+  },
+  {
+    "x": 458,
+    "y": 294,
+    "label": "resistor"
+  },
+  {
+    "x": 542,
+    "y": 502,
+    "label": "resistor"
+  },
+  {
+    "x": 345,
+    "y": 632,
+    "label": "capacitor"
+  },
+  {
+    "x": 1726,
+    "y": 227,
+    "label": "resistor"
+  },
+  {
+    "x": 666,
+    "y": 247,
+    "label": "resistor"
+  },
+  {
+    "x": 900,
+    "y": 871,
+    "label": "capacitor"
+  },
+  {
+    "x": 1791,
+    "y": 591,
+    "label": "resistor"
   }
 ]
