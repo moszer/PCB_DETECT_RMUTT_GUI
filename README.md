@@ -24,15 +24,136 @@ Detection alone doesn't tell you whether a board is good. This app adds the comp
 The reference profile lives in `Refs.json` as `{"x", "y", "label"}` points and is edited in
 the app by clicking on the board in edit mode.
 
-## Running
+## Installation
+
+Use **Python 3.12** and create a separate virtual environment for this project.
+The repository uses Git LFS for `.pt` model weights, so Git LFS must be installed
+before downloading the model files.
+
+> `gui_test.py` is the application entry point despite its name. Automated GUI
+> and device-routing tests live in `main_program/qa/`.
+
+### macOS (Apple Silicon or Intel)
+
+macOS can run the GUI and YOLO inference, but this application uses **CPU on
+macOS**. NVIDIA CUDA is not available on current macOS systems. If your Mac is
+only being used to prepare a Jetson, install and run the application again on
+the Jetson using the next section.
+
+Install Apple's command-line tools, Python 3.12 and Git LFS. If Homebrew is not
+installed, follow the [official Homebrew installation guide](https://docs.brew.sh/Installation).
 
 ```bash
-pip install -r requirements.txt
-python3 main_program/gui_test.py
+xcode-select --install
+brew install python@3.12 git git-lfs
+git lfs install
 ```
 
-> `gui_test.py` is the **application entry point** despite the name — there is no automated
-> test suite in this repo; verification is manual against `test/pass.jpg` and `test/fail.png`.
+Clone the project and download the real model weights:
+
+```bash
+git clone https://github.com/moszer/PCB_DETECT_RMUTT_GUI.git
+cd PCB_DETECT_RMUTT_GUI
+git lfs pull
+```
+
+Create the environment and install the Python libraries:
+
+```bash
+python3.12 -m venv main_program/.venv
+source main_program/.venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python main_program/gui_test.py
+```
+
+In **Station & model → Processor**, select **CPU**. On first camera use, macOS
+may ask for camera permission; allow it for Terminal or the application used to
+launch the project.
+
+### NVIDIA Jetson Orin Nano / Orin Nano Super
+
+The tested target is **Jetson Orin Nano Super, JetPack 7.2.1 / L4T 39.2.1,
+Python 3.12 and CUDA 13**. JetPack provides the NVIDIA driver, CUDA, cuDNN and
+TensorRT. Install JetPack before creating the Python environment. For a fresh
+board, follow NVIDIA's [Orin Nano quick-start guide](https://docs.nvidia.com/jetson/orin-nano-devkit/user-guide/quick_start.html).
+
+Check the installed L4T release:
+
+```bash
+cat /etc/nv_tegra_release
+```
+
+For the tested JetPack 7.2.1 setup, install the system libraries required by
+Python, Qt/X11, OpenCV and Git LFS:
+
+```bash
+sudo apt update
+sudo apt install -y nvidia-jetpack python3-venv python3-pip git git-lfs \
+  libxcb-cursor0 libxkbcommon-x11-0 libxcb-xinerama0 libgl1 libglib2.0-0
+sudo reboot
+```
+
+After reboot, clone the project and retrieve the model weights:
+
+```bash
+git clone https://github.com/moszer/PCB_DETECT_RMUTT_GUI.git
+cd PCB_DETECT_RMUTT_GUI
+git lfs install
+git lfs pull
+```
+
+Create the environment and install the common libraries first, then install the
+CUDA 13 PyTorch wheels explicitly. The second command is required because a
+generic PyTorch installation can leave Jetson running on the CPU.
+
+```bash
+python3 -m venv main_program/.venv
+source main_program/.venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pip install --upgrade -r requirements-nvidia-cu130.txt
+```
+
+Verify real GPU operations and then verify this project's model:
+
+```bash
+python main_program/check_nvidia.py
+python main_program/check_nvidia.py --model best.pt --image test/pass.jpg
+```
+
+Both commands must report `PASS`, and the model check must report
+`YOLO parameters on cuda:0`. Start the GUI with:
+
+```bash
+python main_program/gui_test.py
+```
+
+In **Station & model → Processor**, use **Auto (prefer NVIDIA)** or
+**NVIDIA GPU (CUDA:0)**. The selected device also appears beside the inference
+time in the status bar.
+
+JetPack 5.x and 6.x use different Python, CUDA, PyTorch and torchvision builds.
+Do not install `requirements-nvidia-cu130.txt` on those releases. Select the
+matching packages from the [NVIDIA PyTorch compatibility table](https://docs.nvidia.com/deeplearning/frameworks/install-pytorch-jetson-platform-release-notes/pytorch-jetson-rel.html)
+and the [Ultralytics Jetson guide](https://docs.ultralytics.com/guides/nvidia-jetson/).
+Detailed notes for the tested CUDA 13 environment are in [NVIDIA.md](NVIDIA.md).
+
+### Installation troubleshooting
+
+- `Could not load the Qt platform plugin "xcb"` or a message mentioning
+  `xcb-cursor0`: install the Jetson system packages shown above, then restart
+  the GUI. Do not install these Ubuntu packages on macOS.
+- `Unable to load model`, `invalid load`, or a `.pt` file of roughly 130 bytes:
+  the file is a Git LFS pointer. Run `git lfs install` and `git lfs pull` from
+  the repository root.
+- `CUDA available: False`: confirm that JetPack is installed, reboot, activate
+  the same virtual environment used by the GUI, reinstall
+  `requirements-nvidia-cu130.txt`, and run `main_program/check_nvidia.py` again.
+- An SM 8.7 warning can appear with the tested upstream PyTorch wheel on Orin.
+  The project's CUDA convolution, torchvision NMS and actual YOLO model checks
+  passed on this setup; the diagnostic command remains the source of truth after
+  any JetPack or PyTorch upgrade.
 
 Other scripts:
 
@@ -45,7 +166,11 @@ python3 camera.py     # standalone webcam detection
 
 ## Requirements
 
-Pinned to the tested Python 3.14 venv:
+The root [requirements.txt](requirements.txt) contains the common Python
+dependencies. [requirements-nvidia-cu130.txt](requirements-nvidia-cu130.txt)
+selects the CUDA wheels for the tested JetPack 7.2.1 target.
+
+Common dependency pins (exercised with Python 3.12 on the local Jetson):
 
 `ultralytics==8.4.92` · `opencv-python==5.0.0.93` · `PyQt6==6.11.0` ·
 `torch==2.13.0` · `torchvision==0.28.0` · `numpy==2.5.1` · `pillow==12.3.0`

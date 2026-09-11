@@ -1,7 +1,11 @@
 import cv2
 from ultralytics import YOLO
+from main_program.app.inference_runtime import select_device, validate_model_file
 
 # Load your trained model
+device = select_device()
+print(f"Inference device: {device.label} {device.detail}")
+validate_model_file("best.pt")
 model = YOLO("best.pt")
 
 # Initialize webcam
@@ -24,7 +28,7 @@ while True:
 
     # Run YOLO inference on the frame
     # stream=True is more efficient for video
-    results = model.predict(source=frame, conf=0.25, show=False, stream=True)
+    results = model.predict(source=frame, conf=0.25, show=False, stream=True, device=device.device)
 
     # Process results and draw on frame
     for r in results:

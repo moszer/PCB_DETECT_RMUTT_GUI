@@ -13,26 +13,35 @@ from ..inspection_logic import (
 )
 from ..animations import fade_in
 from ..styles import tokens_for
+from ..inference_runtime import select_device
 
 
 class InferenceWorker(QThread):
     finished = pyqtSignal(list, object, dict)  # detections, base_frame (clean), speed
     error = pyqtSignal(str)
+    device_selected = pyqtSignal(str, str)
 
-    def __init__(self, model, image_path, conf_value, model_names):
+    def __init__(self, model, image_path, conf_value, model_names, device_preference="auto"):
         super().__init__()
         self.model = model
         self.image_path = image_path
         self.conf_value = conf_value
         self.model_names = model_names
+        self.device_preference = device_preference
 
     def run(self):
         try:
+            device = select_device(self.device_preference)
+            self.device_selected.emit(device.label, device.detail)
             results = self.model.predict(
-                source=self.image_path, conf=self.conf_value, save=False, device="cpu"
+                source=self.image_path, conf=self.conf_value, save=False, device=device.device
             )
         except Exception as exc:
-            self.error.emit(f"Could not run inference:\n{exc}")
+            self.error.emit(
+                f"Could not run inference ({self.device_preference}):\n{exc}\n\n"
+                "For NVIDIA/CUDA errors, run check_nvidia.py with this Python environment. "
+                "On Jetson, PyTorch and torchvision must match your JetPack release."
+            )
             return
 
         # Keep the base frame clean — no baked-in ultralytics boxes/labels. The
@@ -69,6 +78,20 @@ class InferenceWorker(QThread):
 
 
 class InspectionMixin:
+    def on_device_preference_changed(self):
+        self._active_device_label = ""
+        self.device_status.setText("Device will be checked on the next inspection.")
+        self.device_status.setToolTip("")
+        self.perf_label.clear()
+        if not getattr(self, "_booting", False):
+            self.request_live_refresh()
+
+    def _on_device_selected(self, label, detail):
+        self._active_device_label = label
+        self.device_status.setText(label + (f"\n{detail}" if detail else ""))
+        self.device_status.setToolTip(detail or label)
+        self.stats_label.setText(f"Running inference · {label}")
+
     def select_image(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self,
@@ -150,12 +173,14 @@ class InspectionMixin:
             image_path,
             conf_value,
             self.model_names,
+            self.device_combo.currentData(),
         )
         self._inference_worker = worker  # keep reference to prevent GC
         worker.finished.connect(
             lambda dets, frame, spd: self._on_inference_done(dets, frame, spd, image_path, record_history)
         )
         worker.error.connect(self._on_inference_error)
+        worker.device_selected.connect(self._on_device_selected)
         worker.start()
 
     def _on_inference_done(self, detections, base_frame, speed, image_path, record_history):
@@ -183,6 +208,7 @@ class InspectionMixin:
 
         total_ms = sum(speed.values())
         self.perf_label.setText(
+            f"{getattr(self, '_active_device_label', '')}  |  "
             f"Pre: {speed['preprocess']:.1f} ms  |  "
             f"Infer: {speed['inference']:.1f} ms  |  "
             f"Post: {speed['postprocess']:.1f} ms  |  "

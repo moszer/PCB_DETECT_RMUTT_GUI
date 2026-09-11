@@ -4,6 +4,7 @@ import math
 import os
 
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
+from ..inference_runtime import validate_model_file
 
 
 def _load_yolo_class():
@@ -62,6 +63,12 @@ class ModelReferenceMixin:
         self.load_model(model_path)
 
     def load_model(self, model_path):
+        try:
+            validate_model_file(model_path)
+        except (OSError, ValueError) as exc:
+            QMessageBox.critical(self, "Model Error", str(exc))
+            self.set_model_status(str(exc), ok=False)
+            return
         yolo_class, import_error = _load_yolo_class()
         if yolo_class is None:
             self.set_model_status("YOLO backend unavailable — install ultralytics.", ok=False)

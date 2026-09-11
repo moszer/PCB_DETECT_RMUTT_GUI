@@ -1,9 +1,13 @@
 from ultralytics import YOLO
+from main_program.app.inference_runtime import select_device, validate_model_file
 import shutil
 import os
 import glob
 
 # Load a pretrained YOLO26 nano model
+device = select_device()
+print(f"Training device: {device.label} {device.detail}")
+validate_model_file("yolo26x.pt")
 model = YOLO("yolo26x.pt")
 
 # Train the model
@@ -12,7 +16,7 @@ results = model.train(
     epochs=100,
     imgsz=640,
     batch=16,
-    device="cpu"
+    device=device.device
 )
 
 # Copy trained weights and data to 'trained' folder
@@ -71,4 +75,3 @@ if os.path.exists(onnx_file):
     print(f"✅ Saved best.onnx")
 
 print(f"\n🎉 All trained models and data saved to '{trained_dir}' folder!")
-

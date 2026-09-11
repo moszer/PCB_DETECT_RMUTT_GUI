@@ -1,6 +1,8 @@
 import json
 import os
 
+from PyQt6.QtCore import QAbstractAnimation
+
 
 class SettingsMixin:
     def _settings_path(self):
@@ -8,6 +10,7 @@ class SettingsMixin:
 
     def save_settings(self):
         data = {
+            "inference_device": self.device_combo.currentData(),
             "conf": self.conf_slider.value(),
             "match_dist": self.match_dist_spin.value(),
             "show_labels": self.check_labels.isChecked(),
@@ -46,6 +49,10 @@ class SettingsMixin:
                 data = json.load(f)
         except Exception:
             return
+
+        device_index = self.device_combo.findData(data.get("inference_device", "auto"))
+        if device_index >= 0:
+            self.device_combo.setCurrentIndex(device_index)
 
         if "conf" in data:
             self.conf_slider.setValue(int(data["conf"]))
@@ -97,6 +104,10 @@ class SettingsMixin:
             self.left_scroll.setVisible(bool(data["left_panel_visible"]))
 
     def closeEvent(self, event):
+        # A closed window can remain alive until deleteLater is processed.
+        # Stop callbacks that would otherwise touch its widgets during teardown.
+        for animation in self.findChildren(QAbstractAnimation):
+            animation.stop()
         self.save_settings()
         if getattr(self, "_camera_worker", None) is not None:
             self.stop_camera()

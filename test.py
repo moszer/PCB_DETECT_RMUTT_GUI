@@ -1,8 +1,12 @@
 from ultralytics import YOLO
+from main_program.app.inference_runtime import select_device, validate_model_file
 import cv2
 import os
 
 # Load your trained model
+device = select_device()
+print(f"Inference device: {device.label} {device.detail}")
+validate_model_file("best.pt")
 model = YOLO("best.pt")
 
 # Path to test image (change this to your image path)
@@ -14,7 +18,7 @@ results = model.predict(
     conf=0.25,        # Confidence threshold
     save=True,        # Save annotated image
     show=True,        # Display result (requires GUI)
-    device="cpu"
+    device=device.device
 )
 
 # Print detection results

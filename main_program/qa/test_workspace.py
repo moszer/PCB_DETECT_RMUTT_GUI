@@ -74,6 +74,26 @@ class WorkspaceTests(unittest.TestCase):
         self.assertEqual(w.zoom_factor, 1.0)
         self.assertIn("600 × 400", w.canvas_hint.text())
 
+    def test_processor_preference_roundtrip_and_busy_state(self):
+        w = self.window
+        path = Path(self.temp.name) / "settings.json"
+        w._settings_path = lambda: str(path)
+        self.assertEqual(w.device_combo.currentData(), "auto")
+        w.device_combo.setCurrentIndex(w.device_combo.findData("cuda:0"))
+        SettingsMixin.save_settings(w)
+        w.device_combo.setCurrentIndex(w.device_combo.findData("cpu"))
+        SettingsMixin.load_settings(w)
+        self.assertEqual(w.device_combo.currentData(), "cuda:0")
+        w._inference_running = True
+        w._update_action_buttons()
+        self.assertFalse(w.device_combo.isEnabled())
+        self.assertFalse(w.btn_load_model.isEnabled())
+        w._inference_running = False
+        w._update_action_buttons()
+        self.assertTrue(w.device_combo.isEnabled())
+        w._on_device_selected("NVIDIA Orin (cuda:0)", "")
+        self.assertIn("NVIDIA Orin", w.device_status.text())
+
     def test_inspection_result_and_component_selection(self):
         w = self.window
         w.current_image_path = self.source

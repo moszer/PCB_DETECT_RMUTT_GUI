@@ -325,6 +325,16 @@ class UIMixin:
         self.model_status.setObjectName("statusBad")
         self.model_status.setWordWrap(True)
 
+        self.device_combo = QComboBox()
+        self.device_combo.addItem("Auto (prefer NVIDIA)", "auto")
+        self.device_combo.addItem("NVIDIA GPU (CUDA:0)", "cuda:0")
+        self.device_combo.addItem("CPU", "cpu")
+        self.device_combo.setToolTip("Auto uses NVIDIA CUDA when available. GPU mode requires CUDA.")
+        self.device_combo.currentIndexChanged.connect(self.on_device_preference_changed)
+        self.device_status = QLabel("Device will be checked on the first inspection.")
+        self.device_status.setObjectName("sectionHint")
+        self.device_status.setWordWrap(True)
+
         self.btn_select_model = QPushButton("Browse")
         self.btn_select_model.setObjectName("ghostBtn")
         self.btn_select_model.clicked.connect(self.select_model_file)
@@ -344,6 +354,9 @@ class UIMixin:
         layout.addWidget(self.model_path_input, 2, 1)
         layout.addLayout(model_btn_row, 3, 0, 1, 2)
         layout.addWidget(self.model_status, 4, 0, 1, 2)
+        layout.addWidget(self._field_label("Processor"), 5, 0)
+        layout.addWidget(self.device_combo, 5, 1)
+        layout.addWidget(self.device_status, 6, 0, 1, 2)
         self.station_card = card
         card.set_expanded(card._default_expanded, animate=False)
         self.left_layout.addWidget(card)
@@ -781,6 +794,9 @@ class UIMixin:
         has_model = self.model is not None
         busy = getattr(self, "_inference_running", False)
         camera_live = getattr(self, "_camera_worker", None) is not None
+        self.device_combo.setEnabled(not busy)
+        self.btn_load_model.setEnabled(not busy)
+        self.btn_select_model.setEnabled(not busy)
         self.btn_select.setEnabled(not busy and not camera_live)
         self.btn_reinspect.setEnabled(has_model and bool(self.current_image_path) and not busy and not camera_live)
         self.btn_save_annotated.setEnabled(self.current_annotated_frame is not None and not busy and not camera_live)
