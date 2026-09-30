@@ -289,9 +289,9 @@ export function ParamsPanel({ params, setParams, disabled }: { params: Inspectio
             <Slider
               label="เกณฑ์ผ่าน"
               value={params.passRatio}
-              min={0.1}
+              min={0.01}
               max={1}
-              step={0.05}
+              step={0.01}
               disabled={disabled}
               format={(v) => `${percent(v)} · ≥ ${passFrames}/${params.targetFrames}`}
               onChange={(passRatio) => setParams({ passRatio })}
