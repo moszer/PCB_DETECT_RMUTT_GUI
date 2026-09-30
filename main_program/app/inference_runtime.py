@@ -1,4 +1,4 @@
-"""Shared, lazy NVIDIA device selection for the GUI and command-line tools."""
+"""Shared, lazy CUDA / Apple Metal / CPU selection for GUI and CLI tools."""
 import os
 import re
 from dataclasses import dataclass
@@ -13,20 +13,37 @@ class InferenceDevice:
 
 
 def select_device(preference=None):
-    """Prefer CUDA in auto mode; explicit CUDA requests never fall back to CPU.
+    """Prefer CUDA, then MPS in auto mode; explicit GPU requests never fall back.
 
     Torch stays lazy so the GUI can open without the inference dependencies.
-    CUDA execution errors are left to the caller, never retried silently on CPU.
+    GPU execution errors are left to the caller, never retried silently on CPU.
     """
     preference = (preference or os.environ.get("PCB_DEVICE", "auto")).strip().lower()
     if preference == "cpu":
         return InferenceDevice("cpu", "CPU", "CPU selected explicitly.")
     if preference in ("cuda", "0"):
         preference = "cuda:0"
-    if preference != "auto" and not re.fullmatch(r"cuda:\d+", preference):
-        raise ValueError("Choose auto, cpu, or cuda:<index> (for example cuda:0).")
+    if preference not in ("auto", "mps") and not re.fullmatch(r"cuda:\d+", preference):
+        raise ValueError("Choose auto, cpu, mps, or cuda:<index> (for example cuda:0).")
 
     import torch
+
+    def apple_device():
+        mps = getattr(getattr(torch, "backends", None), "mps", None)
+        if mps is not None and mps.is_available():
+            return InferenceDevice("mps", "Apple GPU (MPS)")
+        reason = (
+            "This PyTorch installation has no MPS support."
+            if mps is None or not mps.is_built() else
+            "PyTorch cannot access a Metal GPU on this system."
+        )
+        raise RuntimeError(
+            f"{reason} On an Apple Silicon Mac, use native arm64 Python and "
+            "a compatible macOS / PyTorch version. Select CPU to continue without GPU acceleration."
+        )
+
+    if preference == "mps":
+        return apple_device()
 
     if not torch.cuda.is_available():
         reason = (
@@ -35,7 +52,10 @@ def select_device(preference=None):
             "PyTorch cannot access an NVIDIA CUDA GPU."
         )
         if preference == "auto":
-            return InferenceDevice("cpu", "CPU (CUDA unavailable)", reason)
+            try:
+                return apple_device()
+            except RuntimeError as exc:
+                return InferenceDevice("cpu", "CPU (GPU unavailable)", f"{reason}\n{exc}")
         raise RuntimeError(
             f"{reason} Install PyTorch/torchvision compatible with your NVIDIA "
             "driver or Jetson JetPack, and check GPU device access. "

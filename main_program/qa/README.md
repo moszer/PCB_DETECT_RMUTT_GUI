@@ -1,5 +1,11 @@
 # PCB Inspect workspace QA
 
+AOI tests in `test_aoi.py` cover bounded serpentine plans, v2 handshakes, duplicate
+boot replies, Home requirements, stale/mismatched completion IDs, STOP/OFF,
+link/operation timeouts, controller reset, stale frames, write/inference failures,
+golden-reference comparison and complete/aborted run reports. These use simulation
+and synthetic images; they never open a hardware serial port or camera.
+
 The native PyQt6 workspace now separates application actions, session metrics,
 inspection setup, the image canvas, and the inspection verdict. History uses the
 full center workspace. Component details appear when a detection is selected.
@@ -34,6 +40,25 @@ production history or settings. See [NVIDIA.md](../../NVIDIA.md) for reproductio
 commands and the remaining PyTorch SM 8.7 warning.
 
 ## Visual and inference checks
+
+Apple MPS support was checked on macOS 27.0 / arm64 / PyTorch 2.13.0 on
+2026-09-16. All 35 automated tests passed, including CUDA/MPS/CPU selection,
+unavailable MPS errors, explicit device requests without silent CPU retry, and
+MPS preference persistence. The actual GUI inference worker ran `best.pt` on
+`test/pass.jpg` through CPU → MPS → Auto → CPU; model parameters were verified
+on the selected device and each pass produced 52 detections. The initial MPS
+pass took about 281 ms, the next MPS pass 37 ms, and the final CPU pass 166 ms.
+These are individual inference timings, not sustained FPS or accuracy benchmarks.
+No production logs or settings were written by this smoke check.
+
+The update feature adds real temporary Git repository tests for fast-forward
+installation, local file preservation, model/reference backups, dirty checkouts,
+untracked and ignored collisions, detached/diverged branches, stale update
+targets, remote validation, and timeout errors. Qt tests cover background checks,
+retry after failure, camera activity, closing during work, and restart-required
+completion. All 29 tests passed on macOS on 2026-09-16. A read-only check against
+the actual GitHub remote also succeeded; installation was exercised in temporary
+repositories. The Updates button was visually checked at 1100 × 760.
 
 Reviewed the native Qt output at 1440 × 900 and 1100 × 760, including expanded
 setup cards and selected-component details. Preview images are in `previews/`.

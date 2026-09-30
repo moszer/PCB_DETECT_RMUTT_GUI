@@ -14,8 +14,12 @@ from app.inference_runtime import InferenceDevice, select_device, validate_model
 from app.mixins.inspection_mixin import InferenceWorker
 
 
-def fake_torch(available=True, cuda_version="13.0", count=1):
+def fake_torch(available=True, cuda_version="13.0", count=1, mps_available=False, mps_built=False):
     return SimpleNamespace(
+        backends=SimpleNamespace(mps=SimpleNamespace(
+            is_available=Mock(return_value=mps_available),
+            is_built=Mock(return_value=mps_built),
+        )),
         version=SimpleNamespace(cuda=cuda_version),
         cuda=SimpleNamespace(
             is_available=Mock(return_value=available),
@@ -27,10 +31,36 @@ def fake_torch(available=True, cuda_version="13.0", count=1):
 
 class DeviceTests(unittest.TestCase):
     def test_auto_prefers_nvidia(self):
-        with patch.dict(sys.modules, {"torch": fake_torch()}):
+        with patch.dict(sys.modules, {"torch": fake_torch(mps_available=True, mps_built=True)}):
             device = select_device("auto")
         self.assertEqual(device.device, "cuda:0")
         self.assertIn("Orin", device.label)
+
+    def test_auto_uses_apple_gpu_without_cuda(self):
+        with patch.dict(sys.modules, {"torch": fake_torch(False, None, mps_available=True, mps_built=True)}):
+            device = select_device("auto")
+        self.assertEqual(device.device, "mps")
+        self.assertIn("Apple", device.label)
+
+    def test_explicit_mps_and_environment_override(self):
+        torch = fake_torch(mps_available=True, mps_built=True)
+        with patch.dict(sys.modules, {"torch": torch}):
+            self.assertEqual(select_device("mps").device, "mps")
+            with patch.dict(os.environ, {"PCB_DEVICE": "mps"}):
+                self.assertEqual(select_device().device, "mps")
+        torch.cuda.is_available.assert_not_called()
+
+    def test_unavailable_mps_never_silently_falls_back_when_requested(self):
+        for built, message in ((False, "no MPS support"), (True, "cannot access a Metal GPU")):
+            with self.subTest(built=built), patch.dict(sys.modules, {"torch": fake_torch(False, None, mps_built=built)}):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    select_device("mps")
+                self.assertEqual(select_device("auto").device, "cpu")
+
+    def test_explicit_cuda_does_not_switch_to_available_mps(self):
+        with patch.dict(sys.modules, {"torch": fake_torch(False, None, mps_available=True, mps_built=True)}):
+            with self.assertRaisesRegex(RuntimeError, "CUDA"):
+                select_device("cuda:0")
 
     def test_auto_reports_cpu_fallback_for_missing_cuda(self):
         with patch.dict(sys.modules, {"torch": fake_torch(False, None)}):
@@ -48,6 +78,7 @@ class DeviceTests(unittest.TestCase):
         with patch.dict(sys.modules, {"torch": torch}):
             self.assertEqual(select_device("cpu").device, "cpu")
         torch.cuda.is_available.assert_not_called()
+        torch.backends.mps.is_available.assert_not_called()
 
     def test_gpu_index_and_environment_override(self):
         with patch.dict(sys.modules, {"torch": fake_torch(count=2)}):
@@ -95,6 +126,23 @@ class DeviceTests(unittest.TestCase):
             worker.run()
         self.assertEqual(model.predict.call_count, 1)
         self.assertIn("CUDA out of memory", errors[0])
+
+    def test_worker_routes_mps_and_reports_failure_without_cpu_retry(self):
+        model = Mock()
+        model.predict.return_value = [SimpleNamespace(orig_img=np.zeros((10, 10, 3), dtype=np.uint8), boxes=[], speed={})]
+        worker = InferenceWorker(model, "board.png", 0.25, {}, "mps")
+        results, errors = [], []
+        worker.finished.connect(lambda *args: results.append(args))
+        worker.error.connect(errors.append)
+        with patch("app.mixins.inspection_mixin.select_device", return_value=InferenceDevice("mps", "Apple GPU (MPS)")):
+            worker.run()
+            self.assertEqual(len(results), 1)
+            model.predict.assert_called_once_with(source="board.png", conf=0.25, save=False, device="mps")
+            model.predict.reset_mock()
+            model.predict.side_effect = RuntimeError("MPS out of memory")
+            worker.run()
+            self.assertEqual(model.predict.call_count, 1)
+            self.assertIn("MPS out of memory", errors[0])
 
 
 if __name__ == "__main__":

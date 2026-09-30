@@ -49,8 +49,18 @@ class ModelReferenceMixin:
             self.station_card.set_expanded(True, animate=not getattr(self, "_booting", False))
 
     def select_model_file(self):
+        start_dir = getattr(self, "project_root", "")
+        curr = self.model_path_input.text().strip()
+        if curr and os.path.exists(curr):
+            start_dir = os.path.dirname(curr)
+        elif hasattr(self, "main_program_root"):
+            p = os.path.abspath(os.path.join(self.main_program_root, ".."))
+            if os.path.exists(os.path.join(p, "trained")):
+                start_dir = os.path.join(p, "trained")
+            elif os.path.exists(p):
+                start_dir = p
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Select YOLO Model", self.project_root, "PyTorch Model (*.pt)"
+            self, "Select YOLO Model", start_dir, "PyTorch Model (*.pt)"
         )
         if file_path:
             self.model_path_input.setText(file_path)

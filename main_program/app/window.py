@@ -13,6 +13,7 @@ from .mixins.settings_mixin import SettingsMixin
 from .mixins.ui_mixin import UIMixin
 from .toast import ToastManager
 from .utils import resolve_asset_path
+from .update_dialog import UpdateDialog
 
 
 class DefectDetectionGUI(
@@ -94,3 +95,27 @@ class DefectDetectionGUI(
         self.load_settings()
         self._on_station_meta_changed()
         self._booting = False
+
+    def show_software_updates(self):
+        dialog = UpdateDialog(self)
+        self._update_dialog = dialog
+        dialog.check()
+        dialog.exec()
+        self._update_dialog = None
+        dialog.deleteLater()
+
+    def show_aoi_scan(self):
+        from PyQt6.QtWidgets import QMessageBox
+        from .aoi_dialog import AOIDialog
+        worker = getattr(self, "_inference_worker", None)
+        if getattr(self, "_inference_running", False) or (worker and worker.isRunning()):
+            QMessageBox.information(self, "AOI", "Wait for the current inspection to finish.")
+            return
+        if self._camera_worker is not None:
+            QMessageBox.information(self, "AOI", "Stop the main camera preview before opening AOI Scan.")
+            return
+        dialog = AOIDialog(self)
+        self._aoi_dialog = dialog
+        dialog.exec()
+        self._aoi_dialog = None
+        dialog.deleteLater()

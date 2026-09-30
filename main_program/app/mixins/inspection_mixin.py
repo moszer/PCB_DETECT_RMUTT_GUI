@@ -21,26 +21,35 @@ class InferenceWorker(QThread):
     error = pyqtSignal(str)
     device_selected = pyqtSignal(str, str)
 
-    def __init__(self, model, image_path, conf_value, model_names, device_preference="auto"):
+    def __init__(self, model, image_path, conf_value, model_names, device_preference="auto", imgsz=None):
         super().__init__()
         self.model = model
         self.image_path = image_path
         self.conf_value = conf_value
         self.model_names = model_names
         self.device_preference = device_preference
+        self.imgsz = imgsz
 
     def run(self):
         try:
             device = select_device(self.device_preference)
             self.device_selected.emit(device.label, device.detail)
-            results = self.model.predict(
-                source=self.image_path, conf=self.conf_value, save=False, device=device.device
-            )
+            predict_kwargs = {
+                "source": self.image_path,
+                "conf": self.conf_value,
+                "save": False,
+                "device": device.device,
+            }
+            if self.imgsz:
+                predict_kwargs["imgsz"] = int(self.imgsz)
+            results = self.model.predict(**predict_kwargs)
         except Exception as exc:
             self.error.emit(
                 f"Could not run inference ({self.device_preference}):\n{exc}\n\n"
                 "For NVIDIA/CUDA errors, run check_nvidia.py with this Python environment. "
-                "On Jetson, PyTorch and torchvision must match your JetPack release."
+                "On Jetson, PyTorch and torchvision must match your JetPack release.\n"
+                "For Apple MPS errors, use native arm64 Python with compatible PyTorch/macOS. "
+                "If an operation is unsupported or GPU memory is full, choose CPU under Processor."
             )
             return
 
@@ -168,12 +177,14 @@ class InspectionMixin:
         if hasattr(self, "busy_overlay"):
             self.busy_overlay.start("Analyzing")
 
+        imgsz_val = getattr(self, "detect_imgsz_combo", None).currentData() if hasattr(self, "detect_imgsz_combo") else None
         worker = InferenceWorker(
             self.model,
             image_path,
             conf_value,
             self.model_names,
             self.device_combo.currentData(),
+            imgsz=imgsz_val,
         )
         self._inference_worker = worker  # keep reference to prevent GC
         worker.finished.connect(

@@ -1,5 +1,9 @@
 # PCB Defect Inspection Station (YOLO + PyQt6)
 
+**AOI Scan:** connect the Nano XY stage (protocol v2, 9600 baud), home/jog,
+scan a serpentine grid, and capture/inspect each position. Simulation, per-point
+golden-board references, STOP and saved run reports are included. See [AOI setup](AOI.md).
+
 A desktop **inspection station** for printed circuit boards. It runs a YOLO detector over a
 board image, matches what it found against a **reference profile** of expected components,
 and returns a **PASS / FAIL** verdict with the missing, wrong and extra parts listed.
@@ -24,6 +28,34 @@ Detection alone doesn't tell you whether a board is good. This app adds the comp
 The reference profile lives in `Refs.json` as `{"x", "y", "label"}` points and is edited in
 the app by clicking on the board in edit mode.
 
+## Updating the desktop app
+
+Open **Updates** in the top bar. The dialog fetches GitHub `main`, shows the
+installed Git tag/commit and the latest revision, and lists up to 20 new commits.
+Click **Install update**, then **Close application** and launch the app again.
+Checks and installation run in the background. Stop camera capture and finish
+the current inspection before installing.
+
+Automatic updates require Git, a clone of this repository, the `main` branch,
+and no edits to tracked files. Local commits, unfinished merges/rebases, and
+diverged history require resolving the checkout manually. Untracked models,
+captures, settings, and logs are retained; if a new upstream file would collide
+with an untracked or ignored file, installation stops. The updater never runs
+`reset`, `clean`, or an automatic stash. If upstream replaces a tracked model,
+JSON, or CSV file, its previous contents are backed up under
+`.git/pcb-update-backups/`; the dialog reports that location.
+
+An update installs exactly the revision shown in the dialog. If the checkout
+or fetched target changes after review, check again. GitHub `main` can contain
+commits newer than the latest release tag. ZIP downloads must be updated manually
+or replaced by a Git clone. Python dependencies are not installed automatically:
+if requirements changed, follow the platform instructions below, especially for
+Jetson/CUDA. Keep Git LFS installed for model downloads.
+
+For older copies that do not yet have the Updates button, first pull the version
+that includes this feature with `git pull --ff-only origin main`, then reopen the
+application.
+
 ## Installation
 
 Use **Python 3.12** and create a separate virtual environment for this project.
@@ -35,10 +67,12 @@ before downloading the model files.
 
 ### macOS (Apple Silicon or Intel)
 
-macOS can run the GUI and YOLO inference, but this application uses **CPU on
-macOS**. NVIDIA CUDA is not available on current macOS systems. If your Mac is
-only being used to prepare a Jetson, install and run the application again on
-the Jetson using the next section.
+On Apple Silicon (M-series), the application supports **Apple GPU inference
+through PyTorch MPS / Metal**. Auto selects CUDA when available, otherwise MPS,
+then CPU. Use native arm64 Python on Apple Silicon. MPS availability depends on
+the installed macOS and PyTorch versions; CPU remains available on all platforms.
+NVIDIA CUDA is not available on current macOS systems. If your Mac is only being
+used to prepare a Jetson, install the application on the Jetson using the next section.
 
 Install Apple's command-line tools, Python 3.12 and Git LFS. If Homebrew is not
 installed, follow the [official Homebrew installation guide](https://docs.brew.sh/Installation).
@@ -67,9 +101,23 @@ python -m pip install -r requirements.txt
 python main_program/gui_test.py
 ```
 
-In **Station & model → Processor**, select **CPU**. On first camera use, macOS
-may ask for camera permission; allow it for Terminal or the application used to
-launch the project.
+In **Station & model → Processor**, select **Auto (prefer GPU)** or
+**Apple Silicon GPU (MPS)**. A previously saved CPU preference is kept until you
+change it. The selected device appears under Processor and beside inference
+timing. Explicit MPS mode reports unavailable devices or runtime errors; it does
+not silently retry on CPU. If a model operation is unsupported or GPU memory is
+full, select CPU. Camera capture and UI drawing are unaffected by this setting.
+
+Check MPS support using the same Python environment that launches the GUI:
+
+```bash
+python -c "import platform, torch; print(platform.machine()); print('MPS built:', torch.backends.mps.is_built()); print('MPS available:', torch.backends.mps.is_available())"
+```
+
+Both MPS checks should be `True`. The command-line tools also accept
+`PCB_DEVICE=mps`. See [PyTorch's MPS documentation](https://docs.pytorch.org/docs/stable/notes/mps.html)
+for platform requirements. On first camera use, macOS may ask for permission;
+allow it for Terminal or the application used to launch the project.
 
 ### NVIDIA Jetson Orin Nano / Orin Nano Super
 
@@ -129,7 +177,7 @@ Both commands must report `PASS`, and the model check must report
 python main_program/gui_test.py
 ```
 
-In **Station & model → Processor**, use **Auto (prefer NVIDIA)** or
+In **Station & model → Processor**, use **Auto (prefer GPU)** or
 **NVIDIA GPU (CUDA:0)**. The selected device also appears beside the inference
 time in the status bar.
 

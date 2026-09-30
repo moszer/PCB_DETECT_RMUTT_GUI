@@ -11,6 +11,7 @@ class SettingsMixin:
     def save_settings(self):
         data = {
             "inference_device": self.device_combo.currentData(),
+            "detect_imgsz": self.detect_imgsz_combo.currentData() if hasattr(self, "detect_imgsz_combo") else getattr(self, "_detect_imgsz", 640),
             "conf": self.conf_slider.value(),
             "match_dist": self.match_dist_spin.value(),
             "show_labels": self.check_labels.isChecked(),
@@ -53,6 +54,13 @@ class SettingsMixin:
         device_index = self.device_combo.findData(data.get("inference_device", "auto"))
         if device_index >= 0:
             self.device_combo.setCurrentIndex(device_index)
+
+        if "detect_imgsz" in data:
+            self._detect_imgsz = int(data["detect_imgsz"])
+            if hasattr(self, "detect_imgsz_combo"):
+                sz_idx = self.detect_imgsz_combo.findData(self._detect_imgsz)
+                if sz_idx >= 0:
+                    self.detect_imgsz_combo.setCurrentIndex(sz_idx)
 
         if "conf" in data:
             self.conf_slider.setValue(int(data["conf"]))
@@ -104,6 +112,15 @@ class SettingsMixin:
             self.left_scroll.setVisible(bool(data["left_panel_visible"]))
 
     def closeEvent(self, event):
+        aoi = getattr(self, "_aoi_dialog", None)
+        if aoi is not None:
+            aoi.reject()
+            event.ignore()
+            return
+        dialog = getattr(self, "_update_dialog", None)
+        if dialog is not None and dialog._busy:
+            event.ignore()
+            return
         # A closed window can remain alive until deleteLater is processed.
         # Stop callbacks that would otherwise touch its widgets during teardown.
         for animation in self.findChildren(QAbstractAnimation):

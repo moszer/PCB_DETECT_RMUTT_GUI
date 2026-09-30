@@ -7,6 +7,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+from threading import Event
 from pathlib import Path
 
 import cv2
@@ -18,6 +20,8 @@ from PyQt6.QtWidgets import QApplication
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.window import DefectDetectionGUI
 from app.mixins.settings_mixin import SettingsMixin
+from app.update_dialog import UpdateDialog
+from app.updater import UpdateInfo, UpdateError
 
 
 class TestWindow(DefectDetectionGUI):
@@ -60,6 +64,80 @@ class WorkspaceTests(unittest.TestCase):
         w.btn_toggle_history.click()
         self.assertFalse(w.history_panel.isVisible())
 
+    def test_update_check_stays_responsive_and_blocks_early_close(self):
+        w = self.window
+        dialog = UpdateDialog(w)
+        w._update_dialog = dialog
+        gate = Event()
+        info = UpdateInfo("a" * 40, "b" * 40, "v1.0.0", "v1.0.1", "Fix camera", ("app.py",))
+        def check():
+            gate.wait(2)
+            return info
+        with patch.object(dialog.updater, "check", side_effect=check):
+            dialog.show()
+            dialog.check()
+            QTest.qWait(20)
+            self.assertTrue(dialog._busy)
+            dialog.reject()
+            self.assertTrue(dialog.isVisible())
+            w.close()
+            self.assertTrue(w.isVisible())
+            gate.set()
+            for _ in range(100):
+                if not dialog._busy:
+                    break
+                QTest.qWait(10)
+            self.assertFalse(dialog._busy)
+            self.assertTrue(dialog.install_button.isEnabled())
+            self.assertIn("v1.0.1", dialog.versions.text())
+            w._camera_worker = object()
+            dialog.install()
+            self.assertIn("Stop the camera", dialog.status.text())
+            w._camera_worker = None
+            with patch.object(dialog.updater, "install", return_value="") as install:
+                dialog.install()
+                for _ in range(100):
+                    if not dialog._busy:
+                        break
+                    QTest.qWait(10)
+                install.assert_called_once_with(info)
+            self.assertTrue(dialog.installed)
+            self.assertFalse(dialog.check_button.isEnabled())
+            self.assertIn("restart required", dialog.versions.text())
+            dialog.accept()
+            self.assertFalse(w.isVisible())
+        w._update_dialog = None
+        dialog.deleteLater()
+
+    def test_current_version_with_local_edits_does_not_report_update_failure(self):
+        dialog = UpdateDialog(self.window)
+        info = UpdateInfo("a" * 40, "a" * 40, "v1.0.0", "v1.0.0", "", (),
+                          "Local tracked files have changes.")
+        dialog.checked(info)
+        dialog.finished_work()
+        self.assertIn("up to date", dialog.status.text())
+        self.assertIn("Before a future update", dialog.details.toPlainText())
+        self.assertFalse(dialog.install_button.isEnabled())
+        pending = UpdateInfo("a" * 40, "b" * 40, "v1.0.0", "v1.0.1", "Update", (), info.blocker)
+        dialog.checked(pending)
+        dialog.finished_work()
+        self.assertIn("unavailable", dialog.status.text())
+        self.assertFalse(dialog.install_button.isEnabled())
+        dialog.deleteLater()
+
+    def test_update_failure_allows_retry(self):
+        dialog = UpdateDialog(self.window)
+        with patch.object(dialog.updater, "check", side_effect=UpdateError("Network unavailable")):
+            dialog.check()
+            for _ in range(100):
+                if not dialog._busy:
+                    break
+                QTest.qWait(10)
+            self.assertTrue(dialog.check_button.isEnabled())
+            self.assertFalse(dialog.install_button.isEnabled())
+            self.assertIn("Network unavailable", dialog.details.toPlainText())
+        dialog.deleteLater()
+
     def test_view_only_image_and_zoom(self):
         w = self.window
         w.open_image_path(self.source)
@@ -79,11 +157,14 @@ class WorkspaceTests(unittest.TestCase):
         path = Path(self.temp.name) / "settings.json"
         w._settings_path = lambda: str(path)
         self.assertEqual(w.device_combo.currentData(), "auto")
-        w.device_combo.setCurrentIndex(w.device_combo.findData("cuda:0"))
-        SettingsMixin.save_settings(w)
-        w.device_combo.setCurrentIndex(w.device_combo.findData("cpu"))
-        SettingsMixin.load_settings(w)
-        self.assertEqual(w.device_combo.currentData(), "cuda:0")
+        for preference in ("cuda:0", "mps"):
+            with self.subTest(preference=preference):
+                self.assertGreaterEqual(w.device_combo.findData(preference), 0)
+                w.device_combo.setCurrentIndex(w.device_combo.findData(preference))
+                SettingsMixin.save_settings(w)
+                w.device_combo.setCurrentIndex(w.device_combo.findData("cpu"))
+                SettingsMixin.load_settings(w)
+                self.assertEqual(w.device_combo.currentData(), preference)
         w._inference_running = True
         w._update_action_buttons()
         self.assertFalse(w.device_combo.isEnabled())
@@ -93,6 +174,8 @@ class WorkspaceTests(unittest.TestCase):
         self.assertTrue(w.device_combo.isEnabled())
         w._on_device_selected("NVIDIA Orin (cuda:0)", "")
         self.assertIn("NVIDIA Orin", w.device_status.text())
+        w._on_device_selected("Apple GPU (MPS)", "")
+        self.assertIn("Apple GPU", w.device_status.text())
 
     def test_inspection_result_and_component_selection(self):
         w = self.window

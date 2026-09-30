@@ -3,8 +3,9 @@
 The GUI, `test.py`, `camera.py`, and `train.py` prefer CUDA GPU 0 by default.
 In **Station & model → Processor**, choose:
 
-- **Auto (prefer NVIDIA)**: CUDA when available, otherwise CPU with a visible reason.
+- **Auto (prefer GPU)**: CUDA when available, then Apple MPS, otherwise CPU with a visible reason.
 - **NVIDIA GPU (CUDA:0)**: require CUDA; report errors instead of retrying on CPU.
+- **Apple Silicon GPU (MPS)**: require a working PyTorch Metal backend on macOS.
 - **CPU**: explicitly use the CPU.
 
 The GUI saves this choice. The device used appears under Processor and alongside
@@ -12,7 +13,7 @@ the inference timing. Image decoding, camera capture, and Qt drawing still run
 on the CPU; the YOLO model runs on the selected device. FP32 is retained to avoid
 changing precision and inspection thresholds.
 
-For the root command-line scripts, set `PCB_DEVICE=auto`, `cpu`, or `cuda:0`
+For the root command-line scripts, set `PCB_DEVICE=auto`, `cpu`, `mps`, or `cuda:0`
 (other CUDA indices such as `cuda:1` are also accepted):
 
 ```bash

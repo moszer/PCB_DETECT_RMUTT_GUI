@@ -20,6 +20,7 @@ inspection_log.csv
 inspection_history_*.csv
 main_program/settings.json
 main_program/captures/
+main_program/aoi_runs/
 
 # Editor
 .idea/
