@@ -1,0 +1,9 @@
+# Runtime data: database, captured images, uploads, saved settings (contains the operator passcode), uploaded weights
+backend/data/
+# Build output and caches
+frontend/.next-audit-build/
+frontend/.next/
+frontend/tsconfig.tsbuildinfo
+.pytest_cache/
+# Weights are >100 MB; keep them out of git
+*.pt

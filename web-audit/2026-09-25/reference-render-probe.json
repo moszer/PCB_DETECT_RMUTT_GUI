@@ -1,0 +1,6 @@
+{
+  "confirmed": true,
+  "error": "Cannot read properties of undefined (reading 'map')",
+  "component": "ReferencesView",
+  "input": "Actual list API shape without points"
+}

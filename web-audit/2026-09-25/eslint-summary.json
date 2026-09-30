@@ -1,0 +1,605 @@
+{
+  "errorCount": 61,
+  "warningCount": 25,
+  "files": [
+    {
+      "file": "frontend/src/app/layout.tsx",
+      "errorCount": 0,
+      "warningCount": 0,
+      "messages": []
+    },
+    {
+      "file": "frontend/src/app/page.tsx",
+      "errorCount": 1,
+      "warningCount": 0,
+      "messages": [
+        {
+          "line": 41,
+          "rule": "react-hooks/set-state-in-effect",
+          "severity": 2,
+          "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/Users/pattaraponprakodchue/Desktop/PCB Detect Defect RMUTT/defect detection yolo/frontend/src/app/page.tsx:41:5\n  39 |\n  40 |   useEffect(() => {\n> 41 |     fetchStatus();\n     |     ^^^^^^^^^^^ Avoid calling setState() directly within an effect\n  42 |     fetchReferences();\n  43 |\n  44 |     // Periodic poll fallback every 5s"
+        }
+      ]
+    },
+    {
+      "file": "frontend/src/components/AOIScanView.tsx",
+      "errorCount": 12,
+      "warningCount": 13,
+      "messages": [
+        {
+          "line": 6,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "severity": 1,
+          "message": "'AOIRunReport' is defined but never used."
+        },
+        {
+          "line": 9,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "severity": 1,
+          "message": "'ScanPlanRequest' is defined but never used."
+        },
+        {
+          "line": 22,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "severity": 1,
+          "message": "'RotateCcw' is defined but never used."
+        },
+        {
+          "line": 23,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "severity": 1,
+          "message": "'CheckCircle2' is defined but never used."
+        },
+        {
+          "line": 24,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "severity": 1,
+          "message": "'XCircle' is defined but never used."
+        },
+        {
+          "line": 25,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "severity": 1,
+          "message": "'AlertTriangle' is defined but never used."
+        },
+        {
+          "line": 28,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "severity": 1,
+          "message": "'Maximize2' is defined but never used."
+        },
+        {
+          "line": 34,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 50,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 62,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "severity": 1,
+          "message": "'setSettleSec' is assigned a value but never used."
+        },
+        {
+          "line": 66,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "severity": 1,
+          "message": "'plannedPoints' is assigned a value but never used."
+        },
+        {
+          "line": 79,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 85,
+          "rule": "react-hooks/set-state-in-effect",
+          "severity": 2,
+          "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/Users/pattaraponprakodchue/Desktop/PCB Detect Defect RMUTT/defect detection yolo/frontend/src/components/AOIScanView.tsx:85:5\n  83 |\n  84 |   useEffect(() => {\n> 85 |     refreshPorts();\n     |     ^^^^^^^^^^^^ Avoid calling setState() directly within an effect\n  86 |   }, []);\n  87 |\n  88 |   // Update plan preview whenever parameters change"
+        },
+        {
+          "line": 86,
+          "rule": "react-hooks/exhaustive-deps",
+          "severity": 1,
+          "message": "React Hook useEffect has a missing dependency: 'refreshPorts'. Either include it or remove the dependency array."
+        },
+        {
+          "line": 103,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "severity": 1,
+          "message": "'err' is defined but never used."
+        },
+        {
+          "line": 115,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 124,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 133,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 142,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 151,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 174,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 585,
+          "rule": "@next/next/no-img-element",
+          "severity": 1,
+          "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element"
+        },
+        {
+          "line": 621,
+          "rule": "react/no-unescaped-entities",
+          "severity": 2,
+          "message": "`\"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`."
+        },
+        {
+          "line": 621,
+          "rule": "react/no-unescaped-entities",
+          "severity": 2,
+          "message": "`\"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`."
+        },
+        {
+          "line": 653,
+          "rule": "@next/next/no-img-element",
+          "severity": 1,
+          "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element"
+        }
+      ]
+    },
+    {
+      "file": "frontend/src/components/Header.tsx",
+      "errorCount": 3,
+      "warningCount": 3,
+      "messages": [
+        {
+          "line": 4,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "severity": 1,
+          "message": "'ControlLease' is defined but never used."
+        },
+        {
+          "line": 14,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "severity": 1,
+          "message": "'XCircle' is defined but never used."
+        },
+        {
+          "line": 15,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "severity": 1,
+          "message": "'HelpCircle' is defined but never used."
+        },
+        {
+          "line": 54,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 64,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 73,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        }
+      ]
+    },
+    {
+      "file": "frontend/src/components/HistoryView.tsx",
+      "errorCount": 4,
+      "warningCount": 2,
+      "messages": [
+        {
+          "line": 17,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 18,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 20,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "severity": 1,
+          "message": "'loading' is assigned a value but never used."
+        },
+        {
+          "line": 31,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 39,
+          "rule": "react-hooks/set-state-in-effect",
+          "severity": 2,
+          "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/Users/pattaraponprakodchue/Desktop/PCB Detect Defect RMUTT/defect detection yolo/frontend/src/components/HistoryView.tsx:39:5\n  37 |\n  38 |   useEffect(() => {\n> 39 |     fetchData();\n     |     ^^^^^^^^^ Avoid calling setState() directly within an effect\n  40 |   }, [verdictFilter]);\n  41 |\n  42 |   const handleExportCsv = () => {"
+        },
+        {
+          "line": 40,
+          "rule": "react-hooks/exhaustive-deps",
+          "severity": 1,
+          "message": "React Hook useEffect has a missing dependency: 'fetchData'. Either include it or remove the dependency array."
+        }
+      ]
+    },
+    {
+      "file": "frontend/src/components/InspectionView.tsx",
+      "errorCount": 3,
+      "warningCount": 1,
+      "messages": [
+        {
+          "line": 3,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "severity": 1,
+          "message": "'useEffect' is defined but never used."
+        },
+        {
+          "line": 80,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 286,
+          "rule": "react/no-unescaped-entities",
+          "severity": 2,
+          "message": "`\"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`."
+        },
+        {
+          "line": 286,
+          "rule": "react/no-unescaped-entities",
+          "severity": 2,
+          "message": "`\"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`."
+        }
+      ]
+    },
+    {
+      "file": "frontend/src/components/ReferencesView.tsx",
+      "errorCount": 4,
+      "warningCount": 2,
+      "messages": [
+        {
+          "line": 6,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "severity": 1,
+          "message": "'Plus' is defined but never used."
+        },
+        {
+          "line": 6,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "severity": 1,
+          "message": "'Layers' is defined but never used."
+        },
+        {
+          "line": 29,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 42,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 107,
+          "rule": "react/no-unescaped-entities",
+          "severity": 2,
+          "message": "`\"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`."
+        },
+        {
+          "line": 107,
+          "rule": "react/no-unescaped-entities",
+          "severity": 2,
+          "message": "`\"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`."
+        }
+      ]
+    },
+    {
+      "file": "frontend/src/components/SettingsView.tsx",
+      "errorCount": 4,
+      "warningCount": 1,
+      "messages": [
+        {
+          "line": 5,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "severity": 1,
+          "message": "'Camera' is defined but never used."
+        },
+        {
+          "line": 12,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 43,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 56,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 73,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        }
+      ]
+    },
+    {
+      "file": "frontend/src/components/Viewport.tsx",
+      "errorCount": 1,
+      "warningCount": 2,
+      "messages": [
+        {
+          "line": 47,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "severity": 1,
+          "message": "'isLiveStream' is assigned a value but never used."
+        },
+        {
+          "line": 60,
+          "rule": "react-hooks/set-state-in-effect",
+          "severity": 2,
+          "message": "Error: Calling setState synchronously within an effect can trigger cascading renders\n\nEffects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:\n* Update external systems with the latest state from React.\n* Subscribe for updates from some external system, calling setState in a callback function when external state changes.\n\nCalling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).\n\n/Users/pattaraponprakodchue/Desktop/PCB Detect Defect RMUTT/defect detection yolo/frontend/src/components/Viewport.tsx:60:5\n  58 |   // Reset viewport when new image loads\n  59 |   useEffect(() => {\n> 60 |     setScale(1);\n     |     ^^^^^^^^ Avoid calling setState() directly within an effect\n  61 |     setOffset({ x: 0, y: 0 });\n  62 |   }, [imageUrl]);\n  63 |"
+        },
+        {
+          "line": 168,
+          "rule": "@next/next/no-img-element",
+          "severity": 1,
+          "message": "Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element"
+        }
+      ]
+    },
+    {
+      "file": "frontend/src/hooks/useStationSocket.ts",
+      "errorCount": 4,
+      "warningCount": 1,
+      "messages": [
+        {
+          "line": 9,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 10,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 16,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 17,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 75,
+          "rule": "@typescript-eslint/no-unused-vars",
+          "severity": 1,
+          "message": "'err' is defined but never used."
+        }
+      ]
+    },
+    {
+      "file": "frontend/src/lib/api.ts",
+      "errorCount": 24,
+      "warningCount": 0,
+      "messages": [
+        {
+          "line": 56,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 57,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 58,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 63,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 65,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 71,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 88,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 89,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 93,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 98,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 139,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 141,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 146,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 147,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 149,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 154,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 155,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 182,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 183,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 186,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 195,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 201,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 204,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        },
+        {
+          "line": 205,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        }
+      ]
+    },
+    {
+      "file": "frontend/src/types/index.ts",
+      "errorCount": 1,
+      "warningCount": 0,
+      "messages": [
+        {
+          "line": 93,
+          "rule": "@typescript-eslint/no-explicit-any",
+          "severity": 2,
+          "message": "Unexpected any. Specify a different type."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "confirmed": true,
+  "last_broadcast_position": [
+    0,
+    0
+  ],
+  "actual_position": [
+    512,
+    0
+  ],
+  "last_broadcast_moving": true,
+  "actual_moving": false
+}

@@ -1,0 +1,147 @@
+[
+  {
+    "name": "AOI start deadlocks on nested non-reentrant lock",
+    "confirmed": true,
+    "evidence": [
+      [
+        "start",
+        33
+      ],
+      [
+        "start_scan",
+        109
+      ],
+      [
+        "is_running",
+        46
+      ]
+    ]
+  },
+  {
+    "name": "Status endpoint crashes with a run present",
+    "confirmed": true,
+    "evidence": {
+      "http": 500,
+      "schema_has_total_points": false
+    }
+  },
+  {
+    "name": "Reference list omits points consumed by frontend",
+    "confirmed": true,
+    "evidence": {
+      "returned_keys": [
+        "id",
+        "name",
+        "description",
+        "profile_type",
+        "created_at",
+        "updated_at"
+      ],
+      "detail_points": 1
+    }
+  },
+  {
+    "name": "Lease authentication bypass and credential exposure",
+    "confirmed": true,
+    "evidence": {
+      "no_passcode_accepted": true,
+      "operator_token_public": true,
+      "configured_passcode_public": true
+    }
+  },
+  {
+    "name": "Unauthenticated force takeover accepted",
+    "confirmed": true,
+    "evidence": {
+      "success": true
+    }
+  },
+  {
+    "name": "Unreserved station accepts commands without operator",
+    "confirmed": true,
+    "evidence": "_require_operator_lease(None) returned normally"
+  },
+  {
+    "name": "Soft limit display diverges from enforced limits and planner",
+    "confirmed": true,
+    "evidence": {
+      "display_mm": [
+        1.0,
+        1.0
+      ],
+      "enforced_steps": [
+        19456,
+        19456
+      ],
+      "accepted_plan_mm": 39.0
+    }
+  },
+  {
+    "name": "Camera open failure reports active success via implicit mock",
+    "confirmed": true,
+    "evidence": {
+      "active": true,
+      "mock": true
+    }
+  },
+  {
+    "name": "Changing resolution on same camera is ignored",
+    "confirmed": true,
+    "evidence": {
+      "requested": [
+        3840,
+        2160
+      ],
+      "actual": [
+        1920,
+        1080
+      ]
+    }
+  },
+  {
+    "name": "Reference ID allows writing JSON outside references directory",
+    "confirmed": true,
+    "evidence": {
+      "http": 200,
+      "escaped_one_directory": true
+    }
+  },
+  {
+    "name": "Single inspections are invisible in history",
+    "confirmed": true,
+    "evidence": {
+      "saved_single_inspections": 1,
+      "history_total": 0
+    }
+  },
+  {
+    "name": "Simulation contaminates production yield statistics",
+    "confirmed": true,
+    "evidence": {
+      "total_runs": 1,
+      "pass_runs": 1,
+      "fail_runs": 0,
+      "review_runs": 0,
+      "error_runs": 0,
+      "board_yield_rate": 100.0,
+      "point_yield_rate": 0.0,
+      "total_pass_points": 0,
+      "total_fail_points": 0
+    }
+  },
+  {
+    "name": "Upload inference blocks HTTP/WebSocket event loop",
+    "confirmed": true,
+    "evidence": {
+      "heartbeat_max_gap_seconds": 0.262,
+      "stub_inference_seconds": 0.25
+    }
+  },
+  {
+    "name": "Disconnect while MOVE waits falsely returns success",
+    "confirmed": true,
+    "evidence": {
+      "returned": true
+    }
+  }
+]

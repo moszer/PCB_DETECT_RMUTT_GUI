@@ -1,0 +1,20 @@
+# Python Web Backend Dependencies for PCB Inspection / AOI
+# Python 3.10 - 3.14 compatible
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.8.0
+python-multipart>=0.0.9
+websockets>=12.0
+aiosqlite>=0.20.0
+pytest>=8.0.0
+httpx>=0.27.0
+pyserial>=3.5
+
+# Computer Vision & Deep Learning (Standard / macOS Apple Silicon)
+# On macOS, native arm64 PyTorch uses MPS automatically
+ultralytics>=8.2.0
+opencv-python>=4.8.0
+torch>=2.1.0
+torchvision>=0.16.0
+numpy>=1.24.0
+pillow>=10.0.0

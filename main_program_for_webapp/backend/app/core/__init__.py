@@ -1,0 +1,63 @@
+"""Core business logic and models for PCB Inspection backend."""
+from .device import InferenceDevice, select_device, validate_model_file
+from .inspection import (
+    CLASS_COLORS_BGR,
+    draw_annotated_image,
+    evaluate_inspection,
+    get_class_color_bgr,
+)
+from .motion_protocol import MotionClient, SimulatedTransport, raster_points
+from .schemas import (
+    AOIPointResult,
+    AOIRunReport,
+    BoundingBox,
+    ControlLease,
+    Detection,
+    DetectionStatus,
+    DevicePreference,
+    InspectionResult,
+    InspectionSummary,
+    MachineState,
+    ReferenceEvaluation,
+    ReferencePoint,
+    ReferenceProfile,
+    ReferenceStatus,
+    ScanPlanRequest,
+    ScanPoint,
+    SystemStatus,
+    Verdict,
+)
+from .security import ControlLeaseManager, lease_manager
+
+__all__ = [
+    "InferenceDevice",
+    "select_device",
+    "validate_model_file",
+    "CLASS_COLORS_BGR",
+    "draw_annotated_image",
+    "evaluate_inspection",
+    "get_class_color_bgr",
+    "MotionClient",
+    "SimulatedTransport",
+    "raster_points",
+    "AOIPointResult",
+    "AOIRunReport",
+    "BoundingBox",
+    "ControlLease",
+    "Detection",
+    "DetectionStatus",
+    "DevicePreference",
+    "InspectionResult",
+    "InspectionSummary",
+    "MachineState",
+    "ReferenceEvaluation",
+    "ReferencePoint",
+    "ReferenceProfile",
+    "ReferenceStatus",
+    "ScanPlanRequest",
+    "ScanPoint",
+    "SystemStatus",
+    "Verdict",
+    "ControlLeaseManager",
+    "lease_manager",
+]
