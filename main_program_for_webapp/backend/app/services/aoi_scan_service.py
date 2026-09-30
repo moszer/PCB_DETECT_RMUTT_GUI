@@ -436,6 +436,7 @@ class AOIScanService:
                         "confirmed_count": eval_res["confirmed_count"],
                         "missing_count": eval_res["missing_count"],
                         "wrong_count": eval_res["wrong_count"],
+                        "max_offset_px": round(eval_res["max_offset"] * max(latest_frame.shape[:2]), 1),
                     }
 
                     pt_result = AOIPointResult(

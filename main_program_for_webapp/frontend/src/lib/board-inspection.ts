@@ -66,6 +66,42 @@ export function boxIoU(
   return union > 0 ? interArea / union : 0;
 }
 
+type Box = [number, number, number, number];
+const center = (b: Box) => [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2];
+
+/**
+ * Median whole-frame shift of the detections vs. the reference (normalized units).
+ * Mirrors estimate_frame_offset() in backend/app/core/inspection.py — keep them in sync so
+ * the dialog's dry run and the real scan judge a frame the same way.
+ */
+export function estimateFrameOffset(
+  expected: ExpectedComponent[],
+  boxes: Array<{ name: string; bbox: Box }>,
+  maxShift = 0.08,
+  minPairs = 3
+): [number, number] {
+  const dxs: number[] = [];
+  const dys: number[] = [];
+  for (const item of expected) {
+    const [ex, ey] = center(item.bbox);
+    const label = item.name.trim().toLowerCase();
+    let best: [number, number, number] | null = null;
+    for (const box of boxes) {
+      if (box.name.trim().toLowerCase() !== label) continue;
+      const [cx, cy] = center(box.bbox);
+      const dist = Math.hypot(cx - ex, cy - ey);
+      if (dist <= maxShift && (!best || dist < best[0])) best = [dist, cx - ex, cy - ey];
+    }
+    if (best) {
+      dxs.push(best[1]);
+      dys.push(best[2]);
+    }
+  }
+  if (dxs.length < minPairs) return [0, 0];
+  const median = (v: number[]) => v.sort((a, b) => a - b)[Math.floor(v.length / 2)];
+  return [median(dxs), median(dys)];
+}
+
 export function newRound(
   count: number,
   startedAt: number,
@@ -141,8 +177,15 @@ export function inspectFrame(
     };
   });
 
+  // Compensate a uniform stage shift before matching (see estimateFrameOffset).
+  const [dx, dy] = estimateFrameOffset(expected, boxes);
+  const aligned = expected.map((item) => ({
+    ...item,
+    bbox: [item.bbox[0] + dx, item.bbox[1] + dy, item.bbox[2] + dx, item.bbox[3] + dy] as Box,
+  }));
+
   // Calculate pairs with IoU >= 0.3 and exact normalized class name
-  const pairs = expected.flatMap((item, ei) =>
+  const pairs = aligned.flatMap((item, ei) =>
     boxes.flatMap((box, bi) => {
       const overlap = boxIoU({ bbox: item.bbox }, { bbox: box.bbox });
       const itemLabel = item.name.trim().toLowerCase();

@@ -173,6 +173,8 @@ export interface MultiframeInfo {
   confirmed_count: number;
   missing_count: number;
   wrong_count: number;
+  /** Largest whole-frame shift vs. the reference that was compensated (pixels). */
+  max_offset_px?: number;
 }
 
 export interface AOIPointResult {

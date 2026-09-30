@@ -176,3 +176,34 @@ class CameraRestartKeepsSelectionTests(unittest.TestCase):
             self.assertEqual(camera_service.resolution, (640, 640))
             self.assertEqual(cap.call_args_list[-1].args[0], 1)
         camera_service.stop()
+
+
+class FrameAlignmentTests(unittest.TestCase):
+    def test_uniform_stage_shift_does_not_fail_small_parts(self):
+        """Real scan: every part shifted ~7.5 px (of 640); 13 px resistors fell under IoU 0.3."""
+        from app.core.inspection import evaluate_multiframe_round
+        expected, detections = [], []
+        for i in range(8):
+            x = 0.05 + i * 0.1
+            box = [x, 0.40, x + 0.06, 0.40 + 13 / 640]  # thin resistor
+            expected.append({"id": f"R{i}", "name": "resistor", "bbox": box})
+            dy = 7.5 / 640
+            detections.append({"label": "resistor", "conf": 0.9, "box": [box[0], box[1] + dy, box[2], box[3] + dy]})
+        unaligned_iou = box_iou_for_test(expected[0]["bbox"], detections[0]["box"])
+        self.assertLess(unaligned_iou, 0.3)  # would have failed before
+        res = evaluate_multiframe_round(expected, [detections] * 5, target_frames=5)
+        self.assertEqual(res["verdict"], "PASS", res["reason"])
+        self.assertGreater(res["max_offset"], 0.01)
+
+    def test_single_missing_part_is_still_missing_after_alignment(self):
+        from app.core.inspection import evaluate_multiframe_round
+        expected = [{"id": f"C{i}", "name": "capacitor", "bbox": [0.1 * i, 0.5, 0.1 * i + 0.05, 0.55]} for i in range(1, 6)]
+        dets = [{"label": "capacitor", "conf": 0.9, "box": e["bbox"]} for e in expected[:-1]]
+        res = evaluate_multiframe_round(expected, [dets] * 5, target_frames=5)
+        self.assertEqual(res["verdict"], "FAIL")
+        self.assertEqual(res["missing_count"], 1)
+
+
+def box_iou_for_test(a, b):
+    from app.core.inspection import box_iou
+    return box_iou(a, b)

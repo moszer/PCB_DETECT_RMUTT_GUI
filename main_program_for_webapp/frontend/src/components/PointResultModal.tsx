@@ -52,6 +52,11 @@ export function PointResultModal({ point, onClose }: { point: AOIPointResult | n
               <Stat label="ผิดชนิด" value={mf.wrong_count} tone={mf.wrong_count ? "fail" : undefined} />
               <p className="col-span-3 text-[11px] text-muted">
                 ตรวจ {mf.total_frames}/{mf.target_frames} เฟรม · ผ่านเมื่อพบ ≥ {mf.pass_threshold} เฟรม ({percent(mf.pass_ratio)})
+                {mf.max_offset_px !== undefined && (
+                  <span className={mf.max_offset_px > 20 ? "text-review" : undefined}>
+                    {" "}· ภาพเลื่อนจากต้นแบบสูงสุด {mf.max_offset_px} px (ชดเชยแล้ว)
+                  </span>
+                )}
               </p>
             </div>
           ) : (

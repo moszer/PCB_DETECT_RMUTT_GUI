@@ -369,12 +369,74 @@ def component_overlap(expected, box):
     return box_iou(expected.get("box", expected.get("bbox", [0,0,0,0])), box)
 
 
+def _center(box) -> Tuple[float, float]:
+    return ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
+
+
+def _label(item: Dict[str, Any]) -> str:
+    return str(item.get("label", item.get("name", ""))).strip().lower()
+
+
+def estimate_frame_offset(
+    expected_components: List[Dict[str, Any]],
+    frame_detections: List[Dict[str, Any]],
+    max_shift: float = 0.08,
+    min_pairs: int = 3,
+) -> Tuple[float, float]:
+    """Median (dx, dy) shift of the whole frame vs. the reference, in normalized units.
+
+    Stage backlash/repeatability shifts every component by the same few pixels; for
+    small parts (e.g. 13 px tall resistors) that alone pushed IoU under the threshold
+    in real scans while the in-place dialog test passed. Each expected component
+    votes with its nearest same-class detection; the median rejects outliers.
+    """
+    dxs, dys = [], []
+    for exp in expected_components:
+        ex, ey = exp["point"] if "point" in exp else _center(exp.get("box", exp.get("bbox", [0, 0, 0, 0])))
+        label = _label(exp)
+        best = None
+        for det in frame_detections:
+            if _label(det) != label:
+                continue
+            dx, dy = (c - e for c, e in zip(_center(det.get("box", det.get("bbox", [0, 0, 0, 0]))), (ex, ey)))
+            dist = math.hypot(dx, dy)
+            if dist <= max_shift and (best is None or dist < best[0]):
+                best = (dist, dx, dy)
+        if best:
+            dxs.append(best[1])
+            dys.append(best[2])
+    if len(dxs) < min_pairs:
+        return (0.0, 0.0)
+    dxs.sort()
+    dys.sort()
+    return (dxs[len(dxs) // 2], dys[len(dys) // 2])
+
+
+def _shifted(exp: Dict[str, Any], dx: float, dy: float) -> Dict[str, Any]:
+    if not dx and not dy:
+        return exp
+    out = dict(exp)
+    if "point" in exp:
+        out["point"] = [exp["point"][0] + dx, exp["point"][1] + dy]
+    for key in ("box", "bbox"):
+        if key in exp:
+            b = exp[key]
+            out[key] = [b[0] + dx, b[1] + dy, b[2] + dx, b[3] + dy]
+    return out
+
+
 def match_frame_detections(
     expected_components: List[Dict[str, Any]],
     frame_detections: List[Dict[str, Any]],
-    min_iou: float = 0.3
+    min_iou: float = 0.3,
+    align: bool = True,
 ) -> Dict[str, Any]:
-    """Greedy bipartite matching of detected boxes in a frame to expected reference components."""
+    """Greedy bipartite matching of detected boxes in a frame to expected reference components.
+
+    With `align`, the reference is first shifted by the frame's estimated offset.
+    """
+    offset = estimate_frame_offset(expected_components, frame_detections) if align else (0.0, 0.0)
+    expected_components = [_shifted(e, *offset) for e in expected_components]
     pairs = []
     for ei, exp in enumerate(expected_components):
         exp_label = str(exp.get("label", exp.get("name", ""))).strip().lower()
@@ -425,6 +487,7 @@ def match_frame_detections(
 
     unmatched_detections = [bi for bi in range(len(frame_detections)) if bi not in used_detections]
     return {
+        "offset": offset,
         "matched_expected": matched_expected,
         "matches": matches,
         "wrong_matches": wrong_matches,
@@ -461,9 +524,11 @@ def evaluate_multiframe_round(
     wrong_counts = [0] * len(expected_components)
     wrong_found_labels = [{} for _ in expected_components]
     extra_detections_all = []
+    max_offset = 0.0
 
     for f_idx, detections in enumerate(frame_results):
         m = match_frame_detections(expected_components, detections)
+        max_offset = max(max_offset, math.hypot(*m["offset"]))
         for ei in m["matched_expected"]:
             hits[ei] += 1
         for w in m["wrong_matches"]:
@@ -543,4 +608,5 @@ def evaluate_multiframe_round(
         "wrong_count": sum(1 for c in component_eval if c["status"] == "wrong"),
         "uncertain_count": sum(1 for c in component_eval if c["status"] == "uncertain"),
         "extra_count": extra_count,
+        "max_offset": round(max_offset, 4),  # largest whole-frame shift vs. reference (normalized)
     }
