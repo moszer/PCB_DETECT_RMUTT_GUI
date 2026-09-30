@@ -68,7 +68,7 @@ export function presetForResolution(resolution?: [number, number] | null) {
 }
 
 /** YOLO inference sizes (imgsz). This is the model input size, not the camera resolution. */
-export const IMGSZ_OPTIONS = [640, 960, 1280, 1600, 1920, 2560] as const;
+export const IMGSZ_OPTIONS = [320, 416, 512, 640, 768, 960, 1280, 1600, 1920, 2560, 3200, 3840, 4096] as const;
 
 export const formatDateTime = (epochSeconds: number) =>
   new Date(epochSeconds * 1000).toLocaleString("th-TH", {

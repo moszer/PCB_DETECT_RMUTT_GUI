@@ -241,7 +241,7 @@ export function ParamsPanel({ params, setParams, disabled }: { params: Inspectio
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-4">
         <SectionLabel>โมเดลตรวจจับ</SectionLabel>
-        <Slider label="ความมั่นใจขั้นต่ำ" value={params.conf} min={0.05} max={0.95} step={0.05} format={percent} disabled={disabled} onChange={(conf) => setParams({ conf })} />
+        <Slider label="ความมั่นใจขั้นต่ำ" value={params.conf} min={0.01} max={1} step={0.01} format={percent} disabled={disabled} onChange={(conf) => setParams({ conf })} />
         <Field label="ขนาดภาพเข้าโมเดล (imgsz)" hint="ค่าสูงตรวจชิ้นเล็กได้ดีขึ้นแต่ช้าลง">
           <Select value={params.imgsz} disabled={disabled} onChange={(e) => setParams({ imgsz: Number(e.target.value) })}>
             {IMGSZ_OPTIONS.map((v) => (
@@ -264,19 +264,32 @@ export function ParamsPanel({ params, setParams, disabled }: { params: Inspectio
         />
         {params.multiframeEnabled && (
           <>
-            <Field label="จำนวนเฟรมต่อจุด">
-              <Segmented
-                className="w-full"
-                disabled={disabled}
-                value={params.targetFrames}
-                onChange={(targetFrames) => setParams({ targetFrames })}
-                options={[3, 5, 10, 15, 20].map((v) => ({ value: v, label: `${v}` }))}
-              />
+            <Field label="จำนวนเฟรมต่อจุด" hint="1–50 เฟรม (เฟรมมากขึ้นแม่นขึ้นแต่ใช้เวลานานขึ้น)">
+              <div className="flex gap-2">
+                <NumberInput
+                  className="w-28 shrink-0"
+                  value={params.targetFrames}
+                  min={1}
+                  max={50}
+                  step={1}
+                  suffix="เฟรม"
+                  disabled={disabled}
+                  onChange={(v) => setParams({ targetFrames: Math.round(v) })}
+                />
+                <Segmented
+                  className="flex-1"
+                  size="sm"
+                  disabled={disabled}
+                  value={params.targetFrames}
+                  onChange={(targetFrames) => setParams({ targetFrames })}
+                  options={[3, 5, 10, 20, 50].map((v) => ({ value: v, label: `${v}` }))}
+                />
+              </div>
             </Field>
             <Slider
               label="เกณฑ์ผ่าน"
               value={params.passRatio}
-              min={0.5}
+              min={0.1}
               max={1}
               step={0.05}
               disabled={disabled}
@@ -292,9 +305,9 @@ export function ParamsPanel({ params, setParams, disabled }: { params: Inspectio
         <Slider
           label="ระยะจับคู่สูงสุด"
           value={params.matchDist}
-          min={5}
-          max={250}
-          step={5}
+          min={1}
+          max={500}
+          step={1}
           disabled={disabled}
           format={(v) => `${v} px`}
           onChange={(matchDist) => setParams({ matchDist })}

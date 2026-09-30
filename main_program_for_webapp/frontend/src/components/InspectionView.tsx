@@ -136,13 +136,13 @@ export function InspectionView({ references, params, setParams, status }: Inspec
               ))}
             </Select>
           </Field>
-          <Slider label="ความมั่นใจขั้นต่ำ" value={params.conf} min={0.05} max={0.95} step={0.05} format={percent} onChange={(conf) => setParams({ conf })} />
+          <Slider label="ความมั่นใจขั้นต่ำ" value={params.conf} min={0.01} max={1} step={0.01} format={percent} onChange={(conf) => setParams({ conf })} />
           <Slider
             label="ระยะจับคู่สูงสุด"
             value={params.matchDist}
-            min={5}
-            max={250}
-            step={5}
+            min={1}
+            max={500}
+            step={1}
             format={(v) => `${v} px`}
             onChange={(matchDist) => setParams({ matchDist })}
             disabled={!referenceId}
