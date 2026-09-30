@@ -14,6 +14,8 @@ import numpy as np
 
 logger = logging.getLogger("camera_service")
 
+_KEEP: Any = object()  # sentinel: keep the previous output size
+
 
 class CameraService:
     """Thread-safe camera service managing frame acquisition and streaming."""
@@ -112,13 +114,25 @@ class CameraService:
 
     def start(
         self,
-        device_index: int = 0,
-        width: int = 1920,
-        height: int = 1080,
-        fps: int = 30,
-        output_size: Optional[Tuple[int, int]] = None,
+        device_index: Optional[int] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        fps: Optional[int] = None,
+        output_size: Optional[Tuple[int, int]] = _KEEP,
     ) -> bool:
+        """Open the camera. Omitted arguments reuse the last requested settings.
+
+        Endpoints such as /stream and /snapshot call start() with no arguments when the
+        camera is momentarily inactive; they used to reset to camera 0 / 1080p and
+        silently switch the operator away from the USB camera they had selected.
+        """
         with self._lifecycle_lock:
+            device_index = self._device_index if device_index is None else device_index
+            width = self._requested_width if width is None else width
+            height = self._requested_height if height is None else height
+            fps = self._requested_fps if fps is None else fps
+            if output_size is _KEEP:
+                output_size = self._output_size
             if self._running:
                 if (
                     self._device_index == device_index

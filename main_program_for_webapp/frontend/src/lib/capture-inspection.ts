@@ -16,7 +16,14 @@ async function previewDataUrl(bitmap: ImageBitmap): Promise<string> {
 
 /** One fresh camera frame, with the same crop/zoom used by AOI, and no history side effects. */
 export async function captureInspection(zoom: number, confidence: number, imgsz: number, signal?: AbortSignal) {
-  const snapshot = await fetch(`${API_BASE}/api/camera/snapshot?zoom=${zoom}&t=${Date.now()}`, { signal, cache: "no-store" });
+  // The camera takes ~2-3 s to reopen after a settings change; the backend answers 503 meanwhile.
+  let snapshot: Response;
+  for (let attempt = 0; ; attempt++) {
+    snapshot = await fetch(`${API_BASE}/api/camera/snapshot?zoom=${zoom}&t=${Date.now()}`, { signal, cache: "no-store" });
+    if (snapshot.status !== 503 || attempt >= 4) break;
+    await new Promise((r) => setTimeout(r, 1000));
+    signal?.throwIfAborted();
+  }
   if (!snapshot.ok) throw new Error(`Camera snapshot failed (${snapshot.status})`);
   const timestampHeader = snapshot.headers.get("X-Frame-Timestamp");
   const timestamp = Number(timestampHeader);

@@ -162,3 +162,17 @@ class CameraOutputSizeTests(unittest.TestCase):
         camera_service.stop()
         bad = client.post("/api/camera/start", json={"output_width": 640})
         self.assertEqual(bad.status_code, 422)
+
+
+class CameraRestartKeepsSelectionTests(unittest.TestCase):
+    def test_argumentless_start_keeps_selected_camera_and_output(self):
+        """/stream and /snapshot call start() bare; that reset the camera to index 0."""
+        camera_service.stop()
+        with patch("app.services.camera_service.cv2.VideoCapture", return_value=MagicMock(isOpened=MagicMock(return_value=False))) as cap:
+            camera_service.start(device_index=1, width=1280, height=720, output_size=(640, 640))
+            camera_service.stop()
+            camera_service.start()
+            self.assertEqual(camera_service.device_index, 1)
+            self.assertEqual(camera_service.resolution, (640, 640))
+            self.assertEqual(cap.call_args_list[-1].args[0], 1)
+        camera_service.stop()
