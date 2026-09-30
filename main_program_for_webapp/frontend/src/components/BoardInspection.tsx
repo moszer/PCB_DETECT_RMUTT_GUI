@@ -13,10 +13,11 @@ import {
   type InspectionRound,
 } from "@/lib/board-inspection";
 import { captureInspection } from "@/lib/capture-inspection";
-import { errorMessage } from "@/lib/api";
+import { api, errorMessage } from "@/lib/api";
+import { CAMERA_PRESETS, presetForResolution } from "@/lib/format";
 import type { CustomPointRequest } from "@/types";
 import type { InspectionParams } from "@/lib/params";
-import { Badge, Button, Checkbox, EmptyState, SectionLabel, TextInput, cx } from "./ui";
+import { Badge, Button, Checkbox, EmptyState, SectionLabel, Select, TextInput, cx } from "./ui";
 
 interface Props {
   point: CustomPointRequest;
@@ -45,7 +46,8 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
   const [view, setView] = useState<View>("reference");
   const [selected, setSelected] = useState(0);
   const [drawing, setDrawing] = useState(false);
-  const [busy, setBusy] = useState<"capture" | "run" | null>(null);
+  const [busy, setBusy] = useState<"capture" | "run" | "camera" | null>(null);
+  const [presetId, setPresetId] = useState<string>("");
   const [message, setMessage] = useState<{ tone: "info" | "pass" | "fail"; text: string } | null>(null);
   const abort = useRef<AbortController | null>(null);
   const dragStart = useRef<[number, number] | null>(null);
@@ -55,6 +57,34 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
   const running = busy === "run";
 
   useEffect(() => () => abort.current?.abort(), []);
+
+  // Show the camera's current capture size in the selector.
+  useEffect(() => {
+    api
+      .listCameras()
+      .then((res) => setPresetId(presetForResolution(res.resolution)?.id ?? ""))
+      .catch(() => undefined);
+  }, []);
+
+  const changeCapture = async (id: string) => {
+    const preset = CAMERA_PRESETS.find((p) => p.id === id);
+    if (!preset || busy) return;
+    setBusy("camera");
+    try {
+      const cams = await api.listCameras();
+      await api.startCamera(cams.current_index, preset.width, preset.height, preset.output);
+      setPresetId(id);
+      // A different frame size/crop changes the framing, so the taught boxes no longer line up.
+      setConfirmed(false);
+      setAligned(false);
+      setRound(null);
+      setMessage({ tone: "info", text: "เปลี่ยนขนาดภาพแล้ว — กด “ถ่ายต้นแบบใหม่” เพื่อสอนต้นแบบที่ขนาดนี้" });
+    } catch (err) {
+      setMessage({ tone: "fail", text: errorMessage(err) });
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const edit = (next: ExpectedComponent[]) => {
     setItems(next);
@@ -153,6 +183,21 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
       {/* ── Image + overlay ── */}
       <div className="flex flex-col gap-3 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
+          <Select
+            aria-label="ขนาดภาพที่ถ่าย"
+            title="ขนาดภาพที่ถ่าย"
+            className="w-auto! h-9! text-xs"
+            value={presetId}
+            disabled={!!busy}
+            onChange={(e) => changeCapture(e.target.value)}
+          >
+            {!presetId && <option value="">ขนาดภาพที่ถ่าย…</option>}
+            {CAMERA_PRESETS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </Select>
           <Button variant={reference ? "secondary" : "primary"} icon={Camera} loading={busy === "capture"} disabled={running} onClick={capture}>
             {reference ? "ถ่ายต้นแบบใหม่" : "ถ่ายต้นแบบจากบอร์ดที่ครบ"}
           </Button>
