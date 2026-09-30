@@ -33,6 +33,7 @@ class CameraService:
         self._requested_width: int = 1920
         self._requested_height: int = 1080
         self._requested_fps: int = 30
+        self._output_size: Optional[Tuple[int, int]] = None  # (w, h) center-crop + resize of every frame
         self._actual_fps: float = 0.0
         self._fps_count: int = 0
         self._fps_timer: float = 0.0
@@ -49,7 +50,8 @@ class CameraService:
 
     @property
     def resolution(self) -> Tuple[int, int]:
-        return (self._actual_width, self._actual_height)
+        """Size of the frames handed to streaming, inspection and AOI (after any output crop)."""
+        return self._output_size or (self._actual_width, self._actual_height)
 
     @property
     def fps(self) -> float:
@@ -108,7 +110,14 @@ class CameraService:
 
         return devices
 
-    def start(self, device_index: int = 0, width: int = 1920, height: int = 1080, fps: int = 30) -> bool:
+    def start(
+        self,
+        device_index: int = 0,
+        width: int = 1920,
+        height: int = 1080,
+        fps: int = 30,
+        output_size: Optional[Tuple[int, int]] = None,
+    ) -> bool:
         with self._lifecycle_lock:
             if self._running:
                 if (
@@ -116,9 +125,11 @@ class CameraService:
                     and self._requested_width == width
                     and self._requested_height == height
                     and self._requested_fps == fps
+                    and self._output_size == output_size
                 ):
                     return True
                 self.stop()
+            self._output_size = output_size
 
             self._device_index = device_index
             self._requested_width = width
@@ -217,6 +228,24 @@ class CameraService:
             if cap is not None:
                 cap.release()
 
+    @staticmethod
+    def _fit_output(frame: np.ndarray, size: Optional[Tuple[int, int]]) -> np.ndarray:
+        """Center-crop to the output aspect ratio, then resize (cameras rarely offer e.g. 640x640 natively)."""
+        if not size:
+            return frame
+        out_w, out_h = size
+        h, w = frame.shape[:2]
+        if (w, h) == (out_w, out_h):
+            return frame
+        target = out_w / out_h
+        if w / h > target:
+            crop_w, crop_h = int(round(h * target)), h
+        else:
+            crop_w, crop_h = w, int(round(w / target))
+        x, y = (w - crop_w) // 2, (h - crop_h) // 2
+        frame = frame[y:y + crop_h, x:x + crop_w]
+        return cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_AREA)
+
     def _capture_frames(self, generation, cap, is_mock):
         while self._running and generation == self._generation:
             now = time.monotonic()
@@ -234,6 +263,7 @@ class CameraService:
                 time.sleep(0.033)  # ~30 fps
 
             if frame is not None:
+                frame = self._fit_output(frame, self._output_size)
                 # Downscale large frames for smooth web streaming
                 h, w = frame.shape[:2]
                 if w > 1280:

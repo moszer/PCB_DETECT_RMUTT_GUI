@@ -135,3 +135,30 @@ class CameraSwitchTests(unittest.TestCase):
             camera_service.start(device_index=0, width=1280, height=720)  # switch → stop()
             camera_service.stop()
         self.assertFalse(state["released_during_read"])
+
+
+class CameraOutputSizeTests(unittest.TestCase):
+    def test_fit_output_center_crops_to_square(self):
+        from app.services.camera_service import CameraService
+        frame = np.zeros((90, 160, 3), dtype=np.uint8)
+        frame[:, 35:125] = 255  # the centered 90x90 square
+        out = CameraService._fit_output(frame, (64, 64))
+        self.assertEqual(out.shape, (64, 64, 3))
+        self.assertGreater(int(out.min()), 250)  # no background from the cropped-away sides
+
+    def test_fit_output_noop_without_size(self):
+        from app.services.camera_service import CameraService
+        frame = np.zeros((9, 16, 3), dtype=np.uint8)
+        self.assertIs(CameraService._fit_output(frame, None), frame)
+
+    def test_start_reports_output_size_as_resolution(self):
+        client = TestClient(app)
+        camera_service.stop()
+        res = client.post("/api/camera/start", json={"device_index": 0, "width": 1920, "height": 1080, "output_width": 640, "output_height": 640})
+        self.assertEqual(res.status_code, 200, res.text)
+        self.assertEqual(res.json()["resolution"], [640, 640])
+        _, frame = camera_service.get_fresh_frame(0.0)
+        self.assertEqual(frame.shape[:2], (640, 640))
+        camera_service.stop()
+        bad = client.post("/api/camera/start", json={"output_width": 640})
+        self.assertEqual(bad.status_code, 422)

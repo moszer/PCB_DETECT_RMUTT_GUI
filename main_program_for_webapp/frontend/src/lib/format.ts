@@ -41,16 +41,30 @@ export const VERDICT_TONE: Record<Verdict, { text: string; soft: string; solid: 
   ERROR: { text: "text-muted", soft: "bg-surface-3", solid: "bg-subtle", border: "border-line-strong" },
 };
 
-/** Camera capture presets shared by every camera selector. */
-export const CAMERA_PRESETS = [
+export interface CameraPreset {
+  id: string;
+  label: string;
+  /** What the camera is asked to capture. */
+  width: number;
+  height: number;
+  /** Final frame size after a center crop + resize (omit for the native frame). */
+  output?: [number, number];
+}
+
+/** Camera presets shared by every camera selector. Square/custom sizes crop the center of the image. */
+export const CAMERA_PRESETS: CameraPreset[] = [
   { id: "720p", label: "720p · 1280×720", width: 1280, height: 720 },
   { id: "1080p", label: "1080p · 1920×1080", width: 1920, height: 1080 },
   { id: "4k", label: "4K · 3840×2160", width: 3840, height: 2160 },
-] as const;
+  { id: "sq640", label: "สี่เหลี่ยมจัตุรัส 640×640", width: 1920, height: 1080, output: [640, 640] },
+  { id: "sq960", label: "สี่เหลี่ยมจัตุรัส 960×960", width: 1920, height: 1080, output: [960, 960] },
+  { id: "sq1080", label: "สี่เหลี่ยมจัตุรัส 1080×1080", width: 1920, height: 1080, output: [1080, 1080] },
+];
 
+/** Match the reported frame size back to a preset (the frame size is the output size when cropped). */
 export function presetForResolution(resolution?: [number, number] | null) {
   if (!resolution) return undefined;
-  return CAMERA_PRESETS.find((p) => p.width === resolution[0] && p.height === resolution[1]);
+  return CAMERA_PRESETS.find((p) => (p.output ?? [p.width, p.height]).every((v, i) => v === resolution[i]));
 }
 
 /** YOLO inference sizes (imgsz). This is the model input size, not the camera resolution. */

@@ -125,12 +125,14 @@ export const api = {
     request<{ devices: CameraDevice[]; current_index: number; is_mock: boolean; resolution: [number, number]; fps: number }>(
       "/api/camera/devices"
     ),
-  startCamera: (device_index: number, width: number, height: number, fps = 30) =>
+  startCamera: (device_index: number, width: number, height: number, output?: [number, number]) =>
     post<{ success: boolean; is_mock: boolean; resolution: [number, number] }>("/api/camera/start", {
       device_index,
       width,
       height,
-      fps,
+      fps: 30,
+      output_width: output?.[0],
+      output_height: output?.[1],
     }),
 
   // Inspection

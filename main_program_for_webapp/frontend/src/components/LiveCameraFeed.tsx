@@ -267,7 +267,7 @@ function CameraSettings({
     const p = CAMERA_PRESETS.find((x) => x.id === preset)!;
     setBusy(true);
     try {
-      const res = await api.startCamera(device, p.width, p.height);
+      const res = await api.startCamera(device, p.width, p.height, p.output);
       toast.success("ตั้งค่ากล้องแล้ว", res.is_mock ? "เปิดกล้องจริงไม่ได้ — ใช้ภาพจำลอง" : `${res.resolution[0]}×${res.resolution[1]}`);
       onApplied();
       onClose();
@@ -291,7 +291,7 @@ function CameraSettings({
           ))}
         </Select>
       </Field>
-      <Field label="ความละเอียดการถ่าย">
+      <Field label="ขนาดภาพที่ถ่าย" hint="แบบสี่เหลี่ยมจัตุรัสจะตัดกลางภาพแล้วย่อ — ใช้กับภาพสด การตรวจ และการสแกนทั้งหมด">
         <Select value={preset} onChange={(e) => setPreset(e.target.value)} disabled={locked}>
           {CAMERA_PRESETS.map((p) => (
             <option key={p.id} value={p.id}>

@@ -1,7 +1,7 @@
 """Camera control and MJPEG streaming endpoints."""
 from fastapi import APIRouter, HTTPException, Response, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 import time
 from typing import Optional
 import cv2
@@ -17,6 +17,15 @@ class CameraStartRequest(BaseModel):
     width: int = Field(1920, ge=128, le=8192)
     height: int = Field(1080, ge=128, le=8192)
     fps: int = Field(30, ge=1, le=120)
+    # Optional output size: frames are center-cropped to this aspect and resized (e.g. 640x640).
+    output_width: Optional[int] = Field(None, ge=64, le=8192)
+    output_height: Optional[int] = Field(None, ge=64, le=8192)
+
+    @model_validator(mode="after")
+    def both_or_neither(self):
+        if (self.output_width is None) != (self.output_height is None):
+            raise ValueError("Set both output_width and output_height, or neither")
+        return self
 
 
 @router.get("/stream")
@@ -83,7 +92,8 @@ def start_camera(req: CameraStartRequest):
         device_index=req.device_index,
         width=req.width,
         height=req.height,
-        fps=req.fps
+        fps=req.fps,
+        output_size=(req.output_width, req.output_height) if req.output_width else None,
     )
     return {
         "success": success,
