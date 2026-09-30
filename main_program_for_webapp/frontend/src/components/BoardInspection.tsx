@@ -175,6 +175,8 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
   };
 
   const valid = validateReference(items);
+  const dirty =
+    JSON.stringify(items) !== JSON.stringify(point.expected_components ?? []) || (reference?.image ?? null) !== (point.reference_image ?? null);
   const frameRec = typeof view === "number" ? round?.capturedFrames?.[view] : undefined;
   const shownImage = frameRec?.image || reference?.image;
 
@@ -301,7 +303,11 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
       <div className="flex flex-col gap-4 min-w-0">
         <div className="flex items-center justify-between">
           <SectionLabel>ชิ้นส่วนต้นแบบ ({items.length})</SectionLabel>
-          {!valid && items.length > 0 && <Badge tone="fail">รหัสซ้ำหรือชื่อว่าง</Badge>}
+          {!valid && items.length > 0 ? (
+            <Badge tone="fail">รหัสซ้ำหรือชื่อว่าง</Badge>
+          ) : (
+            dirty && <Badge tone="review">ยังไม่ได้บันทึก</Badge>
+          )}
         </div>
         <ul className="rounded-lg border border-line divide-y divide-line max-h-72 overflow-y-auto">
           {items.map((item, i) => {
@@ -357,8 +363,8 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
         </div>
 
         <div className="flex flex-col gap-2">
-          <Button variant="success" icon={Save} disabled={!confirmed || !reference || !valid || !!busy} onClick={() => reference && onSave(reference.image, items)}>
-            บันทึกต้นแบบของจุดนี้
+          <Button variant="success" icon={Save} disabled={!valid || !!busy || !dirty} onClick={() => onSave(reference?.image ?? point.reference_image ?? "", items)}>
+            {dirty ? "บันทึกต้นแบบของจุดนี้" : "บันทึกแล้ว"}
           </Button>
           {running ? (
             <Button variant="secondary" icon={Square} onClick={stop}>
