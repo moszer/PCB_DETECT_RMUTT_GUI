@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { API_BASE } from "@/lib/api";
-import type { MachineState, ScanProgressEvent } from "@/types";
+import type { DatasetProgressEvent, MachineState, ScanProgressEvent } from "@/types";
 
 /**
  * Live machine state and scan progress over /ws/status.
@@ -13,6 +13,7 @@ export function useStationSocket() {
   const [connected, setConnected] = useState(false);
   const [machineState, setMachineState] = useState<MachineState | null>(null);
   const [scanProgress, setScanProgress] = useState<ScanProgressEvent | null>(null);
+  const [datasetProgress, setDatasetProgress] = useState<DatasetProgressEvent | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -38,6 +39,7 @@ export function useStationSocket() {
           const msg = JSON.parse(event.data);
           if (msg.type === "machine_state") setMachineState(msg.data);
           else if (msg.type === "scan_progress") setScanProgress(msg.data);
+          else if (msg.type === "dataset_progress") setDatasetProgress(msg.data);
         } catch {
           // Ignore malformed frames.
         }
@@ -60,5 +62,5 @@ export function useStationSocket() {
     };
   }, []);
 
-  return { connected, machineState, scanProgress };
+  return { connected, machineState, scanProgress, datasetProgress };
 }

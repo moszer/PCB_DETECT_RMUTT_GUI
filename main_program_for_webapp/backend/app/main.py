@@ -11,13 +11,14 @@ from .routers import (
     aoi_router,
     auth_router,
     camera_router,
+    datasets_router,
     history_router,
     inspection_router,
     references_router,
     system_router,
     ws_router,
 )
-from .services import aoi_scan_service, camera_service, inference_service, machine_service
+from .services import aoi_scan_service, camera_service, dataset_service, inference_service, machine_service
 
 # Configure clean logging
 logging.basicConfig(
@@ -46,6 +47,7 @@ async def lifespan(app: FastAPI):
 
     logger.info("PCB Inspection Backend shutting down...")
     aoi_scan_service.stop_scan()
+    dataset_service.stop_capture()
     camera_service.stop()
     machine_service.disconnect()
 
@@ -70,13 +72,14 @@ app.add_middleware(
 
 # Mount static file route for image assets
 # Only public assets: never expose settings (passcode), SQLite or model files.
-for asset_dir in ("uploads", "runs", "references"):
+for asset_dir in ("uploads", "runs", "references", "datasets"):
     app.mount(f"/api/storage/{asset_dir}", StaticFiles(directory=str(STORAGE_DIR / asset_dir)), name=f"storage_{asset_dir}")
 
 # Include Routers
 app.include_router(system_router)
 app.include_router(auth_router)
 app.include_router(camera_router)
+app.include_router(datasets_router)
 app.include_router(inspection_router)
 app.include_router(aoi_router)
 app.include_router(references_router)

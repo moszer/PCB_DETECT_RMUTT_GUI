@@ -3,7 +3,11 @@ import type {
   CameraDevice,
   ComputeDevice,
   ControlLease,
+  Dataset,
+  DatasetImage,
+  DatasetSummary,
   InspectionResult,
+  LabelBox,
   ModelFile,
   ReferenceProfile,
   ReferenceSummary,
@@ -184,6 +188,49 @@ export const api = {
     request<{ inspections: SingleInspectionRecord[]; total: number }>(
       `/api/history/single-inspections?limit=${limit}&offset=${offset}`
     ),
+};
+
+export interface StartCaptureOptions {
+  name: string;
+  corners: Array<[number, number]>;
+  pitchX: number;
+  pitchY: number;
+  speed: number;
+  settleSec: number;
+  autoLabel: boolean;
+  conf: number;
+  imgsz?: number;
+}
+
+export const datasetApi = {
+  list: () => request<{ datasets: DatasetSummary[]; running: string | null }>("/api/datasets"),
+  get: (id: string) => request<Dataset>(`/api/datasets/${encodeURIComponent(id)}`),
+  capture: (o: StartCaptureOptions) =>
+    post<Dataset>("/api/datasets/capture", {
+      name: o.name,
+      corners: o.corners,
+      pitch_x_mm: o.pitchX,
+      pitch_y_mm: o.pitchY,
+      speed: o.speed,
+      settle_sec: o.settleSec,
+      auto_label: o.autoLabel,
+      conf: o.conf,
+      imgsz: o.imgsz,
+    }),
+  stop: () => post("/api/datasets/capture/stop"),
+  remove: (id: string) => request<{ success: boolean }>(`/api/datasets/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  labels: (id: string, file: string) =>
+    request<{ file: string; boxes: LabelBox[]; classes: string[] }>(`/api/datasets/${encodeURIComponent(id)}/labels/${encodeURIComponent(file)}`),
+  saveLabels: (id: string, file: string, boxes: LabelBox[]) =>
+    request<DatasetImage>(`/api/datasets/${encodeURIComponent(id)}/labels/${encodeURIComponent(file)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ boxes }),
+    }),
+  removeImage: (id: string, file: string) =>
+    request<{ success: boolean }>(`/api/datasets/${encodeURIComponent(id)}/images/${encodeURIComponent(file)}`, { method: "DELETE" }),
+  imageUrl: (id: string, file: string) => `${API_BASE}/api/storage/datasets/${id}/images/${file}`,
+  downloadUrl: (id: string, valRatio = 0.2) => `${API_BASE}/api/datasets/${encodeURIComponent(id)}/download?val_ratio=${valRatio}`,
 };
 
 export const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));

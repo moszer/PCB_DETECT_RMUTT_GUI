@@ -19,10 +19,11 @@ STORAGE_DIR = Path(os.environ.get("PCB_STORAGE_DIR", str(BACKEND_ROOT / "data"))
 UPLOADS_DIR = STORAGE_DIR / "uploads"
 RUNS_DIR = STORAGE_DIR / "runs"
 REFERENCES_DIR = STORAGE_DIR / "references"
+DATASETS_DIR = STORAGE_DIR / "datasets"
 DB_PATH = STORAGE_DIR / "inspection.db"
 
 # Ensure directories exist
-for directory in (STORAGE_DIR, UPLOADS_DIR, RUNS_DIR, REFERENCES_DIR):
+for directory in (STORAGE_DIR, UPLOADS_DIR, RUNS_DIR, REFERENCES_DIR, DATASETS_DIR):
     directory.mkdir(parents=True, exist_ok=True)
 
 

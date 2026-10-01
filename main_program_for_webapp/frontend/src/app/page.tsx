@@ -8,17 +8,34 @@ import { AOIScanView } from "@/components/aoi/AOIScanView";
 import { ReferencesView } from "@/components/ReferencesView";
 import { HistoryView } from "@/components/HistoryView";
 import { SettingsView } from "@/components/SettingsView";
+import { DatasetView } from "@/components/dataset/DatasetView";
 import { useStationSocket } from "@/hooks/useStationSocket";
 import { useIsClient, usePersistentState } from "@/hooks/usePersistentState";
 import { api } from "@/lib/api";
 import { DEFAULT_PARAMS, type InspectionParams } from "@/lib/params";
 import { sfx } from "@/lib/sound";
-import type { AOIRunReport, ReferenceSummary, ScanProgressEvent, SystemStatus } from "@/types";
+import type { AOIRunReport, DatasetProgressEvent, ReferenceSummary, ScanProgressEvent, SystemStatus } from "@/types";
 
 const eventKey = (p: ScanProgressEvent | null) =>
   p ? `${p.run_id}:${p.event}:${p.point_index ?? ""}:${p.frame_index ?? ""}` : null;
 
 /** Audible scan feedback on every tab: a tick per frame, a verdict tone per point, a fanfare at the end. */
+/** Dataset capture feedback: shutter per photo, fanfare when the whole board is done. */
+function useDatasetSounds(progress: DatasetProgressEvent | null) {
+  const last = useRef<string | null>(null);
+  useEffect(() => {
+    if (!progress) return;
+    const key = `${progress.dataset.id}:${progress.event}:${progress.dataset.captured}`;
+    if (key === last.current) return;
+    last.current = key;
+    if (progress.event === "start") sfx.start();
+    else if (progress.event === "captured") sfx.shutter();
+    else if (progress.event === "complete") sfx.complete("PASS");
+    else if (progress.event === "aborted") sfx.alarm();
+    else if (progress.event === "error") sfx.error();
+  }, [progress]);
+}
+
 function useScanSounds(progress: ScanProgressEvent | null) {
   const last = useRef<string | null>(null);
   useEffect(() => {
@@ -69,8 +86,9 @@ function Station() {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [polledScan, setPolledScan] = useState<AOIRunReport | null>(null);
   const [references, setReferences] = useState<ReferenceSummary[]>([]);
-  const { connected, machineState, scanProgress } = useStationSocket();
+  const { connected, machineState, scanProgress, datasetProgress } = useStationSocket();
   useScanSounds(scanProgress);
+  useDatasetSounds(datasetProgress);
 
   // Browsers only allow audio after a gesture; unlock on the operator's first interaction.
   useEffect(() => {
@@ -157,6 +175,7 @@ function Station() {
             />
           )}
           {tab === "inspect" && <InspectionView references={references} params={params} setParams={setParams} status={liveStatus} />}
+          {tab === "dataset" && <DatasetView status={liveStatus} progress={datasetProgress} params={params} onRefreshStatus={refreshStatus} />}
           {tab === "references" && <ReferencesView references={references} onRefresh={refreshReferences} />}
           {tab === "history" && <HistoryView />}
           {tab === "settings" && <SettingsView onRefreshStatus={refreshStatus} />}

@@ -6,6 +6,7 @@ from pydantic import Field
 from ..core.schemas import BaseModel, AOIRunReport, MachineState, ScanPlanRequest, ScanPoint
 from ..core.security import lease_manager
 from ..services.aoi_scan_service import aoi_scan_service
+from ..services.dataset_service import dataset_service
 from ..services.machine_service import machine_service
 
 router = APIRouter(prefix="/api/aoi", tags=["aoi"])
@@ -74,7 +75,7 @@ def connect_stage(
 ):
     _require_operator_lease(x_operator_token, x_operator_id)
     try:
-        if aoi_scan_service.is_running:
+        if aoi_scan_service.is_running or dataset_service.is_running:
             raise ValueError("Stop the current scan before reconnecting")
         machine_service.connect(mode=req.mode, port=req.port, baud=req.baud)
         return {"success": True, "state": machine_service.get_state()}
@@ -89,6 +90,7 @@ def disconnect_stage(
 ):
     _require_operator_lease(x_operator_token, x_operator_id)
     aoi_scan_service.stop_scan()
+    dataset_service.stop_capture()
     machine_service.disconnect()
     return {"success": True, "state": machine_service.get_state()}
 
@@ -100,7 +102,7 @@ def home_stage(
 ):
     _require_operator_lease(x_operator_token, x_operator_id)
     try:
-        if aoi_scan_service.is_running:
+        if aoi_scan_service.is_running or dataset_service.is_running:
             raise ValueError("Cannot HOME during a scan")
         machine_service.home()
         return {"success": True, "state": machine_service.get_state()}
@@ -116,7 +118,7 @@ def jog_stage(
 ):
     _require_operator_lease(x_operator_token, x_operator_id)
     try:
-        if aoi_scan_service.is_running:
+        if aoi_scan_service.is_running or dataset_service.is_running:
             raise ValueError("Cannot jog during a scan")
         machine_service.jog(req.dx_mm, req.dy_mm, req.speed)
         return {"success": True, "state": machine_service.get_state()}
@@ -132,7 +134,7 @@ def move_stage(
 ):
     _require_operator_lease(x_operator_token, x_operator_id)
     try:
-        if aoi_scan_service.is_running:
+        if aoi_scan_service.is_running or dataset_service.is_running:
             raise ValueError("Cannot move manually during a scan")
         if req.x_steps is not None and req.y_steps is not None:
             machine_service.move_to_steps(req.x_steps, req.y_steps, req.speed)
@@ -151,6 +153,7 @@ def move_stage(
 def stop_stage():
     """Emergency STOP: Accessible to anyone at all times for safety."""
     aoi_scan_service.stop_scan()
+    dataset_service.stop_capture()
     machine_service.stop()
     return {"success": True, "message": "STOP command executed."}
 
@@ -183,6 +186,8 @@ def start_scan(
 ):
     _require_operator_lease(x_operator_token, x_operator_id)
     try:
+        if dataset_service.is_running:
+            raise RuntimeError("Stop the dataset capture before starting an AOI scan")
         report = aoi_scan_service.start_scan(
             plan=req.plan,
             is_golden_scan=req.is_golden_scan,

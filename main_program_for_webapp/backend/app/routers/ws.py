@@ -6,6 +6,7 @@ from typing import Set
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..services.aoi_scan_service import aoi_scan_service
+from ..services.dataset_service import dataset_service
 from ..services.machine_service import machine_service
 
 logger = logging.getLogger("ws_router")
@@ -45,8 +46,14 @@ def _on_scan_progress(payload):
         )
 
 
+def _on_dataset_progress(payload):
+    if loop and loop.is_running() and active_connections:
+        asyncio.run_coroutine_threadsafe(broadcast_json({"type": "dataset_progress", "data": payload}), loop)
+
+
 machine_service.subscribe(_on_machine_state)
 aoi_scan_service.subscribe_progress(_on_scan_progress)
+dataset_service.subscribe(_on_dataset_progress)
 
 
 @router.websocket("/ws/status")

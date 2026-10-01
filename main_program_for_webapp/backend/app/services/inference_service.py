@@ -35,6 +35,11 @@ class InferenceService:
         return self._model_path
 
     @property
+    def class_names(self) -> List[str]:
+        """Model class names in index order (empty when no model is loaded)."""
+        return [self._model_names[i] for i in sorted(self._model_names)]
+
+    @property
     def device_info(self) -> InferenceDevice:
         if self._device_info is None:
             return InferenceDevice("cpu", "CPU (not initialized)")

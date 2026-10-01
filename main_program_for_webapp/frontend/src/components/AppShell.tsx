@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import {
   BarChart3,
   BookMarked,
+  Database,
   Cpu,
   Crosshair,
   Image as ImageIcon,
@@ -31,11 +32,12 @@ import { sfx } from "@/lib/sound";
 import { Button, Checkbox, Field, Modal, StatusDot, TextInput, cx } from "./ui";
 import { useToast } from "./Toast";
 
-export type TabId = "aoi" | "inspect" | "references" | "history" | "settings";
+export type TabId = "aoi" | "inspect" | "dataset" | "references" | "history" | "settings";
 
 export const NAV: Array<{ id: TabId; label: string; short: string; icon: LucideIcon; description: string }> = [
   { id: "aoi", label: "สแกน AOI", short: "AOI", icon: ScanLine, description: "มาร์คจุด สอนต้นแบบ และสแกนบอร์ดอัตโนมัติด้วยสเตจ XY" },
   { id: "inspect", label: "ตรวจภาพเดี่ยว", short: "ตรวจภาพ", icon: ImageIcon, description: "ตรวจจากกล้องสดหรืออัปโหลดภาพ เทียบกับโปรไฟล์อ้างอิง" },
+  { id: "dataset", label: "ชุดข้อมูลเทรน", short: "ข้อมูล", icon: Database, description: "มาร์ค 4 มุมบอร์ด ถ่ายทั้งบอร์ดอัตโนมัติ แก้ label และดาวน์โหลดไปเทรนโมเดล" },
   { id: "references", label: "โปรไฟล์อ้างอิง", short: "อ้างอิง", icon: BookMarked, description: "โปรไฟล์บอร์ดต้นแบบ (Golden reference)" },
   { id: "history", label: "ประวัติ & Yield", short: "ประวัติ", icon: BarChart3, description: "ผลการตรวจย้อนหลังและอัตราผ่านการผลิต" },
   { id: "settings", label: "ตั้งค่าสถานี", short: "ตั้งค่า", icon: Settings, description: "โมเดล ฮาร์ดแวร์ประมวลผล ขอบเขตสเตจ และข้อมูลสถานี" },
@@ -118,7 +120,7 @@ export function AppShell({ tab, onTab, status, socketConnected, onRefreshStatus,
       </div>
 
       {/* Bottom nav (mobile / tablet portrait) */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 h-16 grid grid-cols-5 border-t border-line bg-surface">
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 h-16 grid grid-cols-6 border-t border-line bg-surface">
         {NAV.map((item) => {
           const active = item.id === tab;
           const Icon = item.icon;

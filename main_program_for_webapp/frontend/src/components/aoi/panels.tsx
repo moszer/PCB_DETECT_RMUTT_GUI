@@ -215,7 +215,16 @@ export function GridPanel({
   );
 }
 
-function PathPreview({ path, limits }: { path: Array<[number, number]>; limits: [number, number] }) {
+/** Top-down view of the stage travel area with a scan path (and optionally a marked outline). */
+export function PathPreview({
+  path,
+  limits,
+  outline,
+}: {
+  path: Array<[number, number]>;
+  limits: [number, number];
+  outline?: Array<[number, number]>;
+}) {
   const W = 300;
   const H = Math.max(120, Math.min(220, (W * limits[1]) / limits[0]));
   const sx = (x: number) => 10 + (x / limits[0]) * (W - 20);
@@ -224,6 +233,15 @@ function PathPreview({ path, limits }: { path: Array<[number, number]>; limits: 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full rounded-lg bg-surface-2 border border-line">
       <rect x={10} y={10} width={W - 20} height={H - 20} fill="none" stroke="var(--line-strong)" strokeDasharray="4 4" />
+      {outline && outline.length > 1 && (
+        <polygon
+          points={outline.map(([x, y]) => `${sx(x)},${sy(y)}`).join(" ")}
+          fill="var(--pass)"
+          fillOpacity={0.08}
+          stroke="var(--pass)"
+          strokeDasharray="5 3"
+        />
+      )}
       <path d={d} fill="none" stroke="var(--accent)" strokeWidth={1.5} strokeOpacity={0.6} />
       {path.slice(0, 400).map(([x, y], i) => {
         const bad = x < 0 || y < 0 || x > limits[0] || y > limits[1];

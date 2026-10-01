@@ -345,3 +345,58 @@ export interface ComputeDevice {
   available: boolean;
   detail: string;
 }
+
+/* ── Training datasets ───────────────────────────────── */
+
+export type DatasetStatus = "capturing" | "complete" | "aborted" | "error";
+
+export interface DatasetImage {
+  file: string;
+  x_mm: number;
+  y_mm: number;
+  width: number;
+  height: number;
+  boxes: number;
+  labeled_by: "model" | "manual" | null;
+}
+
+export interface DatasetSummary {
+  id: string;
+  name: string;
+  status: DatasetStatus;
+  created_at: number;
+  updated_at: number;
+  image_count: number;
+  planned: number;
+  box_count: number;
+  cover: string | null;
+}
+
+export interface Dataset {
+  id: string;
+  name: string;
+  status: DatasetStatus;
+  created_at: number;
+  updated_at: number;
+  corners: Array<[number, number]>;
+  planned: number;
+  resolution: [number, number];
+  model: string | null;
+  classes: string[];
+  images: DatasetImage[];
+  error: string | null;
+}
+
+/** A label box in normalized [x1, y1, x2, y2]. */
+export interface LabelBox {
+  label: string;
+  bbox: [number, number, number, number];
+}
+
+export interface DatasetProgressEvent {
+  event: "start" | "moving" | "captured" | "complete" | "aborted" | "error";
+  dataset: { id: string; name: string; status: DatasetStatus; planned: number; captured: number; error: string | null };
+  index?: number;
+  target_mm?: [number, number];
+  image?: DatasetImage;
+}
