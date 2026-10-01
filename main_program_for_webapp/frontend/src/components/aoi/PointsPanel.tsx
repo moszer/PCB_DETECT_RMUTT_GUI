@@ -27,6 +27,8 @@ interface PointsPanelProps {
   canMove: boolean;
   scanning: boolean;
   frames: number | null;
+  /** Point currently being scanned (pulses in the list). */
+  scanningIndex?: number | null;
 }
 
 const ZOOMS = [1, 1.5, 2, 3, 4];
@@ -66,10 +68,17 @@ export function PointsPanel(p: PointsPanelProps) {
               const active = i === p.selected;
               const parts = pt.expected_components?.length ?? 0;
               const moving = p.movingIndex === i;
+              const live = p.scanningIndex === i;
               return (
-                <li key={pt.id ?? i} className={cx("transition-colors", active ? "bg-accent-soft" : "hover:bg-surface-2")}>
+                <li key={pt.id ?? i} className={cx("transition-colors animate-rise", active || live ? "bg-accent-soft" : "hover:bg-surface-2")}>
                   <div className="flex items-center gap-2 px-2.5 py-2 cursor-pointer" onClick={() => p.onSelect(i)}>
-                    <span className={cx("size-6 rounded-md grid place-items-center text-[11px] font-mono font-semibold shrink-0", active ? "bg-accent text-on-accent" : "bg-surface-3 text-muted")}>
+                    <span
+                      className={cx(
+                        "size-6 rounded-md grid place-items-center text-[11px] font-mono font-semibold shrink-0",
+                        active || live ? "bg-accent text-on-accent" : "bg-surface-3 text-muted",
+                        live && "animate-ring"
+                      )}
+                    >
                       {i + 1}
                     </span>
                     <div className="min-w-0 flex-1">

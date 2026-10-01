@@ -3,6 +3,7 @@
 import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Info, X, XCircle } from "lucide-react";
 import { errorMessage } from "@/lib/api";
+import { sfx } from "@/lib/sound";
 import { cx } from "./ui";
 
 type ToastKind = "success" | "error" | "warning" | "info";
@@ -40,6 +41,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const push = useCallback(
     (kind: ToastKind, title: string, detail?: string) => {
       const id = nextId.current++;
+      if (kind === "error") sfx.error();
       setItems((all) => [...all.slice(-3), { id, kind, title, detail }]);
       setTimeout(() => dismiss(id), kind === "error" ? 8000 : 4000);
     },

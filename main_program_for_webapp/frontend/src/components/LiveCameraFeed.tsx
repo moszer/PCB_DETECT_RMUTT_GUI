@@ -23,6 +23,10 @@ interface LiveCameraFeedProps {
   hud?: FeedHud | null;
   /** Disable camera switching (e.g. during a scan the backend rejects it anyway). */
   locked?: boolean;
+  /** Changing this value plays a shutter flash (one per captured frame). */
+  flashKey?: string | number | null;
+  /** Sweep a scan line over the image while a scan is capturing. */
+  scanning?: boolean;
 }
 
 const ZOOM_STEPS = [1, 1.5, 2, 3, 4];
@@ -31,7 +35,7 @@ const ZOOM_STEPS = [1, 1.5, 2, 3, 4];
  * The single live camera view used across the app: MJPEG stream with an automatic
  * snapshot fallback, alignment reticle, zoom preview and the one camera-settings menu.
  */
-export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePosition, hud, locked }: LiveCameraFeedProps) {
+export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePosition, hud, locked, flashKey, scanning }: LiveCameraFeedProps) {
   const [mode, setMode] = useState<"stream" | "snapshot">("stream");
   const [streamKey, setStreamKey] = useState(() => Date.now());
   const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
@@ -116,6 +120,12 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
 
       {reticle && <Reticle zoomed={zoomed} />}
 
+      {scanning && (
+        <div className="absolute inset-x-0 h-0.5 bg-cyan-300/90 shadow-[0_0_14px_3px_rgb(103_232_249/0.6)] animate-scanline pointer-events-none" />
+      )}
+      {/* Remounting on a new key restarts the CSS animation: one flash per captured frame. */}
+      {flashKey != null && <div key={flashKey} className="absolute inset-0 bg-white animate-flash pointer-events-none" />}
+
       {/* Top-left: source + resolution */}
       <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap max-w-[70%]">
         <HudPill>
@@ -165,8 +175,9 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
 
       {hud && (
         <div
+          key={hud.title}
           className={cx(
-            "absolute top-14 left-3 right-3 sm:right-auto rounded-lg px-3 py-2 text-xs text-white backdrop-blur border",
+            "absolute top-14 left-3 right-3 sm:right-auto rounded-lg px-3 py-2 text-xs text-white backdrop-blur border animate-rise",
             hud.tone === "accent" ? "bg-blue-950/80 border-blue-400/50" : "bg-amber-950/80 border-amber-400/50"
           )}
         >

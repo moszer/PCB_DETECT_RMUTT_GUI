@@ -16,6 +16,8 @@ import {
   ShieldCheck,
   Sun,
   Video,
+  Volume2,
+  VolumeX,
   Wifi,
   WifiOff,
   type LucideIcon,
@@ -24,6 +26,8 @@ import type { SystemStatus } from "@/types";
 import { api, errorMessage } from "@/lib/api";
 import { fileName, formatMm } from "@/lib/format";
 import { useOperatorLease } from "@/hooks/useOperatorLease";
+import { useSoundPrefs } from "@/hooks/useSound";
+import { sfx } from "@/lib/sound";
 import { Button, Checkbox, Field, Modal, StatusDot, TextInput, cx } from "./ui";
 import { useToast } from "./Toast";
 
@@ -97,6 +101,7 @@ export function AppShell({ tab, onTab, status, socketConnected, onRefreshStatus,
           </div>
           <StatusChips status={status} />
           <OperatorControl status={status} onChange={onRefreshStatus} />
+          <SoundToggle />
           <button
             type="button"
             onClick={onToggleTheme}
@@ -131,6 +136,22 @@ export function AppShell({ tab, onTab, status, socketConnected, onRefreshStatus,
         })}
       </nav>
     </div>
+  );
+}
+
+function SoundToggle() {
+  const { enabled } = useSoundPrefs();
+  return (
+    <button
+      type="button"
+      onClick={() => sfx.setEnabled(!enabled)}
+      aria-label={enabled ? "ปิดเสียงเอฟเฟกต์" : "เปิดเสียงเอฟเฟกต์"}
+      aria-pressed={enabled}
+      title={enabled ? "เสียงเอฟเฟกต์: เปิด" : "เสียงเอฟเฟกต์: ปิด"}
+      className="size-9 grid place-items-center rounded-lg text-muted hover:bg-surface-2 hover:text-text cursor-pointer"
+    >
+      {enabled ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
+    </button>
   );
 }
 
@@ -274,6 +295,7 @@ function EmergencyStop({ onDone }: { onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const toast = useToast();
   const stop = async () => {
+    sfx.alarm();
     setBusy(true);
     try {
       await api.stopEmergency();

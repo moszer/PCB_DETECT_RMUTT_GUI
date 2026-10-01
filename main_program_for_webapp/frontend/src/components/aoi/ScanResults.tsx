@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useCallback } from "react";
 import { Expand, ImageOff, Square } from "lucide-react";
 import type { AOIPointResult, AOIRunReport, InspectionResult } from "@/types";
 import { VERDICT_TONE } from "@/lib/format";
@@ -30,9 +30,15 @@ export function ScanStatusStrip({ report, onStop }: { report: AOIRunReport; onSt
           {done}/{total} จุด
         </span>
         <span className="flex items-center gap-2 text-xs">
-          <span className="text-pass">ผ่าน {report.pass_count}</span>
-          <span className="text-fail">ไม่ผ่าน {report.fail_count}</span>
-          <span className="text-review">ตรวจซ้ำ {report.review_count}</span>
+          <span className="text-pass">
+            ผ่าน <Count value={report.pass_count} />
+          </span>
+          <span className="text-fail">
+            ไม่ผ่าน <Count value={report.fail_count} />
+          </span>
+          <span className="text-review">
+            ตรวจซ้ำ <Count value={report.review_count} />
+          </span>
           {report.error_count > 0 && <span className="text-muted">ผิดพลาด {report.error_count}</span>}
         </span>
         <span className="ml-auto flex items-center gap-2">
@@ -45,13 +51,28 @@ export function ScanStatusStrip({ report, onStop }: { report: AOIRunReport; onSt
         </span>
       </div>
       <div className="h-1.5 rounded-full bg-surface-3 overflow-hidden">
-        <div className={cx("h-full transition-all duration-300", running ? "bg-accent" : VERDICT_TONE[report.overall_verdict].solid)} style={{ width: `${(done / total) * 100}%` }} />
+        <div
+          className={cx(
+            "h-full transition-all duration-500 ease-out",
+            running ? "bg-accent bg-stripes animate-stripes" : VERDICT_TONE[report.overall_verdict].solid
+          )}
+          style={{ width: `${(done / total) * 100}%` }}
+        />
       </div>
       {report.error_message && <p className="text-xs text-fail">{report.error_message}</p>}
       {report.status === "complete" && report.is_golden_scan && (
         <p className="text-xs text-pass">สร้างโปรไฟล์ต้นแบบแล้ว — เลือกใช้ได้ในแท็บ “ตาราง”</p>
       )}
     </div>
+  );
+}
+
+/** A number that pops each time it changes. */
+function Count({ value }: { value: number }) {
+  return (
+    <span key={value} className="inline-block font-semibold tabular animate-pop">
+      {value}
+    </span>
   );
 }
 
@@ -76,12 +97,17 @@ export function OutputView({ item, onOpen }: { item: OutputItem | null; onOpen: 
     item.kind === "point"
       ? `${item.point.name || `จุด ${item.point.point_index + 1}`} · พบ ${item.point.detections.length} ชิ้น`
       : `ถ่ายทดสอบ · พบ ${item.result.detections.length} ชิ้น · ${item.result.speed_ms?.inference?.toFixed(0) ?? "–"} ms`;
+  const glow = { PASS: "text-pass", FAIL: "text-fail", REVIEW: "text-review", ERROR: "text-subtle" }[verdict];
   return (
     <button type="button" onClick={onOpen} className="group relative size-full rounded-xl overflow-hidden bg-viewport border border-line cursor-zoom-in">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={url} alt="ภาพผลตรวจ" className="absolute inset-0 size-full object-contain" />
-      <div className="absolute top-3 left-3 flex items-center gap-1.5">
-        <VerdictBadge verdict={verdict} />
+      {/* Keyed by image: each new result fades in with a verdict-colored glow. */}
+      <div key={url} className="absolute inset-0 animate-fade">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={url} alt="ภาพผลตรวจ" className="absolute inset-0 size-full object-contain" />
+        <div className={cx("absolute inset-0 rounded-xl pointer-events-none animate-glow", glow)} />
+        <div className={cx("absolute top-3 left-3 flex items-center gap-1.5", verdict === "FAIL" ? "animate-shake" : "animate-pop")}>
+          <VerdictBadge verdict={verdict} />
+        </div>
       </div>
       <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2">
         <span className="h-6 px-2 rounded-md bg-black/55 backdrop-blur text-[11px] text-white flex items-center truncate">{caption}</span>
@@ -102,16 +128,21 @@ export function Filmstrip({
   activeIndex: number | null;
   onPick: (point: AOIPointResult) => void;
 }) {
+  // Stable callback ref: runs only when a new last item mounts, then brings it into view.
+  const revealNewest = useCallback((el: HTMLButtonElement | null) => {
+    el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "end" });
+  }, []);
   if (!results.length) return null;
   return (
     <div className="flex gap-2 overflow-x-auto pb-1 shrink-0">
-      {results.map((pt) => (
+      {results.map((pt, i) => (
         <button
           key={pt.point_index}
+          ref={i === results.length - 1 ? revealNewest : undefined}
           type="button"
           onClick={() => onPick(pt)}
           className={cx(
-            "relative h-20 aspect-video shrink-0 rounded-lg overflow-hidden border-2 bg-viewport cursor-pointer transition",
+            "relative h-20 aspect-video shrink-0 rounded-lg overflow-hidden border-2 bg-viewport cursor-pointer transition animate-rise",
             activeIndex === pt.point_index ? "border-accent" : "border-transparent hover:border-line-strong"
           )}
         >

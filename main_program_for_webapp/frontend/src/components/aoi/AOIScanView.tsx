@@ -9,6 +9,7 @@ import type { ExpectedComponent } from "@/lib/board-inspection";
 import { formatMm, refsOfType } from "@/lib/format";
 import type { InspectionParams, SetParams } from "@/lib/params";
 import { usePersistentState } from "@/hooks/usePersistentState";
+import { sfx } from "@/lib/sound";
 import { LiveCameraFeed, type FeedHud } from "../LiveCameraFeed";
 import PointReferenceModal from "../PointReferenceModal";
 import { PointResultModal } from "../PointResultModal";
@@ -79,6 +80,11 @@ export function AOIScanView({ status, report, progress, references, params, setP
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [pickedGridRef, setGridReferenceId] = useState("");
   const [snapping, setSnapping] = useState(false);
+  const [localFlash, setLocalFlash] = useState<number | null>(null);
+  const shutter = () => {
+    sfx.shutter();
+    setLocalFlash(Date.now());
+  };
   const [pick, setPick] = useState<{ item: OutputItem; at: string | null } | null>(null);
   const [detail, setDetail] = useState<AOIPointResult | null>(null);
 
@@ -148,6 +154,7 @@ export function AOIScanView({ status, report, progress, references, params, setP
     setMarking(true);
     let reference: { image?: string; items?: ExpectedComponent[] } = {};
     try {
+      shutter();
       const captured = await captureInspection(liveZoom, params.conf, params.imgsz);
       reference = { image: captured.frame.image, items: captured.items };
     } catch (err) {
@@ -166,6 +173,7 @@ export function AOIScanView({ status, report, progress, references, params, setP
     };
     setPoints((all) => [...all, next]);
     setSelected(points.length);
+    if (reference.items) sfx.ding();
     if (reference.items) toast.success(`มาร์คจุดแล้ว · พบ ${reference.items.length} ชิ้น`, "ตรวจทานต้นแบบด้วยปุ่ม “แก้ต้นแบบ”");
   };
 
@@ -188,10 +196,12 @@ export function AOIScanView({ status, report, progress, references, params, setP
         setTeachProgress({ current: i + 1, total: points.length });
         await moveToPoint(i);
         await new Promise((r) => setTimeout(r, Math.max(300, motion.settleSec * 1000)));
+        shutter();
         const captured = await captureInspection(points[i].zoom || 1, params.conf, params.imgsz);
         taught[i] = { ...points[i], reference_image: captured.frame.image, expected_components: captured.items };
       }
       setPoints(taught);
+      sfx.pass();
       toast.success(`สอนต้นแบบครบ ${points.length} จุด`, "ตรวจทานกรอบและชื่อคลาสของแต่ละจุดก่อนใช้งานจริง");
     } catch (err) {
       toast.error("สอนต้นแบบไม่สำเร็จ", err);
@@ -256,7 +266,9 @@ export function AOIScanView({ status, report, progress, references, params, setP
   const testSnap = async () => {
     setSnapping(true);
     try {
+      shutter();
       const result: InspectionResult = await api.inspectLive({ ...params });
+      sfx.verdict(result.verdict);
       setOutput({ kind: "snap", result });
       if (viewMode === "live") setViewMode("split");
     } catch (err) {
@@ -292,6 +304,9 @@ export function AOIScanView({ status, report, progress, references, params, setP
   /* ── Camera HUD ── */
 
   const scanZoom = scanning ? progress?.zoom ?? 1 : liveZoom;
+  const capturing = scanning && (progress?.event === "point_frame" || progress?.event === "point_capturing");
+  const flashKey = capturing ? `${progress?.run_id}:${progress?.point_index}:${progress?.frame_index ?? "c"}` : localFlash;
+  const scanningIndex = scanning && report?.plan.plan_mode === "custom" ? (progress?.point_index ?? null) : null;
   let hud: FeedHud | null = null;
   if (scanning && progress?.point_index !== undefined) {
     const frame = progress.event === "point_frame" ? ` · เฟรม ${progress.frame_index}/${progress.target_frames}` : "";
@@ -361,6 +376,7 @@ export function AOIScanView({ status, report, progress, references, params, setP
                 canMove={canMove}
                 scanning={scanning}
                 frames={params.multiframeEnabled ? params.targetFrames : null}
+                scanningIndex={scanningIndex}
               />
             )}
             {tab === "grid" && (
@@ -418,6 +434,8 @@ export function AOIScanView({ status, report, progress, references, params, setP
                 onZoomChange={scanning ? undefined : setLiveZoom}
                 stagePosition={machine?.connected ? machine.position_mm : undefined}
                 hud={hud}
+                flashKey={flashKey}
+                scanning={capturing}
                 locked={scanning}
               />
             )}

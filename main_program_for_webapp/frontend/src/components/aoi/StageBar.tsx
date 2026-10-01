@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { formatMm } from "@/lib/format";
 import { Badge, Button, IconButton, Select, StatusDot } from "../ui";
 import { useToast } from "../Toast";
+import { sfx } from "@/lib/sound";
 
 /** Stage connection, homing and position readout across the top of the AOI screen. */
 export function StageBar({ machine, scanning, onChange }: { machine: MachineState | null; scanning: boolean; onChange: () => void }) {
@@ -34,6 +35,7 @@ export function StageBar({ machine, scanning, onChange }: { machine: MachineStat
     setBusy(kind);
     try {
       await action();
+      sfx.ding();
     } catch (err) {
       toast.error(failTitle, err);
     } finally {

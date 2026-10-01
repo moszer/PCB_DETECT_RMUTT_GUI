@@ -15,6 +15,7 @@ import {
 import { captureInspection } from "@/lib/capture-inspection";
 import { api, errorMessage } from "@/lib/api";
 import { CAMERA_PRESETS, presetForResolution } from "@/lib/format";
+import { sfx } from "@/lib/sound";
 import type { CustomPointRequest } from "@/types";
 import type { InspectionParams } from "@/lib/params";
 import { Badge, Button, Checkbox, EmptyState, SectionLabel, Select, TextInput, cx } from "./ui";
@@ -117,7 +118,9 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
         await new Promise((r) => setTimeout(r, 600));
       }
       signal.throwIfAborted();
+      sfx.shutter();
       const captured = await captureInspection(point.zoom || 1, params.conf, params.imgsz, signal);
+      sfx.ding();
       setReference(captured.frame);
       setItems(captured.items);
       setConfirmed(false);
@@ -142,6 +145,7 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
         signal.throwIfAborted();
       }
       let lastTimestamp = -1;
+      sfx.start();
       for (let i = 0; i < targetFrames; i++) {
         const captured = await captureInspection(point.zoom || 1, params.conf, params.imgsz, signal);
         if (captured.timestamp <= lastTimestamp) throw new Error("กล้องส่งเฟรมเดิมซ้ำ รอบตรวจไม่สมบูรณ์");
@@ -151,9 +155,11 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
         }
         lastTimestamp = captured.timestamp;
         current = inspectFrame(current, items, captured.frame, "live_camera", params.conf);
+        sfx.tick();
         setRound(current);
         await new Promise((r) => setTimeout(r, 80));
       }
+      sfx.verdict(boardComplete(current) ? "PASS" : "FAIL");
       setMessage(
         boardComplete(current)
           ? { tone: "pass", text: `ครบทุกตำแหน่ง (${items.length}/${items.length}) ใน ${targetFrames} เฟรม` }
@@ -290,7 +296,7 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
               const rec = round.capturedFrames?.[i];
               const missed = rec ? rec.unmatchedIndices.length : 0;
               return (
-                <FrameChip key={i} active={view === i} disabled={!rec} tone={!rec ? undefined : missed === 0 ? "pass" : missed <= 2 ? "review" : "fail"} onClick={() => setView(i)}>
+                <FrameChip key={`${i}:${rec ? 1 : 0}`} popped={!!rec} active={view === i} disabled={!rec} tone={!rec ? undefined : missed === 0 ? "pass" : missed <= 2 ? "review" : "fail"} onClick={() => setView(i)}>
                   F{i + 1}
                 </FrameChip>
               );
@@ -330,7 +336,14 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
                   onChange={(e) => edit(items.map((v, j) => (j === i ? { ...v, name: e.target.value } : v)))}
                 />
                 {round && (
-                  <span className={cx("font-mono tabular text-[11px] w-10 text-right", status === "confirmed" ? "text-pass" : status ? "text-fail" : "text-muted")}>
+                  <span
+                    key={`${round.frames}:${status}`}
+                    className={cx(
+                      "font-mono tabular text-[11px] w-10 text-right",
+                      status ? "animate-pop" : undefined,
+                      status === "confirmed" ? "text-pass" : status ? "text-fail" : "text-muted"
+                    )}
+                  >
                     {hits}/{round.frames}
                   </span>
                 )}
@@ -395,12 +408,15 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
 
 function FrameChip({
   active,
+  popped,
   disabled,
   tone,
   onClick,
   children,
 }: {
   active: boolean;
+  /** Animate in (the frame was just captured). */
+  popped?: boolean;
   disabled?: boolean;
   tone?: "pass" | "review" | "fail";
   onClick: () => void;
@@ -414,6 +430,7 @@ function FrameChip({
       onClick={onClick}
       className={cx(
         "h-7 px-2.5 rounded-md text-xs font-mono shrink-0 border cursor-pointer disabled:cursor-not-allowed disabled:opacity-40",
+        popped && "animate-pop",
         active ? "bg-accent text-on-accent border-transparent" : cx("bg-surface border-line", toneClass)
       )}
     >

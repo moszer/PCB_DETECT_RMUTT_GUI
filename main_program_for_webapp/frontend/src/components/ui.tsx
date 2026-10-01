@@ -179,7 +179,7 @@ export function VerdictBadge({ verdict, size = "sm", className }: { verdict: Ver
     <span
       className={cx(
         "inline-flex items-center gap-1.5 rounded-md font-bold tracking-wide whitespace-nowrap",
-        size === "lg" ? "h-8 px-3 text-sm" : "h-5 px-1.5 text-[11px]",
+        size === "lg" ? "h-8 px-3 text-sm animate-pop" : "h-5 px-1.5 text-[11px]",
         tone.soft,
         tone.text,
         className
@@ -531,14 +531,14 @@ export function Modal({
   const width = { sm: "max-w-md", md: "max-w-2xl", lg: "max-w-4xl", xl: "max-w-6xl" }[size];
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-[2px] p-0 sm:p-4"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-[2px] p-0 sm:p-4 animate-fade"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
         role="dialog"
         aria-modal="true"
         className={cx(
-          "w-full flex flex-col max-h-[94vh] bg-surface border border-line shadow-pop",
+          "w-full flex flex-col max-h-[94vh] bg-surface border border-line shadow-pop animate-modal",
           "rounded-t-2xl sm:rounded-2xl",
           width
         )}

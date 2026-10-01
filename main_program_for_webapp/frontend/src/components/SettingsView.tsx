@@ -1,11 +1,13 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Building2, Check, Cpu, Crosshair, HardDriveUpload, Layers, Save } from "lucide-react";
+import { Building2, Check, Cpu, Crosshair, HardDriveUpload, Layers, Save, Volume2 } from "lucide-react";
 import type { ComputeDevice, ModelFile } from "@/types";
 import { api } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
-import { Badge, Button, Card, CardHeader, Field, NumberInput, Spinner, TextInput, cx } from "./ui";
+import { Badge, Button, Card, CardHeader, Field, NumberInput, Slider, Spinner, TextInput, Toggle, cx } from "./ui";
+import { useSoundPrefs } from "@/hooks/useSound";
+import { sfx } from "@/lib/sound";
 import { useToast } from "./Toast";
 
 export function SettingsView({ onRefreshStatus }: { onRefreshStatus: () => void }) {
@@ -211,6 +213,8 @@ export function SettingsView({ onRefreshStatus }: { onRefreshStatus: () => void 
           </div>
         </Card>
 
+        <SoundCard />
+
         <Card>
           <CardHeader icon={Building2} title="ข้อมูลสถานี" />
           <div className="grid sm:grid-cols-2 gap-4 p-4">
@@ -230,5 +234,51 @@ export function SettingsView({ onRefreshStatus }: { onRefreshStatus: () => void 
         </div>
       </div>
     </div>
+  );
+}
+
+const SOUND_PREVIEWS: Array<{ label: string; play: () => void }> = [
+  { label: "ถ่ายภาพ", play: () => sfx.shutter() },
+  { label: "แต่ละเฟรม", play: () => sfx.tick() },
+  { label: "ผ่าน", play: () => sfx.pass() },
+  { label: "ไม่ผ่าน", play: () => sfx.fail() },
+  { label: "ตรวจซ้ำ", play: () => sfx.review() },
+  { label: "สแกนครบ (ผ่าน)", play: () => sfx.complete("PASS") },
+  { label: "สแกนครบ (ไม่ผ่าน)", play: () => sfx.complete("FAIL") },
+  { label: "STOP", play: () => sfx.alarm() },
+];
+
+/** Sound preference is per browser (saved locally) and applies immediately — no Save needed. */
+function SoundCard() {
+  const { enabled, volume } = useSoundPrefs();
+  return (
+    <Card>
+      <CardHeader icon={Volume2} title="เสียงเอฟเฟกต์" subtitle="ตั้งค่าเฉพาะเครื่องนี้ มีผลทันที" />
+      <div className="flex flex-col gap-4 p-4">
+        <Toggle
+          label="เปิดเสียง"
+          description="เสียงถ่ายภาพ เสียงแต่ละเฟรม เสียงผลผ่าน/ไม่ผ่าน และสัญญาณเมื่อสแกนจบหรือกด STOP"
+          checked={enabled}
+          onChange={(v) => sfx.setEnabled(v)}
+        />
+        <Slider
+          label="ระดับเสียง"
+          value={volume}
+          min={0}
+          max={1}
+          step={0.05}
+          disabled={!enabled}
+          format={(v) => `${Math.round(v * 100)}%`}
+          onChange={(v) => sfx.setVolume(v)}
+        />
+        <div className="flex flex-wrap gap-1.5">
+          {SOUND_PREVIEWS.map((s) => (
+            <Button key={s.label} size="sm" variant="ghost" disabled={!enabled} onClick={s.play}>
+              ▶ {s.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+    </Card>
   );
 }

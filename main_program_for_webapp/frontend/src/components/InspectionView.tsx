@@ -10,6 +10,7 @@ import { LiveCameraFeed } from "./LiveCameraFeed";
 import { Viewport } from "./Viewport";
 import { Badge, Button, EmptyState, Field, SectionLabel, Segmented, Select, Slider, Stat, Toggle, VerdictBadge, buttonClasses, cx } from "./ui";
 import { useToast } from "./Toast";
+import { sfx } from "@/lib/sound";
 
 interface InspectionViewProps {
   references: ReferenceSummary[];
@@ -62,10 +63,12 @@ export function InspectionView({ references, params, setParams, status }: Inspec
   const inspect = async () => {
     const key = inputKey;
     setPending(key);
+    if (source === "camera") sfx.shutter();
     try {
       const options = { ...params, referenceId: referenceId || undefined };
       const res = source === "camera" ? await api.inspectLive(options) : await api.inspectUpload(file!, options);
       if (key !== inputKeyRef.current) return;
+      sfx.verdict(res.verdict);
       setOutcome({ key, result: res });
       setSelected(null);
     } catch (err) {
@@ -240,7 +243,7 @@ function ResultPanel({
   const problems = result.reference_eval.filter((r) => r.status !== "OK");
   return (
     <div className="p-4 flex flex-col gap-4">
-      <div className={cx("rounded-xl p-4 border", {
+      <div key={result.timestamp} className={cx("rounded-xl p-4 border", result.verdict === "FAIL" ? "animate-shake" : "animate-rise", {
         PASS: "bg-pass-soft border-pass/30",
         FAIL: "bg-fail-soft border-fail/30",
         REVIEW: "bg-review-soft border-review/30",
