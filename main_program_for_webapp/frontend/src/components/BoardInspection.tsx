@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Camera, PenSquare, Play, Save, SlidersHorizontal, Square, Trash2 } from "lucide-react";
+import { Camera, PenSquare, Play, Save, SlidersHorizontal, Square, Trash2, Undo2, X } from "lucide-react";
 import {
   boardComplete,
   inspectFrame,
@@ -58,6 +58,9 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
   const [hovered, setHovered] = useState<number | null>(null);
   const [labelMode, setLabelMode] = useState<LabelMode>("all");
   const listRef = useRef<HTMLUListElement>(null);
+  // Multi-selection (marquee drag / Shift-click) for bulk delete, plus a one-step undo.
+  const [picked, setPicked] = useState<Set<number>>(() => new Set());
+  const [undo, setUndo] = useState<{ items: ExpectedComponent[]; count: number } | null>(null);
 
   // Keep the selected component's row visible when it's picked on the image.
   useEffect(() => {
@@ -92,7 +95,66 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
     setItems(next);
     setConfirmed(false);
     setRound(null);
+    setUndo(null);
   };
+
+  const selectOne = (i: number) => {
+    setSelected(i);
+    setPicked(new Set([i]));
+  };
+
+  const selectMany = (indices: number[], mode: "replace" | "add" | "toggle") => {
+    const next = new Set(mode === "replace" ? [] : picked);
+    for (const i of indices) {
+      if (mode === "toggle" && next.has(i)) next.delete(i);
+      else next.add(i);
+    }
+    setPicked(next);
+    // Keep the single "current" box inside the selection.
+    if (indices.length && next.has(indices[0])) setSelected(indices[0]);
+    else if (next.size) setSelected([...next][0]);
+  };
+
+  /** Delete several boxes at once (keeps an undo step). */
+  const removeMany = (indices: Set<number>) => {
+    if (!indices.size || running) return;
+    const before = items;
+    edit(items.filter((_, j) => !indices.has(j)));
+    setUndo({ items: before, count: indices.size });
+    setPicked(new Set());
+    setSelected(0);
+    sfx.tick();
+  };
+
+  const undoRemove = () => {
+    if (!undo) return;
+    setItems(undo.items);
+    setConfirmed(false);
+    setRound(null);
+    setUndo(null);
+    setPicked(new Set());
+  };
+
+  // Delete / Backspace removes the picked boxes, Esc clears the pick, ⌘/Ctrl+Z undoes a bulk delete.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      if ((e.key === "Delete" || e.key === "Backspace") && picked.size > 0) {
+        e.preventDefault();
+        removeMany(picked);
+      } else if (e.key === "Escape" && picked.size > 1) {
+        // Clear the selection first; the dialog closes on the next Esc.
+        e.stopPropagation();
+        setPicked(new Set());
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && undo) {
+        e.preventDefault();
+        undoRemove();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  });
 
   const withAbort = async (kind: "capture" | "run", task: (signal: AbortSignal) => Promise<void>) => {
     if (abort.current) return;
@@ -129,6 +191,8 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
       setRound(null);
       setView("reference");
       setSelected(0);
+      setPicked(new Set());
+      setUndo(null);
       setMessage({ tone: "info", text: `พบชิ้นส่วน ${captured.items.length} ตำแหน่ง — ตรวจทานกับบอร์ดจริง/BOM แล้วยืนยัน` });
     });
 
@@ -218,20 +282,22 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
               return {
                 bbox: item.bbox,
                 label: item.id,
-                color: matched === null ? (i === selected ? "#f59e0b" : "#22d3ee") : matched ? "#22c55e" : "#ef4444",
+                color: matched === null ? (i === selected || picked.has(i) ? "#f59e0b" : "#22d3ee") : matched ? "#22c55e" : "#ef4444",
                 dashed: matched === false,
               };
             })}
             selected={items.length ? selected : null}
             hovered={hovered}
             labelMode={labelMode}
-            onSelect={(i) => i !== null && setSelected(i)}
+            onSelect={(i) => (i !== null ? selectOne(i) : setPicked(new Set()))}
+            multi={picked}
+            onSelectMany={running ? undefined : selectMany}
             drawing={drawing && !running}
             onDraw={(bbox) => {
               let n = items.length + 1;
               while (items.some((i) => i.id === `P${n}`)) n++;
               edit([...items, { id: `P${n}`, name: items[selected]?.name ?? "component", bbox }]);
-              setSelected(items.length);
+              selectOne(items.length);
               setDrawing(false);
             }}
           />
@@ -243,6 +309,32 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
           <EmptyState icon={Camera} title="จุดนี้ยังไม่มีต้นแบบ" className="rounded-xl border border-dashed border-line">
             วางบอร์ดที่ประกอบครบแล้วกด “ถ่ายต้นแบบจากบอร์ดที่ครบ” ระบบจะตรวจหาชิ้นส่วนให้อัตโนมัติ
           </EmptyState>
+        )}
+
+        {shownImage && items.length > 0 && !running && (
+          picked.size > 1 ? (
+            <div className="flex items-center gap-2 rounded-lg border border-review/40 bg-review-soft px-3 py-1.5 animate-pop">
+              <span className="text-sm font-semibold text-review">เลือก {picked.size} กรอบ</span>
+              <Button size="sm" variant="danger" icon={Trash2} onClick={() => removeMany(picked)}>
+                ลบที่เลือก
+              </Button>
+              <Button size="sm" variant="ghost" icon={X} onClick={() => setPicked(new Set())}>
+                ยกเลิก
+              </Button>
+              <span className="ml-auto text-[11px] text-muted hidden sm:inline">Delete = ลบ · Esc = ยกเลิก</span>
+            </div>
+          ) : undo ? (
+            <div className="flex items-center gap-2 rounded-lg bg-surface-2 px-3 py-1.5 text-sm">
+              <span className="text-muted">ลบ {undo.count} กรอบแล้ว (ยังไม่บันทึก)</span>
+              <Button size="sm" variant="ghost" icon={Undo2} onClick={undoRemove}>
+                เลิกทำ
+              </Button>
+            </div>
+          ) : (
+            <p className="text-[11px] text-subtle">
+              {drawing ? "ลากบนภาพเพื่อวาดกรอบใหม่" : "ลากคลุมบนภาพเพื่อเลือกหลายกรอบ · Shift/⌘+คลิก เพื่อเพิ่ม/ลดทีละกรอบ · Delete เพื่อลบ"}
+            </p>
+          )
         )}
 
         {round && (
@@ -266,7 +358,20 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
       {/* ── Component list + actions ── */}
       <div className="flex flex-col gap-4 min-w-0">
         <div className="flex items-center justify-between">
-          <SectionLabel>ชิ้นส่วนต้นแบบ ({items.length})</SectionLabel>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              aria-label="เลือกทั้งหมด"
+              className="size-3.5 accent-[var(--accent)] cursor-pointer"
+              disabled={running || !items.length}
+              checked={items.length > 0 && picked.size === items.length}
+              ref={(el) => {
+                if (el) el.indeterminate = picked.size > 1 && picked.size < items.length;
+              }}
+              onChange={(e) => setPicked(e.target.checked ? new Set(items.map((_, i) => i)) : new Set())}
+            />
+            <SectionLabel>ชิ้นส่วนต้นแบบ ({items.length})</SectionLabel>
+          </label>
           <span className="flex items-center gap-1">
             {overlaps.pairs.length > 0 && (
               <span className="h-5 px-1.5 rounded text-[11px] font-semibold text-white" style={{ background: OVERLAP_COLOR }} title="กรอบที่ทับกันมาก — มักเป็น label ซ้ำ">
@@ -288,12 +393,24 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
               <li
                 key={i}
                 data-row={i}
-                className={cx("flex items-center gap-1.5 p-1.5", i === selected ? "bg-accent-soft" : i === hovered && "bg-surface-2")}
-                onClick={() => setSelected(i)}
+                className={cx(
+                  "flex items-center gap-1.5 p-1.5",
+                  i === selected || (picked.size > 1 && picked.has(i)) ? "bg-accent-soft" : i === hovered && "bg-surface-2"
+                )}
+                onClick={(e) => (e.shiftKey || e.metaKey || e.ctrlKey ? selectMany([i], "toggle") : selectOne(i))}
                 onMouseEnter={() => setHovered(i)}
                 style={overlaps.flagged.has(i) ? { boxShadow: `inset 3px 0 0 ${OVERLAP_COLOR}` } : undefined}
                 title={overlaps.flagged.has(i) ? "กรอบนี้ทับกับกรอบอื่นมาก — ตรวจว่าเป็น label ซ้ำหรือไม่" : undefined}
               >
+                <input
+                  type="checkbox"
+                  aria-label={`เลือกตำแหน่ง ${i + 1}`}
+                  className="size-3.5 shrink-0 accent-[var(--accent)] cursor-pointer"
+                  disabled={running}
+                  checked={picked.has(i)}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={() => selectMany([i], "toggle")}
+                />
                 <TextInput
                   aria-label={`รหัสตำแหน่ง ${i + 1}`}
                   className="w-16! h-8! font-mono text-xs"
@@ -326,7 +443,7 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
                   disabled={running}
                   onClick={(e) => {
                     e.stopPropagation();
-                    edit(items.filter((_, j) => j !== i));
+                    removeMany(new Set([i]));
                   }}
                   className="size-8 grid place-items-center rounded-md text-subtle hover:text-fail hover:bg-fail-soft cursor-pointer"
                 >

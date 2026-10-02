@@ -140,3 +140,12 @@ export function overlappingPairs(boxes: NBox[], { iou = 0.3, contain = 0.7 } = {
   const flagged = new Set(pairs.flat());
   return { pairs, flagged };
 }
+
+/** Boxes whose center lies inside a marquee rectangle (center rule: grazing a big box doesn't grab it). */
+export function boxesInRect(boxes: NBox[], rect: NBox): number[] {
+  const [l, t, r, b] = [Math.min(rect[0], rect[2]), Math.min(rect[1], rect[3]), Math.max(rect[0], rect[2]), Math.max(rect[1], rect[3])];
+  return boxes
+    .map((bx, i) => ({ i, cx: (bx[0] + bx[2]) / 2, cy: (bx[1] + bx[3]) / 2 }))
+    .filter(({ cx, cy }) => cx >= l && cx <= r && cy >= t && cy <= b)
+    .map(({ i }) => i);
+}

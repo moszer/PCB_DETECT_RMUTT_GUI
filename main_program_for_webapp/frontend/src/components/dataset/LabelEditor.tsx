@@ -1,14 +1,14 @@
 "use client";
 
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Save, Trash2 } from "lucide-react";
+import { BoxSelect, ChevronLeft, ChevronRight, PenSquare, Save, Trash2, Undo2, X } from "lucide-react";
 import type { DatasetImage, LabelBox } from "@/types";
 import { datasetApi, errorMessage } from "@/lib/api";
 import { classColor } from "@/lib/format";
 import { sfx } from "@/lib/sound";
-import { Badge, Button, Modal, SectionLabel, Spinner, TextInput, cx } from "../ui";
+import { Badge, Button, Modal, SectionLabel, Segmented, Spinner, TextInput, cx } from "../ui";
 import { LabelModeSwitch, type LabelMode } from "../BoxOverlay";
-import { LABEL_FONT, LABEL_HEIGHT, OVERLAP_COLOR, layoutLabels, overlappingPairs, paintOrder, pickAt } from "@/lib/labelLayout";
+import { LABEL_FONT, LABEL_HEIGHT, OVERLAP_COLOR, boxesInRect, layoutLabels, overlappingPairs, paintOrder, pickAt } from "@/lib/labelLayout";
 import { useElementSize } from "@/hooks/useElementSize";
 import { useToast } from "../Toast";
 
@@ -16,7 +16,16 @@ type Box = LabelBox["bbox"];
 type Handle = "nw" | "ne" | "sw" | "se";
 type Drag =
   | { mode: "draw"; start: [number, number] }
-  | { mode: "move"; index: number; start: [number, number]; orig: Box; moved: boolean; wasSelected: boolean }
+  | { mode: "marquee"; start: [number, number]; additive: boolean }
+  | {
+      mode: "move";
+      index: number;
+      start: [number, number];
+      /** Every box that moves together (the whole multi-selection when dragging one of it). */
+      group: Array<{ index: number; orig: Box }>;
+      moved: boolean;
+      wasSelected: boolean;
+    }
   | { mode: "resize"; index: number; handle: Handle; orig: Box };
 
 const MIN_SIZE = 0.004;
@@ -53,6 +62,14 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
   const surfaceSize = useElementSize(surface);
   const overlaps = useMemo(() => overlappingPairs(boxes.map((b) => b.bbox)), [boxes]);
   const [pairCursor, setPairCursor] = useState(0);
+  // Drag on empty space: draw a new box, or (select tool / Shift) rubber-band select many.
+  const [tool, setTool] = useState<"draw" | "select">("draw");
+  const [picked, setPicked] = useState<Set<number>>(() => new Set());
+  const [marquee, setMarquee] = useState<Box | null>(null);
+  // One-step undo for deletes; only offered while the boxes are still exactly as the delete left them.
+  const [undo, setUndo] = useState<{ before: LabelBox[]; after: LabelBox[]; count: number } | null>(null);
+  const multi = picked.size > 1;
+  const group = multi ? [...picked].sort((a, b) => a - b) : selected !== null ? [selected] : [];
 
   // Load this image's labels (the editable copy is reset from the server response).
   const file = image?.file;
@@ -66,6 +83,8 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
         setLoaded({ file, boxes: res.boxes });
         setBoxes(res.boxes);
         setSelected(null);
+        setPicked(new Set());
+        setUndo(null);
       })
       .catch((err) => current && toast.error("โหลด label ไม่สำเร็จ", err));
     return () => {
@@ -102,28 +121,67 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
     [images.length, onIndex, save]
   );
 
-  const removeSelected = useCallback(() => {
-    if (selected === null || readOnly) return;
-    setBoxes((all) => all.filter((_, i) => i !== selected));
-    setSelected(null);
-  }, [readOnly, selected]);
+  const selectOne = (i: number | null) => {
+    setSelected(i);
+    setPicked(new Set());
+    if (i !== null && boxes[i]) setActiveClass(boxes[i].label);
+  };
 
-  // Keyboard: ←/→ navigate (auto-saves), Delete removes the selected box, Ctrl/⌘+S saves.
+  /** Shift/⌘-click: add or remove one box from the multi-selection. */
+  const togglePick = (i: number) => {
+    const next = new Set(multi ? picked : selected !== null ? [selected] : []);
+    if (next.has(i)) next.delete(i);
+    else next.add(i);
+    setPicked(next);
+    setSelected(next.has(i) ? i : next.size ? [...next][0] : null);
+  };
+
+  /** Delete the selected box(es). */
+  const removeIndices = (indices: number[]) => {
+    if (!indices.length || readOnly) return;
+    const drop = new Set(indices);
+    const after = boxes.filter((_, i) => !drop.has(i));
+    setBoxes(after);
+    setUndo({ before: boxes, after, count: drop.size });
+    setSelected(null);
+    setPicked(new Set());
+  };
+  const canUndo = !!undo && undo.after === boxes;
+  const undoRemove = () => {
+    if (!canUndo) return;
+    setBoxes(undo.before);
+    setUndo(null);
+  };
+
+  // Keyboard: ←/→ navigate (auto-saves), Delete removes the selection, Ctrl/⌘+S saves,
+  // ⌘/Ctrl+A selects every box, ⌘/Ctrl+Z undoes a delete, Esc clears the selection.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const typing = (e.target as HTMLElement)?.tagName === "INPUT";
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === "s") {
         e.preventDefault();
         save();
       } else if (typing) {
         return;
+      } else if (mod && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        undoRemove();
+      } else if (mod && e.key.toLowerCase() === "a" && !readOnly && boxes.length) {
+        e.preventDefault();
+        setPicked(new Set(boxes.map((_, i) => i)));
+        setSelected(0);
+      } else if (e.key === "Escape" && (multi || selected !== null)) {
+        e.preventDefault();
+        e.stopPropagation();
+        selectOne(null);
       } else if (e.key === "ArrowRight") go(index + 1);
       else if (e.key === "ArrowLeft") go(index - 1);
-      else if (e.key === "Delete" || e.key === "Backspace") removeSelected();
+      else if (e.key === "Delete" || e.key === "Backspace") removeIndices(group);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [go, index, removeSelected, save]);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  });
 
   const point = (e: React.PointerEvent): [number, number] => {
     const r = surface.current!.getBoundingClientRect();
@@ -135,21 +193,34 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
     const target = e.target as HTMLElement;
     const p = point(e);
     const handle = target.dataset.handle as Handle | undefined;
+    const additive = e.shiftKey || e.metaKey || e.ctrlKey;
     surface.current!.setPointerCapture(e.pointerId);
     const nboxes = boxes.map((b) => b.bbox);
     const sel = selected !== null ? boxes[selected]?.bbox : undefined;
     const onSelected = !!sel && p[0] >= sel[0] && p[0] <= sel[2] && p[1] >= sel[1] && p[1] <= sel[3];
+    const hit = pickAt(nboxes, p[0], p[1], null);
+    if (additive && !handle && hit !== null) {
+      togglePick(hit);
+      return;
+    }
     // Keep the selected box if the click is inside it (so it can be dragged), otherwise
     // take the smallest box under the pointer — big boxes no longer swallow small ones.
-    const i = handle && selected !== null ? selected : onSelected ? selected! : pickAt(nboxes, p[0], p[1], null);
+    const i = handle && selected !== null ? selected : onSelected ? selected! : hit;
     if (i !== null) {
+      // Dragging a box that's part of the multi-selection moves the whole selection.
+      const inGroup = multi && picked.has(i);
+      if (!inGroup) setPicked(new Set());
       setSelected(i);
       setActiveClass(boxes[i].label);
+      const members = inGroup ? [...picked] : [i];
       drag.current = handle
         ? { mode: "resize", index: i, handle, orig: boxes[i].bbox }
-        : { mode: "move", index: i, start: p, orig: boxes[i].bbox, moved: false, wasSelected: onSelected };
+        : { mode: "move", index: i, start: p, group: members.map((j) => ({ index: j, orig: boxes[j].bbox })), moved: false, wasSelected: onSelected };
+    } else if (tool === "select" || additive) {
+      drag.current = { mode: "marquee", start: p, additive };
+      setMarquee([p[0], p[1], p[0], p[1]]);
     } else {
-      setSelected(null);
+      selectOne(null);
       drag.current = { mode: "draw", start: p };
       setDraft([p[0], p[1], p[0], p[1]]);
     }
@@ -160,13 +231,21 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
     if (!d) return;
     const [x, y] = point(e);
     if (d.mode === "draw") return setDraft([d.start[0], d.start[1], x, y]);
+    if (d.mode === "marquee") return setMarquee([d.start[0], d.start[1], x, y]);
     if (d.mode === "move") {
       if (Math.hypot(x - d.start[0], y - d.start[1]) > 0.003) d.moved = true;
       if (!d.moved) return;
-      const [x1, y1, x2, y2] = d.orig;
-      const dx = Math.min(1 - x2, Math.max(-x1, x - d.start[0]));
-      const dy = Math.min(1 - y2, Math.max(-y1, y - d.start[1]));
-      return setBoxes((all) => all.map((b, i) => (i === d.index ? { ...b, bbox: [x1 + dx, y1 + dy, x2 + dx, y2 + dy] } : b)));
+      // Clamp the shift so no box of the group leaves the image.
+      const origs = d.group.map((g) => g.orig);
+      const dx = Math.min(...origs.map((o) => 1 - o[2]), Math.max(...origs.map((o) => -o[0]), x - d.start[0]));
+      const dy = Math.min(...origs.map((o) => 1 - o[3]), Math.max(...origs.map((o) => -o[1]), y - d.start[1]));
+      const moved = new Map(d.group.map((g) => [g.index, g.orig]));
+      return setBoxes((all) =>
+        all.map((b, i) => {
+          const o = moved.get(i);
+          return o ? { ...b, bbox: [o[0] + dx, o[1] + dy, o[2] + dx, o[3] + dy] } : b;
+        })
+      );
     }
     const [x1, y1, x2, y2] = d.orig;
     const next: Box = {
@@ -181,6 +260,23 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
   const onPointerUp = (e: React.PointerEvent) => {
     const d = drag.current;
     drag.current = null;
+    if (d?.mode === "marquee") {
+      const rect = marquee ?? [d.start[0], d.start[1], d.start[0], d.start[1]];
+      setMarquee(null);
+      const tiny = Math.abs(rect[2] - rect[0]) < MIN_SIZE && Math.abs(rect[3] - rect[1]) < MIN_SIZE;
+      if (tiny) {
+        if (!d.additive) selectOne(null);
+        return;
+      }
+      const hits = boxesInRect(boxes.map((b) => b.bbox), rect);
+      const next = new Set(d.additive ? [...(multi ? picked : []), ...(selected !== null ? [selected] : []), ...hits] : hits);
+      if (next.size <= 1) return selectOne(next.size ? [...next][0] : null);
+      setPicked(next);
+      setSelected(hits[0] ?? [...next][0]);
+      return;
+    }
+    // A plain click on one box of a multi-selection narrows the selection to it.
+    if (d?.mode === "move" && !d.moved && d.group.length > 1) return selectOne(d.index);
     // A plain click on the already-selected box cycles to the next box stacked under it.
     if (d?.mode === "move" && !d.moved && d.wasSelected) {
       const [x, y] = point(e);
@@ -196,14 +292,16 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
       setDraft(null);
       if (box[2] - box[0] > MIN_SIZE && box[3] - box[1] > MIN_SIZE) {
         setBoxes((all) => [...all, { label: activeClass.trim() || "component", bbox: box }]);
-        setSelected(boxes.length);
+        selectOne(boxes.length);
       }
     }
   };
 
+  /** Set the class of the selected box(es), or of the next box to draw. */
   const relabel = (label: string) => {
     setActiveClass(label);
-    if (selected !== null) setBoxes((all) => all.map((b, i) => (i === selected ? { ...b, label } : b)));
+    const targets = new Set(group);
+    if (targets.size) setBoxes((all) => all.map((b, i) => (targets.has(i) ? { ...b, label } : b)));
   };
 
   const deleteImage = async () => {
@@ -218,6 +316,8 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
 
   if (!image) return null;
   const sel = selected !== null ? boxes[selected] : null;
+  const groupLabels = [...new Set(group.map((i) => boxes[i]?.label))];
+  const shownClass = multi ? (groupLabels.length === 1 ? groupLabels[0] : "") : sel ? sel.label : activeClass;
 
   return (
     <Modal
@@ -245,7 +345,23 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
       }
     >
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="flex items-start justify-center min-w-0">
+        <div className="flex flex-col items-center gap-2 min-w-0">
+          {!readOnly && (
+            <div className="self-stretch flex items-center gap-2 flex-wrap">
+              <Segmented
+                size="sm"
+                value={tool}
+                onChange={setTool}
+                options={[
+                  { value: "draw", label: "วาดกรอบ", icon: PenSquare },
+                  { value: "select", label: "ลากเลือกหลายกรอบ", icon: BoxSelect },
+                ]}
+              />
+              <span className="text-[11px] text-subtle">
+                {tool === "draw" ? "Shift+ลาก = เลือกหลายกรอบ" : "ลากคลุมกรอบที่ต้องการ · Shift+ลาก = เพิ่ม"} · Shift/⌘+คลิก = เพิ่ม/ลด · ⌘A = ทั้งหมด
+              </span>
+            </div>
+          )}
           <div
             ref={surface}
             onPointerDown={onPointerDown}
@@ -254,8 +370,12 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
             onPointerCancel={() => {
               drag.current = null;
               setDraft(null);
+              setMarquee(null);
             }}
-            className={cx("relative inline-block select-none touch-none rounded-lg overflow-hidden bg-viewport", readOnly ? "cursor-default" : "cursor-crosshair")}
+            className={cx(
+              "relative inline-block select-none touch-none rounded-lg overflow-hidden bg-viewport",
+              readOnly || tool === "select" ? "cursor-default" : "cursor-crosshair"
+            )}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={datasetApi.imageUrl(datasetId, image.file)} alt={image.file} draggable={false} className="block max-w-full max-h-[68vh]" />
@@ -273,7 +393,8 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
                 const [x1, y1, x2, y2] = b.bbox;
                 const color = classColor(b.label);
                 const isSel = i === selected;
-                const active = isSel || i === hovered;
+                const isPicked = multi && picked.has(i);
+                const active = isSel || isPicked || i === hovered;
                 const flagged = overlaps.flagged.has(i);
                 const tint = flagged ? OVERLAP_COLOR : color;
                 return (
@@ -286,7 +407,7 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
                       top: `${y1 * 100}%`,
                       width: `${(x2 - x1) * 100}%`,
                       height: `${(y2 - y1) * 100}%`,
-                      borderColor: isSel ? "#fff" : tint,
+                      borderColor: isSel || isPicked ? "#fff" : tint,
                       borderWidth: active ? 3 : 2,
                       background: active ? `${tint}40` : flagged ? `${tint}26` : `${tint}14`,
                       outline: flagged ? `2px dashed ${OVERLAP_COLOR}` : undefined,
@@ -294,6 +415,7 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
                     }}
                   >
                     {isSel &&
+                      !multi &&
                       !readOnly &&
                       (["nw", "ne", "sw", "se"] as Handle[]).map((h) => (
                         <span
@@ -313,6 +435,17 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
                 );
               })}
             {ready && labelMode !== "none" && <LabelLayer boxes={boxes} selected={selected} hovered={hovered} mode={labelMode} size={surfaceSize} flagged={overlaps.flagged} />}
+            {marquee && (
+              <div
+                className="absolute z-[6] border border-dashed border-white bg-white/10 pointer-events-none"
+                style={{
+                  left: `${Math.min(marquee[0], marquee[2]) * 100}%`,
+                  top: `${Math.min(marquee[1], marquee[3]) * 100}%`,
+                  width: `${Math.abs(marquee[2] - marquee[0]) * 100}%`,
+                  height: `${Math.abs(marquee[3] - marquee[1]) * 100}%`,
+                }}
+              />
+            )}
             {draft && (
               <div
                 className="absolute border-2 border-dashed border-white pointer-events-none"
@@ -329,13 +462,13 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
 
         <div className="flex flex-col gap-4 min-w-0">
           <div className="flex flex-col gap-2">
-            <SectionLabel>{sel ? "คลาสของกรอบที่เลือก" : "คลาสสำหรับกรอบใหม่"}</SectionLabel>
+            <SectionLabel>{multi ? `คลาสของ ${picked.size} กรอบที่เลือก` : sel ? "คลาสของกรอบที่เลือก" : "คลาสสำหรับกรอบใหม่"}</SectionLabel>
             <TextInput
               list={listId}
-              value={sel ? sel.label : activeClass}
+              value={shownClass}
               disabled={readOnly}
               onChange={(e) => relabel(e.target.value)}
-              placeholder="พิมพ์ชื่อคลาส หรือเลือกด้านล่าง"
+              placeholder={multi ? "หลายคลาส — เลือก/พิมพ์เพื่อเปลี่ยนทั้งหมด" : "พิมพ์ชื่อคลาส หรือเลือกด้านล่าง"}
             />
             <datalist id={listId}>
               {knownClasses.map((c) => (
@@ -351,7 +484,7 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
                   onClick={() => relabel(c)}
                   className={cx(
                     "inline-flex items-center gap-1 h-6 px-2 rounded-md text-[11px] border cursor-pointer",
-                    (sel ? sel.label : activeClass) === c ? "bg-accent-soft border-accent text-accent" : "border-line hover:bg-surface-2"
+                    shownClass === c ? "bg-accent-soft border-accent text-accent" : "border-line hover:bg-surface-2"
                   )}
                 >
                   <span className="size-2 rounded-sm" style={{ background: classColor(c) }} />
@@ -359,12 +492,32 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
                 </button>
               ))}
             </div>
-            {!readOnly && <p className="text-[11px] text-subtle">ลากบนพื้นที่ว่างเพื่อวาดกรอบ · ลากกรอบเพื่อย้าย · ลากมุมเพื่อปรับขนาด · Delete ลบ · ←/→ เปลี่ยนภาพ (บันทึกอัตโนมัติ)</p>}
+            {!readOnly && <p className="text-[11px] text-subtle">ลากกรอบเพื่อย้าย (ย้ายทั้งกลุ่มได้) · ลากมุมเพื่อปรับขนาด · Delete ลบ · ⌘Z เลิกทำ · ←/→ เปลี่ยนภาพ (บันทึกอัตโนมัติ)</p>}
           </div>
 
           <div className="flex flex-col gap-2 min-h-0">
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <SectionLabel>กรอบในภาพนี้ ({boxes.length})</SectionLabel>
+              <label className="flex items-center gap-2 cursor-pointer">
+                {!readOnly && (
+                  <input
+                    type="checkbox"
+                    aria-label="เลือกทุกกรอบ"
+                    className="size-3.5 accent-[var(--accent)] cursor-pointer"
+                    disabled={!boxes.length}
+                    checked={boxes.length > 1 ? picked.size === boxes.length : boxes.length === 1 && selected === 0}
+                    ref={(el) => {
+                      if (el) el.indeterminate = multi && picked.size < boxes.length;
+                    }}
+                    onChange={(e) => {
+                      if (!e.target.checked) return selectOne(null);
+                      if (boxes.length === 1) return selectOne(0);
+                      setPicked(new Set(boxes.map((_, i) => i)));
+                      setSelected(0);
+                    }}
+                  />
+                )}
+                <SectionLabel>กรอบในภาพนี้ ({boxes.length})</SectionLabel>
+              </label>
               <LabelModeSwitch value={labelMode} onChange={setLabelMode} />
             </div>
             {overlaps.pairs.length > 0 && (
@@ -375,8 +528,7 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
                   const [a, b] = overlaps.pairs[pairCursor % overlaps.pairs.length];
                   const next = selected === a ? b : a;
                   if (selected === a) setPairCursor((c) => c + 1);
-                  setSelected(next);
-                  setActiveClass(boxes[next].label);
+                  selectOne(next);
                 }}
                 className="h-7 px-2.5 rounded-md text-[11px] font-semibold text-white self-start cursor-pointer"
                 style={{ background: OVERLAP_COLOR }}
@@ -384,16 +536,47 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
                 ⚠ กรอบทับกัน {overlaps.pairs.length} คู่ · ไปดูทีละกรอบ
               </button>
             )}
+            {!readOnly && multi ? (
+              <div className="flex items-center gap-2 rounded-lg border border-review/40 bg-review-soft px-2.5 py-1.5 animate-pop">
+                <span className="text-xs font-semibold text-review flex-1">เลือก {picked.size} กรอบ</span>
+                <Button size="sm" variant="danger" icon={Trash2} onClick={() => removeIndices(group)}>
+                  ลบที่เลือก
+                </Button>
+                <Button size="sm" variant="ghost" icon={X} onClick={() => selectOne(null)} title="ยกเลิกการเลือก (Esc)" />
+              </div>
+            ) : (
+              canUndo && (
+                <div className="flex items-center gap-2 rounded-lg bg-surface-2 px-2.5 py-1.5">
+                  <span className="text-xs text-muted flex-1">ลบ {undo!.count} กรอบแล้ว</span>
+                  <Button size="sm" variant="ghost" icon={Undo2} onClick={undoRemove}>
+                    เลิกทำ
+                  </Button>
+                </div>
+              )
+            )}
             <ul className="rounded-lg border border-line divide-y divide-line max-h-64 overflow-y-auto">
               {boxes.map((b, i) => (
                 <li
                   key={i}
-                  className={cx("flex items-center gap-2 px-2.5 py-1.5 text-sm cursor-pointer", i === selected ? "bg-accent-soft" : "hover:bg-surface-2")}
-                  onClick={() => setSelected(i)}
+                  className={cx(
+                    "flex items-center gap-2 px-2.5 py-1.5 text-sm cursor-pointer",
+                    i === selected || (multi && picked.has(i)) ? "bg-accent-soft" : "hover:bg-surface-2"
+                  )}
+                  onClick={(e) => (!readOnly && (e.shiftKey || e.metaKey || e.ctrlKey) ? togglePick(i) : selectOne(i))}
                   onMouseEnter={() => setHovered(i)}
                   onMouseLeave={() => setHovered(null)}
                   style={overlaps.flagged.has(i) ? { boxShadow: `inset 3px 0 0 ${OVERLAP_COLOR}` } : undefined}
                 >
+                  {!readOnly && (
+                    <input
+                      type="checkbox"
+                      aria-label={`เลือกกรอบ ${i + 1}`}
+                      className="size-3.5 shrink-0 accent-[var(--accent)] cursor-pointer"
+                      checked={multi ? picked.has(i) : i === selected}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={() => togglePick(i)}
+                    />
+                  )}
                   <span className="size-2.5 rounded-sm shrink-0" style={{ background: classColor(b.label) }} />
                   <span className="flex-1 truncate">
                     {overlaps.flagged.has(i) && <span style={{ color: OVERLAP_COLOR }}>⚠ </span>}
@@ -405,8 +588,7 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
                       aria-label={`ลบกรอบ ${i + 1}`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setBoxes((all) => all.filter((_, j) => j !== i));
-                        setSelected(null);
+                        removeIndices([i]);
                       }}
                       className="size-7 grid place-items-center rounded-md text-subtle hover:text-fail hover:bg-fail-soft cursor-pointer"
                     >

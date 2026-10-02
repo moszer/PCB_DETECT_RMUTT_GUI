@@ -2,7 +2,7 @@
 
 import React, { useMemo, useRef, useState } from "react";
 import { useElementSize } from "@/hooks/useElementSize";
-import { LABEL_FONT, LABEL_HEIGHT, OVERLAP_COLOR, layoutLabels, overlappingPairs, paintOrder, pickAt, type NBox } from "@/lib/labelLayout";
+import { LABEL_FONT, LABEL_HEIGHT, OVERLAP_COLOR, boxesInRect, layoutLabels, overlappingPairs, paintOrder, pickAt, type NBox } from "@/lib/labelLayout";
 import { Segmented, cx } from "./ui";
 
 export type LabelMode = "all" | "focus" | "none";
@@ -56,6 +56,8 @@ export function BoxOverlay({
   onSelect,
   drawing = false,
   onDraw,
+  multi,
+  onSelectMany,
   className,
 }: {
   src: string;
@@ -67,12 +69,16 @@ export function BoxOverlay({
   onSelect?: (index: number | null) => void;
   drawing?: boolean;
   onDraw?: (bbox: NBox) => void;
+  /** Multi-selection (drag a marquee / Shift-click). */
+  multi?: Set<number>;
+  onSelectMany?: (indices: number[], mode: "replace" | "add" | "toggle") => void;
   className?: string;
 }) {
   const surface = useRef<HTMLDivElement>(null);
   const { width, height } = useElementSize(surface);
   const [draft, setDraft] = useState<NBox | null>(null);
-  const down = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+  const [marquee, setMarquee] = useState<NBox | null>(null);
+  const down = useRef<{ x: number; y: number; px: number; py: number; additive: boolean } | null>(null);
 
   const nboxes = useMemo(() => boxes.map((b) => b.bbox), [boxes]);
   const overlaps = useMemo(() => overlappingPairs(nboxes), [nboxes]);
@@ -87,7 +93,13 @@ export function BoxOverlay({
 
   const point = (e: React.PointerEvent) => {
     const r = surface.current!.getBoundingClientRect();
-    return { x: clamp01((e.clientX - r.left) / r.width), y: clamp01((e.clientY - r.top) / r.height), px: e.clientX, py: e.clientY };
+    return {
+      x: clamp01((e.clientX - r.left) / r.width),
+      y: clamp01((e.clientY - r.top) / r.height),
+      px: e.clientX,
+      py: e.clientY,
+      additive: e.shiftKey || e.metaKey || e.ctrlKey,
+    };
   };
 
   return (
@@ -97,15 +109,17 @@ export function BoxOverlay({
         className={cx("relative select-none touch-none", drawing ? "cursor-crosshair" : "cursor-pointer")}
         onPointerDown={(e) => {
           down.current = point(e);
-          if (drawing) {
-            surface.current!.setPointerCapture(e.pointerId);
-            setDraft([down.current.x, down.current.y, down.current.x, down.current.y]);
-          }
+          surface.current!.setPointerCapture(e.pointerId);
+          if (drawing) setDraft([down.current.x, down.current.y, down.current.x, down.current.y]);
         }}
         onPointerMove={(e) => {
-          if (!drawing || !down.current) return;
+          if (!down.current) return;
           const p = point(e);
-          setDraft([down.current.x, down.current.y, p.x, p.y]);
+          if (drawing) return setDraft([down.current.x, down.current.y, p.x, p.y]);
+          // Dragging (not a click) draws a selection marquee.
+          if (onSelectMany && Math.hypot(p.px - down.current.px, p.py - down.current.py) >= 5) {
+            setMarquee([down.current.x, down.current.y, p.x, p.y]);
+          }
         }}
         onPointerUp={(e) => {
           const start = down.current;
@@ -116,13 +130,22 @@ export function BoxOverlay({
             setDraft(null);
             const bbox: NBox = [Math.min(start.x, p.x), Math.min(start.y, p.y), Math.max(start.x, p.x), Math.max(start.y, p.y)];
             if (bbox[2] - bbox[0] > 0.004 && bbox[3] - bbox[1] > 0.004) onDraw?.(bbox);
+          } else if (marquee) {
+            setMarquee(null);
+            onSelectMany?.(boxesInRect(nboxes, [start.x, start.y, p.x, p.y]), start.additive ? "add" : "replace");
           } else if (Math.hypot(p.px - start.px, p.py - start.py) < 5) {
-            onSelect?.(pickAt(nboxes, p.x, p.y, selected));
+            const hit = pickAt(nboxes, p.x, p.y, start.additive ? null : selected);
+            if (start.additive && onSelectMany) {
+              if (hit !== null) onSelectMany([hit], "toggle");
+            } else {
+              onSelect?.(hit);
+            }
           }
         }}
         onPointerCancel={() => {
           down.current = null;
           setDraft(null);
+          setMarquee(null);
         }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -131,7 +154,8 @@ export function BoxOverlay({
         {order.map((i) => {
           const b = boxes[i];
           const [x1, y1, x2, y2] = b.bbox;
-          const active = i === selected || i === hovered;
+          const inMulti = !!multi?.has(i) && (multi?.size ?? 0) > 1;
+          const active = i === selected || i === hovered || inMulti;
           const flagged = overlaps.flagged.has(i);
           return (
             <div
@@ -146,7 +170,7 @@ export function BoxOverlay({
                 background: `${flagged ? OVERLAP_COLOR : b.color}${active ? "40" : flagged ? "26" : "14"}`,
                 outline: flagged ? `2px dashed ${OVERLAP_COLOR}` : undefined,
                 outlineOffset: flagged ? 2 : undefined,
-                boxShadow: i === selected ? "0 0 0 1px #fff" : undefined,
+                boxShadow: i === selected || inMulti ? "0 0 0 2px #fff" : undefined,
               }}
             />
           );
@@ -180,6 +204,17 @@ export function BoxOverlay({
           );
         })}
 
+        {marquee && (
+          <div
+            className="absolute pointer-events-none border border-dashed border-white bg-white/10"
+            style={{
+              left: `${Math.min(marquee[0], marquee[2]) * 100}%`,
+              top: `${Math.min(marquee[1], marquee[3]) * 100}%`,
+              width: `${Math.abs(marquee[2] - marquee[0]) * 100}%`,
+              height: `${Math.abs(marquee[3] - marquee[1]) * 100}%`,
+            }}
+          />
+        )}
         {draft && (
           <div
             className="absolute border-2 border-dashed border-white pointer-events-none"
