@@ -69,6 +69,8 @@ class Settings(BaseModel):
     lease_ttl_seconds: float = 20.0
     operator_passcode: str = os.environ.get("PCB_OPERATOR_PASSCODE", "rmutt-aoi")
     station_name: str = "RMUTT-AOI-01"
+    # Extra folders scanned for YOLO weights (e.g. another training project's runs/).
+    model_search_dirs: list[str] = Field(default_factory=list)
     default_operator: str = "Operator"
 
 

@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Building2, Check, Cpu, Crosshair, HardDriveUpload, Layers, Save, Volume2 } from "lucide-react";
-import type { ComputeDevice, ModelFile } from "@/types";
+import React, { useEffect, useState } from "react";
+import { Building2, Check, Cpu, Crosshair, Save, Volume2 } from "lucide-react";
+import type { ComputeDevice } from "@/types";
 import { api } from "@/lib/api";
-import { formatDateTime } from "@/lib/format";
-import { Badge, Button, Card, CardHeader, Field, NumberInput, Slider, Spinner, TextInput, Toggle, cx } from "./ui";
+import { Button, Card, CardHeader, Field, NumberInput, Slider, Spinner, TextInput, Toggle, cx } from "./ui";
+import { ModelPicker } from "./ModelPicker";
 import { useSoundPrefs } from "@/hooks/useSound";
 import { sfx } from "@/lib/sound";
 import { useToast } from "./Toast";
@@ -27,27 +27,9 @@ export function SettingsView({ onRefreshStatus }: { onRefreshStatus: () => void 
   const [preference, setPreference] = useState("auto");
   const [switchingDevice, setSwitchingDevice] = useState<string | null>(null);
 
-  // Model
-  const [models, setModels] = useState<ModelFile[]>([]);
-  const [currentModel, setCurrentModel] = useState("");
-  const [loadingModel, setLoadingModel] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const fileInput = useRef<HTMLInputElement>(null);
-
-  const loadModels = useCallback(
-    () =>
-      api.listModels().then((res) => {
-        setModels(res.models);
-        setCurrentModel(res.current_model);
-      }),
-    []
-  );
-
   useEffect(() => {
-    Promise.all([api.getSettings(), api.getDevices(), api.listModels()])
-      .then(([s, d, m]) => {
-        setModels(m.models);
-        setCurrentModel(m.current_model);
+    Promise.all([api.getSettings(), api.getDevices()])
+      .then(([s, d]) => {
         setStationName(s.station_name);
         setOperator(s.default_operator);
         setLimitX(s.soft_limit_x_mm);
@@ -89,37 +71,6 @@ export function SettingsView({ onRefreshStatus }: { onRefreshStatus: () => void 
     }
   };
 
-  const chooseModel = async (path: string) => {
-    setLoadingModel(path);
-    try {
-      const res = await api.setModel(path);
-      setCurrentModel(res.model_path);
-      toast.success("โหลดโมเดลแล้ว", res.device);
-      onRefreshStatus();
-    } catch (err) {
-      toast.error("โหลดโมเดลไม่สำเร็จ — ยังใช้โมเดลเดิม", err);
-    } finally {
-      setLoadingModel(null);
-    }
-  };
-
-  const upload = async (file: File | undefined) => {
-    if (!file) return;
-    if (!file.name.endsWith(".pt")) return toast.warning("รองรับเฉพาะไฟล์ .pt");
-    setUploading(true);
-    try {
-      const res = await api.uploadModel(file);
-      await loadModels();
-      toast.success("อัปโหลดและโหลดโมเดลแล้ว", `${res.filename} · ${res.size_mb} MB`);
-      onRefreshStatus();
-    } catch (err) {
-      toast.error("อัปโหลดโมเดลไม่สำเร็จ", err);
-    } finally {
-      setUploading(false);
-      if (fileInput.current) fileInput.current.value = "";
-    }
-  };
-
   if (!loaded) {
     return (
       <div className="h-full grid place-items-center">
@@ -136,42 +87,7 @@ export function SettingsView({ onRefreshStatus }: { onRefreshStatus: () => void 
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-4xl mx-auto p-4 md:p-6 flex flex-col gap-5">
-        <Card>
-          <CardHeader icon={Layers} title="โมเดล YOLO" subtitle="คลิกเพื่อโหลดโมเดล — หากโหลดไม่สำเร็จระบบจะใช้โมเดลเดิมต่อ" actions={
-            <Button size="sm" icon={HardDriveUpload} loading={uploading} onClick={() => fileInput.current?.click()}>
-              อัปโหลด .pt
-            </Button>
-          } />
-          <input ref={fileInput} type="file" accept=".pt" className="hidden" onChange={(e) => upload(e.target.files?.[0])} />
-          <ul className="divide-y divide-line">
-            {models.map((m) => {
-              const active = m.path === currentModel;
-              return (
-                <li key={m.path}>
-                  <button
-                    type="button"
-                    disabled={active || !!loadingModel}
-                    onClick={() => chooseModel(m.path)}
-                    className={cx("w-full flex items-center gap-3 px-4 py-3 text-left transition-colors", active ? "bg-accent-soft" : "hover:bg-surface-2 cursor-pointer")}
-                  >
-                    <span className={cx("size-4 rounded-full border-2 grid place-items-center shrink-0", active ? "border-accent bg-accent" : "border-line-strong")}>
-                      {active && <Check className="size-2.5 text-on-accent" strokeWidth={4} />}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium truncate">{m.filename}</span>
-                      <span className="block text-[11px] text-subtle font-mono truncate">{m.path}</span>
-                    </span>
-                    <span className="text-xs text-muted font-mono tabular shrink-0">{m.size_mb} MB</span>
-                    {m.modified_at && <span className="hidden sm:block text-[11px] text-subtle shrink-0">{formatDateTime(m.modified_at)}</span>}
-                    {loadingModel === m.path && <Spinner />}
-                    {active && <Badge tone="accent">ใช้งานอยู่</Badge>}
-                  </button>
-                </li>
-              );
-            })}
-            {!models.length && <li className="px-4 py-6 text-sm text-muted text-center">ไม่พบไฟล์ .pt ในโฟลเดอร์โปรเจกต์</li>}
-          </ul>
-        </Card>
+        <ModelPicker onRefreshStatus={onRefreshStatus} />
 
         <Card>
           <CardHeader icon={Cpu} title="ฮาร์ดแวร์ประมวลผล" subtitle={`กำลังใช้: ${activeDevice}`} />

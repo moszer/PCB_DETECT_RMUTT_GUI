@@ -110,7 +110,8 @@ export const api = {
   getDevices: () => request<{ current_device: string; preference: string; devices: ComputeDevice[] }>("/api/system/devices"),
   setDevice: (preference: string) => post<{ success: boolean }>("/api/system/device", { preference }),
   setModel: (model_path: string) => post<{ model_path: string; device: string }>("/api/system/model", { model_path }),
-  listModels: () => request<{ current_model: string; models: ModelFile[] }>("/api/system/models"),
+  listModels: () =>
+    request<{ current_model: string; models: ModelFile[]; custom_dirs: string[]; search_dirs: string[] }>("/api/system/models"),
   uploadModel: (file: File) =>
     postForm<{ filename: string; path: string; size_mb: number; message: string }>("/api/system/models/upload", { file }),
 

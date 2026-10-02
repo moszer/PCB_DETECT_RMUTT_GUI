@@ -311,6 +311,20 @@ export interface ModelFile {
   path: string;
   size_mb: number;
   modified_at?: number;
+  source?: "run" | "project" | "custom";
+  kind?: "best" | "last" | null;
+  folder?: string;
+  /** Present when the file sits in an Ultralytics run folder (<run>/weights/). */
+  run?: {
+    run: string;
+    epochs_done?: number;
+    best_epoch?: number;
+    map50?: number;
+    map50_95?: number;
+    train_imgsz?: string;
+    train_epochs?: string;
+    train_model?: string;
+  } | null;
 }
 
 export interface CameraDevice {
@@ -336,6 +350,7 @@ export interface StationSettings {
   soft_limit_y_mm: number;
   default_model: string;
   device_preference: string;
+  model_search_dirs: string[];
   has_passcode: boolean;
 }
 

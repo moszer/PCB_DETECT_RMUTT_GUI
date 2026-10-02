@@ -11,6 +11,7 @@ import torch
 
 from ..config import REPO_ROOT, STORAGE_DIR, save_settings_to_disk, settings
 from ..core.device import select_device
+from ..core.model_catalog import discover_models
 from ..core.schemas import SystemStatus
 from ..core.security import lease_manager
 from ..services.aoi_scan_service import aoi_scan_service
@@ -30,6 +31,7 @@ class SettingsUpdateRequest(BaseModel):
     soft_limit_x_mm: Optional[float] = Field(None, gt=0, le=1000)
     soft_limit_y_mm: Optional[float] = Field(None, gt=0, le=1000)
     model_path: Optional[str] = None
+    model_search_dirs: Optional[List[str]] = Field(None, max_length=20)
 
 
 class DeviceChangeRequest(BaseModel):
@@ -108,6 +110,15 @@ def update_settings(
             inference_service.load_model(req.model_path, settings.device_preference)
         except Exception as exc:
             raise HTTPException(400,f"Failed to load model: {exc}") from exc
+    if req.model_search_dirs is not None:
+        cleaned = []
+        for raw in req.model_search_dirs:
+            folder = Path(raw.strip()).expanduser()
+            if not folder.is_dir():
+                raise HTTPException(400, f"Folder not found: {raw}")
+            if str(folder.resolve()) not in cleaned:
+                cleaned.append(str(folder.resolve()))
+        req.model_search_dirs = cleaned
     changes = req.model_dump(exclude_none=True)
     if "model_path" in changes:
         changes["default_model"] = changes.pop("model_path")
@@ -202,56 +213,19 @@ def load_model(
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+def _model_roots() -> List[Path]:
+    project = REPO_ROOT.parent  # "defect detection yolo" (desktop app, web app, trained/, runs/)
+    return [project, STORAGE_DIR / "models", project.parent / "PCB Electronic components"]
+
+
 @router.get("/models")
 def list_available_models():
-    """List all detected .pt YOLO model files from repository root and backend models folder."""
-    models = []
-    seen_paths = set()
-
-    search_dirs = [
-        REPO_ROOT,
-        STORAGE_DIR / "models",
-        REPO_ROOT.parent,
-        REPO_ROOT.parent / "runs",
-        REPO_ROOT.parent / "trained",
-        REPO_ROOT.parent.parent / "PCB Electronic components",
-        REPO_ROOT.parent.parent / "PCB Electronic components" / "models"
-    ]
-
-    for s_dir in search_dirs:
-        if s_dir.is_dir():
-            for p in s_dir.glob("*.pt"):
-                if p.is_file() and p.resolve() not in seen_paths:
-                    seen_paths.add(p.resolve())
-                    try:
-                        stat = p.stat()
-                        models.append({
-                            "filename": p.name,
-                            "path": str(p),
-                            "size_mb": round(stat.st_size / (1024 * 1024), 2),
-                            "modified_at": stat.st_mtime
-                        })
-                    except Exception:
-                        pass
-            for p in s_dir.glob("*/*.pt"):
-                if p.is_file() and p.resolve() not in seen_paths:
-                    seen_paths.add(p.resolve())
-                    try:
-                        stat = p.stat()
-                        models.append({
-                            "filename": f"{p.parent.name}/{p.name}",
-                            "path": str(p),
-                            "size_mb": round(stat.st_size / (1024 * 1024), 2),
-                            "modified_at": stat.st_mtime
-                        })
-                    except Exception:
-                        pass
-
-    # Sort so best.pt and exp.pt appear first
-    models.sort(key=lambda m: (0 if "best" in m["filename"] else (1 if "exp" in m["filename"] else 2), m["filename"]))
+    """YOLO weights found in the project, training runs (runs/<name>/weights/*.pt) and user-added folders."""
     return {
         "current_model": inference_service.model_path,
-        "models": models
+        "search_dirs": [str(p) for p in _model_roots()] + list(settings.model_search_dirs),
+        "custom_dirs": list(settings.model_search_dirs),
+        "models": discover_models(_model_roots(), settings.model_search_dirs),
     }
 
 
