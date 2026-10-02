@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useId, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Save, Trash2 } from "lucide-react";
 import type { DatasetImage, LabelBox } from "@/types";
 import { datasetApi, errorMessage } from "@/lib/api";
@@ -8,7 +8,7 @@ import { classColor } from "@/lib/format";
 import { sfx } from "@/lib/sound";
 import { Badge, Button, Modal, SectionLabel, Spinner, TextInput, cx } from "../ui";
 import { LabelModeSwitch, type LabelMode } from "../BoxOverlay";
-import { LABEL_FONT, LABEL_HEIGHT, layoutLabels, paintOrder, pickAt } from "@/lib/labelLayout";
+import { LABEL_FONT, LABEL_HEIGHT, OVERLAP_COLOR, layoutLabels, overlappingPairs, paintOrder, pickAt } from "@/lib/labelLayout";
 import { useElementSize } from "@/hooks/useElementSize";
 import { useToast } from "../Toast";
 
@@ -51,6 +51,8 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
   const [hovered, setHovered] = useState<number | null>(null);
   const [labelMode, setLabelMode] = useState<LabelMode>("all");
   const surfaceSize = useElementSize(surface);
+  const overlaps = useMemo(() => overlappingPairs(boxes.map((b) => b.bbox)), [boxes]);
+  const [pairCursor, setPairCursor] = useState(0);
 
   // Load this image's labels (the editable copy is reset from the server response).
   const file = image?.file;
@@ -272,6 +274,8 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
                 const color = classColor(b.label);
                 const isSel = i === selected;
                 const active = isSel || i === hovered;
+                const flagged = overlaps.flagged.has(i);
+                const tint = flagged ? OVERLAP_COLOR : color;
                 return (
                   <div
                     key={i}
@@ -282,9 +286,11 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
                       top: `${y1 * 100}%`,
                       width: `${(x2 - x1) * 100}%`,
                       height: `${(y2 - y1) * 100}%`,
-                      borderColor: isSel ? "#fff" : color,
+                      borderColor: isSel ? "#fff" : tint,
                       borderWidth: active ? 3 : 2,
-                      background: active ? `${color}40` : `${color}14`,
+                      background: active ? `${tint}40` : flagged ? `${tint}26` : `${tint}14`,
+                      outline: flagged ? `2px dashed ${OVERLAP_COLOR}` : undefined,
+                      outlineOffset: flagged ? 2 : undefined,
                     }}
                   >
                     {isSel &&
@@ -306,7 +312,7 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
                   </div>
                 );
               })}
-            {ready && labelMode !== "none" && <LabelLayer boxes={boxes} selected={selected} hovered={hovered} mode={labelMode} size={surfaceSize} />}
+            {ready && labelMode !== "none" && <LabelLayer boxes={boxes} selected={selected} hovered={hovered} mode={labelMode} size={surfaceSize} flagged={overlaps.flagged} />}
             {draft && (
               <div
                 className="absolute border-2 border-dashed border-white pointer-events-none"
@@ -361,6 +367,23 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
               <SectionLabel>กรอบในภาพนี้ ({boxes.length})</SectionLabel>
               <LabelModeSwitch value={labelMode} onChange={setLabelMode} />
             </div>
+            {overlaps.pairs.length > 0 && (
+              <button
+                type="button"
+                title="กรอบที่ทับกันมาก (IoU ≥ 0.3 หรือซ้อนอยู่ในกันเกิน 70%) — มักเป็น label ซ้ำ"
+                onClick={() => {
+                  const [a, b] = overlaps.pairs[pairCursor % overlaps.pairs.length];
+                  const next = selected === a ? b : a;
+                  if (selected === a) setPairCursor((c) => c + 1);
+                  setSelected(next);
+                  setActiveClass(boxes[next].label);
+                }}
+                className="h-7 px-2.5 rounded-md text-[11px] font-semibold text-white self-start cursor-pointer"
+                style={{ background: OVERLAP_COLOR }}
+              >
+                ⚠ กรอบทับกัน {overlaps.pairs.length} คู่ · ไปดูทีละกรอบ
+              </button>
+            )}
             <ul className="rounded-lg border border-line divide-y divide-line max-h-64 overflow-y-auto">
               {boxes.map((b, i) => (
                 <li
@@ -369,9 +392,13 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
                   onClick={() => setSelected(i)}
                   onMouseEnter={() => setHovered(i)}
                   onMouseLeave={() => setHovered(null)}
+                  style={overlaps.flagged.has(i) ? { boxShadow: `inset 3px 0 0 ${OVERLAP_COLOR}` } : undefined}
                 >
                   <span className="size-2.5 rounded-sm shrink-0" style={{ background: classColor(b.label) }} />
-                  <span className="flex-1 truncate">{b.label}</span>
+                  <span className="flex-1 truncate">
+                    {overlaps.flagged.has(i) && <span style={{ color: OVERLAP_COLOR }}>⚠ </span>}
+                    {b.label}
+                  </span>
                   {!readOnly && (
                     <button
                       type="button"
@@ -415,17 +442,19 @@ function LabelLayer({
   hovered,
   mode,
   size,
+  flagged,
 }: {
   boxes: LabelBox[];
   selected: number | null;
   hovered: number | null;
   mode: LabelMode;
   size: { width: number; height: number };
+  flagged: Set<number>;
 }) {
   const focus = [selected, hovered].filter((i): i is number => i !== null && i < boxes.length);
   const spots = layoutLabels(
     boxes.map((b) => b.bbox),
-    boxes.map((b) => b.label),
+    boxes.map((b, i) => (flagged.has(i) ? `⚠ ${b.label}` : b.label)),
     size.width,
     size.height,
     focus
@@ -447,12 +476,12 @@ function LabelLayer({
               height: LABEL_HEIGHT,
               lineHeight: `${LABEL_HEIGHT}px`,
               font: LABEL_FONT,
-              background: isSel ? "#111827" : classColor(boxes[i].label),
+              background: isSel ? "#111827" : flagged.has(i) ? OVERLAP_COLOR : classColor(boxes[i].label),
               outline: focus.includes(i) ? "1px solid #fff" : undefined,
               zIndex: focus.includes(i) ? 4 : 3,
             }}
           >
-            {boxes[i].label}
+            {flagged.has(i) ? `⚠ ${boxes[i].label}` : boxes[i].label}
           </span>
         );
       })}

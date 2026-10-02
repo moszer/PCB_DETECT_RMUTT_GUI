@@ -114,3 +114,29 @@ export function pickAt(boxes: NBox[], x: number, y: number, current: number | nu
   const at = current === null ? -1 : hits.indexOf(current);
   return at === -1 ? hits[0] : hits[(at + 1) % hits.length];
 }
+
+/* ── Overlapping boxes (likely duplicate / nested labels) ───────────────── */
+
+/** Highlight for overlapping boxes — distinct from every class / status color in the app. */
+export const OVERLAP_COLOR = "#ff2bd6";
+
+/**
+ * Pairs of boxes that overlap enough to be suspicious: IoU ≥ `iou` (two boxes on the same
+ * part) or ≥ `contain` of the smaller box inside the larger one (a box nested in another).
+ * Neighbouring parts that merely touch are not reported.
+ */
+export function overlappingPairs(boxes: NBox[], { iou = 0.3, contain = 0.7 } = {}) {
+  const area = (b: NBox) => Math.max(0, b[2] - b[0]) * Math.max(0, b[3] - b[1]);
+  const pairs: Array<[number, number]> = [];
+  for (let i = 0; i < boxes.length; i++) {
+    for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i], b = boxes[j];
+      const inter = Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+      if (!inter) continue;
+      const aa = area(a), ab = area(b);
+      if (inter / (aa + ab - inter) >= iou || inter / Math.min(aa, ab) >= contain) pairs.push([i, j]);
+    }
+  }
+  const flagged = new Set(pairs.flat());
+  return { pairs, flagged };
+}

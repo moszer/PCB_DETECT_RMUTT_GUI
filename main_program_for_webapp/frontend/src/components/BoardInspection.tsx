@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Camera, PenSquare, Play, Save, SlidersHorizontal, Square, Trash2 } from "lucide-react";
 import {
   boardComplete,
@@ -17,6 +17,7 @@ import { api, errorMessage } from "@/lib/api";
 import { formatFromCamera, formatLabel } from "@/lib/cameraFormat";
 import { CameraFormatPanel } from "./CameraFormatPanel";
 import { BoxOverlay, LabelModeSwitch, type LabelMode } from "./BoxOverlay";
+import { OVERLAP_COLOR, overlappingPairs } from "@/lib/labelLayout";
 import { sfx } from "@/lib/sound";
 import type { CustomPointRequest } from "@/types";
 import type { InspectionParams } from "@/lib/params";
@@ -176,6 +177,7 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
   };
 
   const valid = validateReference(items);
+  const overlaps = useMemo(() => overlappingPairs(items.map((i) => i.bbox)), [items]);
   const dirty =
     JSON.stringify(items) !== JSON.stringify(point.expected_components ?? []) || (reference?.image ?? null) !== (point.reference_image ?? null);
   const frameRec = typeof view === "number" ? round?.capturedFrames?.[view] : undefined;
@@ -265,11 +267,18 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
       <div className="flex flex-col gap-4 min-w-0">
         <div className="flex items-center justify-between">
           <SectionLabel>ชิ้นส่วนต้นแบบ ({items.length})</SectionLabel>
-          {!valid && items.length > 0 ? (
-            <Badge tone="fail">รหัสซ้ำหรือชื่อว่าง</Badge>
-          ) : (
-            dirty && <Badge tone="review">ยังไม่ได้บันทึก</Badge>
-          )}
+          <span className="flex items-center gap-1">
+            {overlaps.pairs.length > 0 && (
+              <span className="h-5 px-1.5 rounded text-[11px] font-semibold text-white" style={{ background: OVERLAP_COLOR }} title="กรอบที่ทับกันมาก — มักเป็น label ซ้ำ">
+                ⚠ ทับกัน {overlaps.pairs.length} คู่
+              </span>
+            )}
+            {!valid && items.length > 0 ? (
+              <Badge tone="fail">รหัสซ้ำหรือชื่อว่าง</Badge>
+            ) : (
+              dirty && <Badge tone="review">ยังไม่ได้บันทึก</Badge>
+            )}
+          </span>
         </div>
         <ul ref={listRef} className="rounded-lg border border-line divide-y divide-line max-h-72 overflow-y-auto" onMouseLeave={() => setHovered(null)}>
           {items.map((item, i) => {
@@ -282,6 +291,8 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
                 className={cx("flex items-center gap-1.5 p-1.5", i === selected ? "bg-accent-soft" : i === hovered && "bg-surface-2")}
                 onClick={() => setSelected(i)}
                 onMouseEnter={() => setHovered(i)}
+                style={overlaps.flagged.has(i) ? { boxShadow: `inset 3px 0 0 ${OVERLAP_COLOR}` } : undefined}
+                title={overlaps.flagged.has(i) ? "กรอบนี้ทับกับกรอบอื่นมาก — ตรวจว่าเป็น label ซ้ำหรือไม่" : undefined}
               >
                 <TextInput
                   aria-label={`รหัสตำแหน่ง ${i + 1}`}

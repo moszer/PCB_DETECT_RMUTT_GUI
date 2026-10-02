@@ -2,7 +2,7 @@
 
 import React, { useMemo, useRef, useState } from "react";
 import { useElementSize } from "@/hooks/useElementSize";
-import { LABEL_FONT, LABEL_HEIGHT, layoutLabels, paintOrder, pickAt, type NBox } from "@/lib/labelLayout";
+import { LABEL_FONT, LABEL_HEIGHT, OVERLAP_COLOR, layoutLabels, overlappingPairs, paintOrder, pickAt, type NBox } from "@/lib/labelLayout";
 import { Segmented, cx } from "./ui";
 
 export type LabelMode = "all" | "focus" | "none";
@@ -23,6 +23,8 @@ function textOn(hex: string) {
   const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
   return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? "#000" : "#fff";
 }
+
+const labelText = (label: string, flagged: boolean) => (flagged ? `⚠ ${label}` : label);
 
 export function LabelModeSwitch({ value, onChange }: { value: LabelMode; onChange: (m: LabelMode) => void }) {
   return (
@@ -73,10 +75,12 @@ export function BoxOverlay({
   const down = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
 
   const nboxes = useMemo(() => boxes.map((b) => b.bbox), [boxes]);
+  const overlaps = useMemo(() => overlappingPairs(nboxes), [nboxes]);
+  const [pairCursor, setPairCursor] = useState(0);
   const focus = useMemo(() => [selected, hovered].filter((i): i is number => i !== null && i < boxes.length), [selected, hovered, boxes.length]);
   const spots = useMemo(
-    () => (labelMode === "none" ? [] : layoutLabels(nboxes, boxes.map((b) => b.label), width, height, focus)),
-    [labelMode, nboxes, boxes, width, height, focus]
+    () => (labelMode === "none" ? [] : layoutLabels(nboxes, boxes.map((b, i) => labelText(b.label, overlaps.flagged.has(i))), width, height, focus)),
+    [labelMode, nboxes, boxes, width, height, focus, overlaps]
   );
   const order = paintOrder(nboxes, [hovered !== selected ? hovered : null, selected]);
   const hiddenCount = labelMode === "all" ? spots.filter((s, i) => s.hidden && !focus.includes(i)).length : 0;
@@ -128,6 +132,7 @@ export function BoxOverlay({
           const b = boxes[i];
           const [x1, y1, x2, y2] = b.bbox;
           const active = i === selected || i === hovered;
+          const flagged = overlaps.flagged.has(i);
           return (
             <div
               key={i}
@@ -137,8 +142,10 @@ export function BoxOverlay({
                 top: `${y1 * 100}%`,
                 width: `${(x2 - x1) * 100}%`,
                 height: `${(y2 - y1) * 100}%`,
-                border: `${i === selected ? 3 : 2}px ${b.dashed ? "dashed" : "solid"} ${b.color}`,
-                background: `${b.color}${active ? "40" : "14"}`,
+                border: `${i === selected ? 3 : 2}px ${b.dashed ? "dashed" : "solid"} ${flagged ? OVERLAP_COLOR : b.color}`,
+                background: `${flagged ? OVERLAP_COLOR : b.color}${active ? "40" : flagged ? "26" : "14"}`,
+                outline: flagged ? `2px dashed ${OVERLAP_COLOR}` : undefined,
+                outlineOffset: flagged ? 2 : undefined,
                 boxShadow: i === selected ? "0 0 0 1px #fff" : undefined,
               }}
             />
@@ -150,6 +157,8 @@ export function BoxOverlay({
           const visible = labelMode === "all" ? !s.hidden || focus.includes(i) : labelMode === "focus" && focus.includes(i);
           if (!visible || !s.width) return null;
           const b = boxes[i];
+          const flagged = overlaps.flagged.has(i);
+          const bg = flagged ? OVERLAP_COLOR : b.color;
           return (
             <span
               key={i}
@@ -160,13 +169,13 @@ export function BoxOverlay({
                 height: LABEL_HEIGHT,
                 lineHeight: `${LABEL_HEIGHT}px`,
                 font: LABEL_FONT,
-                background: b.color,
-                color: textOn(b.color),
+                background: bg,
+                color: textOn(bg),
                 outline: focus.includes(i) ? "1px solid #fff" : undefined,
                 zIndex: focus.includes(i) ? 3 : 2,
               }}
             >
-              {b.label}
+              {labelText(b.label, flagged)}
             </span>
           );
         })}
@@ -183,6 +192,22 @@ export function BoxOverlay({
           />
         )}
       </div>
+      {overlaps.pairs.length > 0 && (
+        <button
+          type="button"
+          title="กรอบที่ทับกันมาก — มักเป็น label ซ้ำ คลิกเพื่อไปดูทีละคู่"
+          onClick={() => {
+            const [a, b] = overlaps.pairs[pairCursor % overlaps.pairs.length];
+            // first click selects one box of the pair, the next click the other, then the next pair
+            onSelect?.(selected === a ? b : a);
+            if (selected === a) setPairCursor((c) => c + 1);
+          }}
+          className="absolute top-2 left-2 h-7 px-2.5 rounded-md text-[11px] font-semibold text-white flex items-center gap-1 cursor-pointer shadow"
+          style={{ background: OVERLAP_COLOR }}
+        >
+          ⚠ กรอบทับกัน {overlaps.pairs.length} คู่ · ไปดู
+        </button>
+      )}
       {hiddenCount > 0 && (
         <span className="absolute bottom-2 right-2 h-6 px-2 rounded-md bg-black/65 text-[11px] text-white flex items-center pointer-events-none">
           ซ่อน {hiddenCount} ป้ายที่ทับกัน — คลิกกรอบหรือชี้รายการเพื่อดู
