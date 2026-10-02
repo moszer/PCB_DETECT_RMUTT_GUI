@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Crosshair, RefreshCw, SlidersHorizontal, VideoOff } from "lucide-react";
 import { API_BASE, api } from "@/lib/api";
-import { CAMERA_PRESETS, formatMm, presetForCamera, type CameraShape } from "@/lib/format";
-import type { CameraDevice } from "@/types";
-import { Button, Field, IconButton, Select, StatusDot, cx } from "./ui";
-import { useToast } from "./Toast";
+import { formatMm } from "@/lib/format";
+import type { CameraShape } from "@/lib/cameraFormat";
+import { Button, IconButton, StatusDot, cx } from "./ui";
+import { CameraFormatPanel } from "./CameraFormatPanel";
 
 export interface FeedHud {
   title: string;
@@ -168,12 +168,7 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
       </div>
 
       {settingsOpen && (
-        <CameraSettings
-          locked={locked}
-          current={info}
-          onClose={() => setSettingsOpen(false)}
-          onApplied={reload}
-        />
+        <CameraFormatPanel className="absolute top-12 right-3 z-10" locked={locked} onClose={() => setSettingsOpen(false)} onApplied={reload} />
       )}
 
       {hud && (
@@ -237,107 +232,6 @@ function Reticle({ zoomed }: { zoomed: boolean }) {
       <div className={cx("absolute h-40 w-px", line)} />
       <div className={cx("absolute size-20 rounded-full border", color)} />
       <div className={cx("absolute size-1.5 rounded-full", zoomed ? "bg-amber-400" : "bg-emerald-400")} />
-    </div>
-  );
-}
-
-function CameraSettings({
-  locked,
-  current,
-  onClose,
-  onApplied,
-}: {
-  locked?: boolean;
-  current?: CameraShape | null;
-  onClose: () => void;
-  onApplied: () => void;
-}) {
-  const [devices, setDevices] = useState<CameraDevice[]>([]);
-  const [device, setDevice] = useState(0);
-  const [preset, setPreset] = useState<string>(presetForCamera(current)?.id ?? "1080p");
-  const [busy, setBusy] = useState(false);
-  const toast = useToast();
-  const panel = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    api
-      .listCameras()
-      .then((res) => {
-        setDevices(res.devices);
-        setDevice(res.current_index);
-        const p = presetForCamera(res);
-        if (p) setPreset(p.id);
-      })
-      .catch((err) => toast.error("อ่านรายการกล้องไม่สำเร็จ", err));
-  }, [toast]);
-
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => panel.current && !panel.current.contains(e.target as Node) && onClose();
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [onClose]);
-
-  const apply = async () => {
-    const p = CAMERA_PRESETS.find((x) => x.id === preset)!;
-    setBusy(true);
-    try {
-      const res = await api.startCamera(device, p.width, p.height, p.output, p.mode);
-      const cams = await api.listCameras();
-      const cap = cams.capture_resolution;
-      // The driver may silently deliver less than asked (e.g. 1080p instead of 4K).
-      const short = cap && (cap[0] < p.width || cap[1] < p.height);
-      if (res.is_mock) toast.warning("เปิดกล้องจริงไม่ได้ — ใช้ภาพจำลอง");
-      else if (short) toast.warning("กล้องให้ความละเอียดต่ำกว่าที่ขอ", `ขอ ${p.width}×${p.height} ได้ ${cap[0]}×${cap[1]} — ภาพ ${res.resolution[0]}×${res.resolution[1]} จะซูมน้อยลง`);
-      else toast.success("ตั้งค่ากล้องแล้ว", `${res.resolution[0]}×${res.resolution[1]}${cap ? ` (กล้องส่ง ${cap[0]}×${cap[1]})` : ""}`);
-      onApplied();
-      onClose();
-    } catch (err) {
-      toast.error("ตั้งค่ากล้องไม่สำเร็จ", err);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div ref={panel} className="absolute top-12 right-3 z-10 w-72 rounded-xl border border-line bg-surface p-4 shadow-pop flex flex-col gap-3">
-      <div className="text-sm font-semibold text-text">ตั้งค่ากล้อง</div>
-      <Field label="อุปกรณ์กล้อง">
-        <Select value={device} onChange={(e) => setDevice(Number(e.target.value))} disabled={locked}>
-          {(devices.length ? devices : [{ index: 0, name: "Camera 0", active: false }]).map((d) => (
-            <option key={d.index} value={d.index}>
-              {d.name}
-              {d.active ? " • ใช้งานอยู่" : ""}
-            </option>
-          ))}
-        </Select>
-      </Field>
-      <Field label="ขนาดภาพที่ถ่าย" hint="แบบสี่เหลี่ยมจัตุรัสจะตัดกลางภาพแล้วย่อ — ใช้กับภาพสด การตรวจ และการสแกนทั้งหมด">
-        <Select value={preset} onChange={(e) => setPreset(e.target.value)} disabled={locked}>
-          {CAMERA_PRESETS.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label}
-            </option>
-          ))}
-        </Select>
-      </Field>
-      {current?.capture_resolution && (
-        <p className="text-[11px] text-subtle">
-          กล้องส่งจริง {current.capture_resolution[0]}×{current.capture_resolution[1]} → ภาพที่ใช้ {current.resolution[0]}×{current.resolution[1]}
-          {current.output_mode === "crop" ? " (ตัดกลาง 1:1)" : ""}
-        </p>
-      )}
-      {preset === "4k_crop640" && (
-        <p className="text-[11px] text-review">แบบ 1:1 เห็นพื้นที่แคบลงราว 3.4 เท่า (เหมือนซูม) — ต้องสอนต้นแบบใหม่และลดระยะห่างภาพตอนสแกน</p>
-      )}
-      {locked && <p className="text-[11px] text-review">เปลี่ยนกล้องไม่ได้ระหว่างสแกน</p>}
-      <div className="flex justify-end gap-2">
-        <Button size="sm" variant="ghost" onClick={onClose}>
-          ปิด
-        </Button>
-        <Button size="sm" variant="primary" onClick={apply} loading={busy} disabled={locked}>
-          ใช้ค่านี้
-        </Button>
-      </div>
     </div>
   );
 }

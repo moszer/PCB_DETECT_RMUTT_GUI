@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Camera, PenSquare, Play, Save, Square, Trash2 } from "lucide-react";
+import { Camera, PenSquare, Play, Save, SlidersHorizontal, Square, Trash2 } from "lucide-react";
 import {
   boardComplete,
   inspectFrame,
@@ -14,11 +14,12 @@ import {
 } from "@/lib/board-inspection";
 import { captureInspection } from "@/lib/capture-inspection";
 import { api, errorMessage } from "@/lib/api";
-import { CAMERA_PRESETS, presetForCamera } from "@/lib/format";
+import { formatFromCamera, formatLabel } from "@/lib/cameraFormat";
+import { CameraFormatPanel } from "./CameraFormatPanel";
 import { sfx } from "@/lib/sound";
 import type { CustomPointRequest } from "@/types";
 import type { InspectionParams } from "@/lib/params";
-import { Badge, Button, Checkbox, EmptyState, SectionLabel, Select, TextInput, cx } from "./ui";
+import { Badge, Button, Checkbox, EmptyState, SectionLabel, TextInput, cx } from "./ui";
 
 interface Props {
   point: CustomPointRequest;
@@ -47,8 +48,9 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
   const [view, setView] = useState<View>("reference");
   const [selected, setSelected] = useState(0);
   const [drawing, setDrawing] = useState(false);
-  const [busy, setBusy] = useState<"capture" | "run" | "camera" | null>(null);
-  const [presetId, setPresetId] = useState<string>("");
+  const [busy, setBusy] = useState<"capture" | "run" | null>(null);
+  const [formatOpen, setFormatOpen] = useState(false);
+  const [formatText, setFormatText] = useState<string>("");
   const [message, setMessage] = useState<{ tone: "info" | "pass" | "fail"; text: string } | null>(null);
   const abort = useRef<AbortController | null>(null);
   const dragStart = useRef<[number, number] | null>(null);
@@ -59,32 +61,22 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
 
   useEffect(() => () => abort.current?.abort(), []);
 
-  // Show the camera's current capture size in the selector.
+  // Show the camera's current image format on the format button.
+  const [formatVersion, setFormatVersion] = useState(0);
   useEffect(() => {
     api
       .listCameras()
-      .then((res) => setPresetId(presetForCamera(res)?.id ?? ""))
+      .then((res) => setFormatText(formatLabel(formatFromCamera(res), res.capture_resolution)))
       .catch(() => undefined);
-  }, []);
+  }, [formatVersion]);
 
-  const changeCapture = async (id: string) => {
-    const preset = CAMERA_PRESETS.find((p) => p.id === id);
-    if (!preset || busy) return;
-    setBusy("camera");
-    try {
-      const cams = await api.listCameras();
-      await api.startCamera(cams.current_index, preset.width, preset.height, preset.output, preset.mode);
-      setPresetId(id);
-      // A different frame size/crop changes the framing, so the taught boxes no longer line up.
-      setConfirmed(false);
-      setAligned(false);
-      setRound(null);
-      setMessage({ tone: "info", text: "เปลี่ยนขนาดภาพแล้ว — กด “ถ่ายต้นแบบใหม่” เพื่อสอนต้นแบบที่ขนาดนี้" });
-    } catch (err) {
-      setMessage({ tone: "fail", text: errorMessage(err) });
-    } finally {
-      setBusy(null);
-    }
+  const onFormatApplied = () => {
+    setFormatVersion((v) => v + 1);
+    // A different frame size/crop changes the framing, so the taught boxes no longer line up.
+    setConfirmed(false);
+    setAligned(false);
+    setRound(null);
+    setMessage({ tone: "info", text: "เปลี่ยนขนาดภาพแล้ว — กด “ถ่ายต้นแบบใหม่” เพื่อสอนต้นแบบที่ขนาดนี้" });
   };
 
   const edit = (next: ExpectedComponent[]) => {
@@ -191,21 +183,12 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
       {/* ── Image + overlay ── */}
       <div className="flex flex-col gap-3 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
-          <Select
-            aria-label="ขนาดภาพที่ถ่าย"
-            title="ขนาดภาพที่ถ่าย"
-            className="w-auto! h-9! text-xs"
-            value={presetId}
-            disabled={!!busy}
-            onChange={(e) => changeCapture(e.target.value)}
-          >
-            {!presetId && <option value="">ขนาดภาพที่ถ่าย…</option>}
-            {CAMERA_PRESETS.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </Select>
+          <div className="relative">
+            <Button icon={SlidersHorizontal} disabled={!!busy} onClick={() => setFormatOpen((v) => !v)} title="ขนาดภาพที่ถ่าย">
+              {formatText || "ขนาดภาพ"}
+            </Button>
+            {formatOpen && <CameraFormatPanel className="absolute top-11 left-0 z-20" onClose={() => setFormatOpen(false)} onApplied={onFormatApplied} />}
+          </div>
           <Button variant={reference ? "secondary" : "primary"} icon={Camera} loading={busy === "capture"} disabled={running} onClick={capture}>
             {reference ? "ถ่ายต้นแบบใหม่" : "ถ่ายต้นแบบจากบอร์ดที่ครบ"}
           </Button>
