@@ -20,8 +20,13 @@ _KEEP: Any = object()  # sentinel: keep the previous output size
 class CameraService:
     """Thread-safe camera service managing frame acquisition and streaming."""
 
+    # Live previews kept per client; a new one ends the oldest. Browsers allow only 6
+    # connections per host, so leaked <img> streams used to block every other API call.
+    MAX_STREAMS_PER_CLIENT = 2
+
     def __init__(self):
         self._lock = threading.Lock()
+        self._streams: List[Tuple[str, Dict[str, bool]]] = []  # (client, flag), oldest first
         self._lifecycle_lock = threading.RLock()
         self._generation = 0
         self._cap: Optional[cv2.VideoCapture] = None
@@ -351,11 +356,40 @@ class CameraService:
             time.sleep(0.015)
         raise TimeoutError(f"Could not acquire fresh camera frame within {timeout_sec}s timeout.")
 
-    async def generate_mjpeg_stream(self, max_fps: int = 25) -> AsyncGenerator[bytes, None]:
+    def _register_stream(self, client: str) -> Dict[str, bool]:
+        flag = {"stop": False}
+        with self._lock:
+            mine = [s for s in self._streams if s[0] == client]
+            while len(mine) >= self.MAX_STREAMS_PER_CLIENT:
+                old = mine.pop(0)
+                old[1]["stop"] = True
+                self._streams.remove(old)
+                logger.info("Ending older live stream of %s (limit %d)", client, self.MAX_STREAMS_PER_CLIENT)
+            self._streams.append((client, flag))
+        return flag
+
+    def _unregister_stream(self, flag: Dict[str, bool]) -> None:
+        with self._lock:
+            self._streams = [s for s in self._streams if s[1] is not flag]
+
+    @property
+    def stream_count(self) -> int:
+        with self._lock:
+            return len(self._streams)
+
+    async def generate_mjpeg_stream(self, max_fps: int = 25, client: str = "") -> AsyncGenerator[bytes, None]:
         """Yield multipart MJPEG chunks for real-time browser preview."""
+        flag = self._register_stream(client)
+        try:
+            async for chunk in self._mjpeg_frames(max_fps, flag):
+                yield chunk
+        finally:
+            self._unregister_stream(flag)
+
+    async def _mjpeg_frames(self, max_fps: int, flag: Dict[str, bool]) -> AsyncGenerator[bytes, None]:
         interval = 1.0 / max_fps
 
-        while True:
+        while not flag["stop"]:
             if not self._running:
                 # Wait briefly during camera switch / restart before exiting
                 await asyncio.sleep(0.3)

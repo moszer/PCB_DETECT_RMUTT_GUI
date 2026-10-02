@@ -1,5 +1,5 @@
 """Camera control and MJPEG streaming endpoints."""
-from fastapi import APIRouter, HTTPException, Response, Query
+from fastapi import APIRouter, HTTPException, Request, Response, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 import time
@@ -31,12 +31,15 @@ class CameraStartRequest(BaseModel):
 
 
 @router.get("/stream")
-async def get_camera_stream():
+async def get_camera_stream(request: Request):
     """Live MJPEG video stream for HTML <img> tag preview."""
     if not camera_service.is_active:
         camera_service.start()
+    # Behind the Next.js proxy every request comes from 127.0.0.1; the browser is in X-Forwarded-For.
+    forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    client = forwarded or (request.client.host if request.client else "")
     return StreamingResponse(
-        camera_service.generate_mjpeg_stream(),
+        camera_service.generate_mjpeg_stream(client=client),
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
@@ -71,7 +74,8 @@ def get_camera_status():
         "resolution": camera_service.resolution,
         "capture_resolution": camera_service.capture_resolution,
         "output_mode": camera_service.output_mode,
-        "fps": camera_service.fps
+        "fps": camera_service.fps,
+        "live_streams": camera_service.stream_count,
     }
 
 

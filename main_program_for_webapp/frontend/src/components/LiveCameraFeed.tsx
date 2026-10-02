@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Crosshair, RefreshCw, SlidersHorizontal, VideoOff } from "lucide-react";
 import { API_BASE, api } from "@/lib/api";
 import { formatMm } from "@/lib/format";
@@ -31,6 +31,50 @@ interface LiveCameraFeedProps {
 
 const ZOOM_STEPS = [1, 1.5, 2, 3, 4];
 
+/*
+ * Page visibility as an external store. The snapshot is -1 while the tab is hidden and a
+ * new number each time it becomes visible again, so the stream restarts fresh after the
+ * tab (or the Mac) has been idle.
+ */
+let visibleEpoch = 0;
+function subscribeVisibility(onChange: () => void) {
+  const handler = () => {
+    if (!document.hidden) visibleEpoch++;
+    onChange();
+  };
+  document.addEventListener("visibilitychange", handler);
+  return () => document.removeEventListener("visibilitychange", handler);
+}
+const visibilitySnapshot = () => (document.hidden ? -1 : visibleEpoch);
+const serverVisibility = () => 0;
+
+/**
+ * MJPEG <img> that really closes its connection. Chromium keeps a multipart image request
+ * running after the element is removed, so every remount leaked a stream; browsers allow
+ * only 6 connections per host, and once leaked streams filled them every API call hung.
+ */
+function MjpegImage({ src, onFail, ...rest }: { src: string; onFail: () => void } & Omit<React.ImgHTMLAttributes<HTMLImageElement>, "src">) {
+  const ref = useRef<HTMLImageElement>(null);
+  const fail = useRef(onFail);
+  useEffect(() => {
+    fail.current = onFail;
+  });
+  useEffect(() => {
+    const img = ref.current;
+    if (!img) return;
+    const onError = () => fail.current();
+    img.addEventListener("error", onError);
+    img.src = src;
+    return () => {
+      img.removeEventListener("error", onError);
+      img.removeAttribute("src"); // aborts the in-flight multipart request
+      img.src = "data:,";
+    };
+  }, [src]);
+  // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
+  return <img ref={ref} {...rest} />;
+}
+
 /**
  * The single live camera view used across the app: MJPEG stream with an automatic
  * snapshot fallback, alignment reticle, zoom preview and the one camera-settings menu.
@@ -43,6 +87,9 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
   const [reticle, setReticle] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [info, setInfo] = useState<(CameraShape & { fps: number; mock: boolean }) | null>(null);
+  // No stream while the tab is in the background: it would hold one of the browser's
+  // 6 connections to this host for nothing.
+  const visible = useSyncExternalStore(subscribeVisibility, visibilitySnapshot, serverVisibility);
 
   useEffect(() => {
     api
@@ -61,6 +108,10 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
     let timer: ReturnType<typeof setTimeout>;
     let current: string | null = null;
     const next = async () => {
+      if (document.hidden) {
+        timer = setTimeout(next, 1000);
+        return;
+      }
       try {
         const res = await fetch(`${API_BASE}/api/camera/snapshot?t=${Date.now()}`, { cache: "no-store" });
         if (!res.ok) throw new Error(String(res.status));
@@ -92,20 +143,24 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
   };
 
   const zoomed = zoom > 1.01;
-  const src = mode === "stream" ? `${API_BASE}/api/camera/stream?t=${streamKey}` : snapshotUrl;
+  const streamSrc = visible >= 0 ? `${API_BASE}/api/camera/stream?t=${streamKey}-${visible}` : null;
+  const imgClass = "absolute inset-0 size-full object-contain transition-transform duration-300 ease-out pointer-events-none";
 
   return (
     <div className={cx("relative overflow-hidden rounded-xl bg-viewport border border-line select-none", className)}>
-      {src ? (
+      {mode === "stream" ? (
+        streamSrc && (
+          <MjpegImage
+            src={streamSrc}
+            alt="ภาพสดจากกล้อง"
+            onFail={() => setMode("snapshot")}
+            style={{ transform: zoomed ? `scale(${zoom})` : undefined }}
+            className={imgClass}
+          />
+        )
+      ) : snapshotUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img
-          key={mode === "stream" ? streamKey : "snapshot"}
-          src={src}
-          alt="ภาพสดจากกล้อง"
-          onError={() => mode === "stream" && setMode("snapshot")}
-          style={{ transform: zoomed ? `scale(${zoom})` : undefined }}
-          className="absolute inset-0 size-full object-contain transition-transform duration-300 ease-out pointer-events-none"
-        />
+        <img src={snapshotUrl} alt="ภาพสดจากกล้อง" style={{ transform: zoomed ? `scale(${zoom})` : undefined }} className={imgClass} />
       ) : null}
 
       {failed && (
