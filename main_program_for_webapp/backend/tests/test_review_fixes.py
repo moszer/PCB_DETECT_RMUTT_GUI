@@ -207,3 +207,30 @@ class FrameAlignmentTests(unittest.TestCase):
 def box_iou_for_test(a, b):
     from app.core.inspection import box_iou
     return box_iou(a, b)
+
+
+class CameraCropModeTests(unittest.TestCase):
+    def test_crop_mode_cuts_center_without_resizing(self):
+        from app.services.camera_service import CameraService
+        frame = np.zeros((2160, 3840, 3), dtype=np.uint8)
+        frame[1080, 1920] = 255  # single pixel at the exact center
+        out = CameraService._fit_output(frame, (640, 640), "crop")
+        self.assertEqual(out.shape, (640, 640, 3))
+        self.assertEqual(int(out[320, 320, 0]), 255)  # 1:1 — the pixel survives undiluted
+
+    def test_crop_mode_falls_back_to_fit_on_small_frames(self):
+        from app.services.camera_service import CameraService
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        self.assertEqual(CameraService._fit_output(frame, (640, 640), "crop").shape, (640, 640, 3))
+
+    def test_api_reports_capture_and_mode(self):
+        client = TestClient(app)
+        camera_service.stop()
+        with patch("app.services.camera_service.cv2.VideoCapture", return_value=MagicMock(isOpened=MagicMock(return_value=False))):
+            res = client.post("/api/camera/start", json={"width": 3840, "height": 2160, "output_width": 640, "output_height": 640, "output_mode": "crop"})
+            self.assertEqual(res.status_code, 200, res.text)
+            body = client.get("/api/camera/devices").json()
+            self.assertEqual((body["resolution"], body["capture_resolution"], body["output_mode"]), ([640, 640], [3840, 2160], "crop"))
+            camera_service.start()  # bare restart keeps the mode
+            self.assertEqual(camera_service.output_mode, "crop")
+        camera_service.stop()

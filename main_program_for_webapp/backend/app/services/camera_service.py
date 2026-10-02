@@ -35,7 +35,10 @@ class CameraService:
         self._requested_width: int = 1920
         self._requested_height: int = 1080
         self._requested_fps: int = 30
-        self._output_size: Optional[Tuple[int, int]] = None  # (w, h) center-crop + resize of every frame
+        self._output_size: Optional[Tuple[int, int]] = None  # (w, h) of every frame handed out
+        # "fit": crop to the output aspect then resize; "crop": cut exactly (w, h) from the
+        # center at 1:1 pixels (a sharp digital zoom, e.g. 640x640 out of a 4K frame).
+        self._output_mode: str = "fit"
         self._actual_fps: float = 0.0
         self._fps_count: int = 0
         self._fps_timer: float = 0.0
@@ -54,6 +57,15 @@ class CameraService:
     def resolution(self) -> Tuple[int, int]:
         """Size of the frames handed to streaming, inspection and AOI (after any output crop)."""
         return self._output_size or (self._actual_width, self._actual_height)
+
+    @property
+    def capture_resolution(self) -> Tuple[int, int]:
+        """What the camera actually delivers, before any output crop."""
+        return (self._actual_width, self._actual_height)
+
+    @property
+    def output_mode(self) -> str:
+        return self._output_mode
 
     @property
     def fps(self) -> float:
@@ -119,6 +131,7 @@ class CameraService:
         height: Optional[int] = None,
         fps: Optional[int] = None,
         output_size: Optional[Tuple[int, int]] = _KEEP,
+        output_mode: Optional[str] = None,
     ) -> bool:
         """Open the camera. Omitted arguments reuse the last requested settings.
 
@@ -133,6 +146,9 @@ class CameraService:
             fps = self._requested_fps if fps is None else fps
             if output_size is _KEEP:
                 output_size = self._output_size
+            output_mode = self._output_mode if output_mode is None else output_mode
+            if output_mode not in ("fit", "crop"):
+                raise ValueError("output_mode must be 'fit' or 'crop'")
             if self._running:
                 if (
                     self._device_index == device_index
@@ -140,10 +156,12 @@ class CameraService:
                     and self._requested_height == height
                     and self._requested_fps == fps
                     and self._output_size == output_size
+                    and self._output_mode == output_mode
                 ):
                     return True
                 self.stop()
             self._output_size = output_size
+            self._output_mode = output_mode
 
             self._device_index = device_index
             self._requested_width = width
@@ -243,14 +261,22 @@ class CameraService:
                 cap.release()
 
     @staticmethod
-    def _fit_output(frame: np.ndarray, size: Optional[Tuple[int, int]]) -> np.ndarray:
-        """Center-crop to the output aspect ratio, then resize (cameras rarely offer e.g. 640x640 natively)."""
+    def _fit_output(frame: np.ndarray, size: Optional[Tuple[int, int]], mode: str = "fit") -> np.ndarray:
+        """Shape a camera frame to the output size (cameras rarely offer e.g. 640x640 natively).
+
+        fit:  center-crop to the output aspect ratio, then resize (same field of view).
+        crop: cut exactly `size` from the center with no resize (1:1 pixels). Falls back to
+              fit when the frame is smaller than the requested size.
+        """
         if not size:
             return frame
         out_w, out_h = size
         h, w = frame.shape[:2]
         if (w, h) == (out_w, out_h):
             return frame
+        if mode == "crop" and w >= out_w and h >= out_h:
+            x, y = (w - out_w) // 2, (h - out_h) // 2
+            return frame[y:y + out_h, x:x + out_w].copy()
         target = out_w / out_h
         if w / h > target:
             crop_w, crop_h = int(round(h * target)), h
@@ -277,7 +303,7 @@ class CameraService:
                 time.sleep(0.033)  # ~30 fps
 
             if frame is not None:
-                frame = self._fit_output(frame, self._output_size)
+                frame = self._fit_output(frame, self._output_size, self._output_mode)
                 # Downscale large frames for smooth web streaming
                 h, w = frame.shape[:2]
                 if w > 1280:

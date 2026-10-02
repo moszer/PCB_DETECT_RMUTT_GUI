@@ -14,7 +14,7 @@ import {
 } from "@/lib/board-inspection";
 import { captureInspection } from "@/lib/capture-inspection";
 import { api, errorMessage } from "@/lib/api";
-import { CAMERA_PRESETS, presetForResolution } from "@/lib/format";
+import { CAMERA_PRESETS, presetForCamera } from "@/lib/format";
 import { sfx } from "@/lib/sound";
 import type { CustomPointRequest } from "@/types";
 import type { InspectionParams } from "@/lib/params";
@@ -63,7 +63,7 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
   useEffect(() => {
     api
       .listCameras()
-      .then((res) => setPresetId(presetForResolution(res.resolution)?.id ?? ""))
+      .then((res) => setPresetId(presetForCamera(res)?.id ?? ""))
       .catch(() => undefined);
   }, []);
 
@@ -73,7 +73,7 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
     setBusy("camera");
     try {
       const cams = await api.listCameras();
-      await api.startCamera(cams.current_index, preset.width, preset.height, preset.output);
+      await api.startCamera(cams.current_index, preset.width, preset.height, preset.output, preset.mode);
       setPresetId(id);
       // A different frame size/crop changes the framing, so the taught boxes no longer line up.
       setConfirmed(false);

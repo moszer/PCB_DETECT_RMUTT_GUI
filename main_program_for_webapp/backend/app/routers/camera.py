@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Response, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 import time
-from typing import Optional
+from typing import Literal, Optional
 import cv2
 
 from ..core.inspection import digital_zoom
@@ -20,6 +20,8 @@ class CameraStartRequest(BaseModel):
     # Optional output size: frames are center-cropped to this aspect and resized (e.g. 640x640).
     output_width: Optional[int] = Field(None, ge=64, le=8192)
     output_height: Optional[int] = Field(None, ge=64, le=8192)
+    # fit = crop to aspect + resize (same field of view); crop = exact 1:1 center cut (zoom).
+    output_mode: Literal["fit", "crop"] = "fit"
 
     @model_validator(mode="after")
     def both_or_neither(self):
@@ -67,6 +69,8 @@ def get_camera_status():
         "is_mock": camera_service.is_mock,
         "device_index": camera_service.device_index,
         "resolution": camera_service.resolution,
+        "capture_resolution": camera_service.capture_resolution,
+        "output_mode": camera_service.output_mode,
         "fps": camera_service.fps
     }
 
@@ -79,6 +83,8 @@ def list_camera_devices():
         "current_index": camera_service.device_index,
         "is_mock": camera_service.is_mock,
         "resolution": camera_service.resolution,
+        "capture_resolution": camera_service.capture_resolution,
+        "output_mode": camera_service.output_mode,
         "fps": camera_service.fps
     }
 
@@ -94,11 +100,14 @@ def start_camera(req: CameraStartRequest):
         height=req.height,
         fps=req.fps,
         output_size=(req.output_width, req.output_height) if req.output_width else None,
+        output_mode=req.output_mode,
     )
     return {
         "success": success,
         "is_mock": camera_service.is_mock,
         "resolution": camera_service.resolution,
+        "capture_resolution": camera_service.capture_resolution,
+        "output_mode": camera_service.output_mode,
         "fps": camera_service.fps
     }
 

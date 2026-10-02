@@ -47,8 +47,17 @@ export interface CameraPreset {
   /** What the camera is asked to capture. */
   width: number;
   height: number;
-  /** Final frame size after a center crop + resize (omit for the native frame). */
+  /** Final frame size (omit for the native frame). */
   output?: [number, number];
+  /** fit = crop to aspect + resize (same field of view); crop = exact 1:1 center cut (zoom). */
+  mode?: "fit" | "crop";
+}
+
+/** Camera state as reported by /api/camera/devices. */
+export interface CameraShape {
+  resolution: [number, number];
+  capture_resolution?: [number, number];
+  output_mode?: "fit" | "crop";
 }
 
 /** Camera presets shared by every camera selector. Square/custom sizes crop the center of the image. */
@@ -59,12 +68,16 @@ export const CAMERA_PRESETS: CameraPreset[] = [
   { id: "sq640", label: "สี่เหลี่ยมจัตุรัส 640×640", width: 1920, height: 1080, output: [640, 640] },
   { id: "sq960", label: "สี่เหลี่ยมจัตุรัส 960×960", width: 1920, height: 1080, output: [960, 960] },
   { id: "sq1080", label: "สี่เหลี่ยมจัตุรัส 1080×1080", width: 1920, height: 1080, output: [1080, 1080] },
+  { id: "4k_crop640", label: "4K → ตัดกลาง 640×640 (1:1 ไม่ย่อ)", width: 3840, height: 2160, output: [640, 640], mode: "crop" },
 ];
 
-/** Match the reported frame size back to a preset (the frame size is the output size when cropped). */
-export function presetForResolution(resolution?: [number, number] | null) {
-  if (!resolution) return undefined;
-  return CAMERA_PRESETS.find((p) => (p.output ?? [p.width, p.height]).every((v, i) => v === resolution[i]));
+/** Match the camera's current state back to a preset (output size + crop mode). */
+export function presetForCamera(cam?: CameraShape | null) {
+  if (!cam) return undefined;
+  const mode = cam.output_mode ?? "fit";
+  return CAMERA_PRESETS.find(
+    (p) => (p.mode ?? "fit") === mode && (p.output ?? [p.width, p.height]).every((v, i) => v === cam.resolution[i])
+  );
 }
 
 /** YOLO inference sizes (imgsz). This is the model input size, not the camera resolution. */

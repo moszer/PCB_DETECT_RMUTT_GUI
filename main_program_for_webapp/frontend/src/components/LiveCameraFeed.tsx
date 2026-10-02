@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Crosshair, RefreshCw, SlidersHorizontal, VideoOff } from "lucide-react";
 import { API_BASE, api } from "@/lib/api";
-import { CAMERA_PRESETS, formatMm, presetForResolution } from "@/lib/format";
+import { CAMERA_PRESETS, formatMm, presetForCamera, type CameraShape } from "@/lib/format";
 import type { CameraDevice } from "@/types";
 import { Button, Field, IconButton, Select, StatusDot, cx } from "./ui";
 import { useToast } from "./Toast";
@@ -42,12 +42,14 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
   const [failed, setFailed] = useState(false);
   const [reticle, setReticle] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [info, setInfo] = useState<{ resolution: [number, number]; fps: number; mock: boolean } | null>(null);
+  const [info, setInfo] = useState<(CameraShape & { fps: number; mock: boolean }) | null>(null);
 
   useEffect(() => {
     api
       .listCameras()
-      .then((res) => setInfo({ resolution: res.resolution, fps: res.fps, mock: res.is_mock }))
+      .then((res) =>
+        setInfo({ resolution: res.resolution, capture_resolution: res.capture_resolution, output_mode: res.output_mode, fps: res.fps, mock: res.is_mock })
+      )
       .catch(() => undefined); // Header status chip still reflects the camera.
   }, [streamKey]);
 
@@ -140,6 +142,7 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
           </HudPill>
         )}
         {info?.mock && <HudPill className="text-amber-300">กล้องจำลอง</HudPill>}
+        {info?.output_mode === "crop" && <HudPill className="text-cyan-300">1:1 crop</HudPill>}
         {zoomed && <HudPill className="text-amber-300 font-mono">ZOOM {zoom.toFixed(1)}×</HudPill>}
       </div>
 
@@ -167,7 +170,7 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
       {settingsOpen && (
         <CameraSettings
           locked={locked}
-          currentResolution={info?.resolution}
+          current={info}
           onClose={() => setSettingsOpen(false)}
           onApplied={reload}
         />
@@ -240,18 +243,18 @@ function Reticle({ zoomed }: { zoomed: boolean }) {
 
 function CameraSettings({
   locked,
-  currentResolution,
+  current,
   onClose,
   onApplied,
 }: {
   locked?: boolean;
-  currentResolution?: [number, number];
+  current?: CameraShape | null;
   onClose: () => void;
   onApplied: () => void;
 }) {
   const [devices, setDevices] = useState<CameraDevice[]>([]);
   const [device, setDevice] = useState(0);
-  const [preset, setPreset] = useState<string>(presetForResolution(currentResolution)?.id ?? "1080p");
+  const [preset, setPreset] = useState<string>(presetForCamera(current)?.id ?? "1080p");
   const [busy, setBusy] = useState(false);
   const toast = useToast();
   const panel = useRef<HTMLDivElement>(null);
@@ -262,7 +265,7 @@ function CameraSettings({
       .then((res) => {
         setDevices(res.devices);
         setDevice(res.current_index);
-        const p = presetForResolution(res.resolution);
+        const p = presetForCamera(res);
         if (p) setPreset(p.id);
       })
       .catch((err) => toast.error("อ่านรายการกล้องไม่สำเร็จ", err));
@@ -278,8 +281,14 @@ function CameraSettings({
     const p = CAMERA_PRESETS.find((x) => x.id === preset)!;
     setBusy(true);
     try {
-      const res = await api.startCamera(device, p.width, p.height, p.output);
-      toast.success("ตั้งค่ากล้องแล้ว", res.is_mock ? "เปิดกล้องจริงไม่ได้ — ใช้ภาพจำลอง" : `${res.resolution[0]}×${res.resolution[1]}`);
+      const res = await api.startCamera(device, p.width, p.height, p.output, p.mode);
+      const cams = await api.listCameras();
+      const cap = cams.capture_resolution;
+      // The driver may silently deliver less than asked (e.g. 1080p instead of 4K).
+      const short = cap && (cap[0] < p.width || cap[1] < p.height);
+      if (res.is_mock) toast.warning("เปิดกล้องจริงไม่ได้ — ใช้ภาพจำลอง");
+      else if (short) toast.warning("กล้องให้ความละเอียดต่ำกว่าที่ขอ", `ขอ ${p.width}×${p.height} ได้ ${cap[0]}×${cap[1]} — ภาพ ${res.resolution[0]}×${res.resolution[1]} จะซูมน้อยลง`);
+      else toast.success("ตั้งค่ากล้องแล้ว", `${res.resolution[0]}×${res.resolution[1]}${cap ? ` (กล้องส่ง ${cap[0]}×${cap[1]})` : ""}`);
       onApplied();
       onClose();
     } catch (err) {
@@ -311,6 +320,15 @@ function CameraSettings({
           ))}
         </Select>
       </Field>
+      {current?.capture_resolution && (
+        <p className="text-[11px] text-subtle">
+          กล้องส่งจริง {current.capture_resolution[0]}×{current.capture_resolution[1]} → ภาพที่ใช้ {current.resolution[0]}×{current.resolution[1]}
+          {current.output_mode === "crop" ? " (ตัดกลาง 1:1)" : ""}
+        </p>
+      )}
+      {preset === "4k_crop640" && (
+        <p className="text-[11px] text-review">แบบ 1:1 เห็นพื้นที่แคบลงราว 3.4 เท่า (เหมือนซูม) — ต้องสอนต้นแบบใหม่และลดระยะห่างภาพตอนสแกน</p>
+      )}
       {locked && <p className="text-[11px] text-review">เปลี่ยนกล้องไม่ได้ระหว่างสแกน</p>}
       <div className="flex justify-end gap-2">
         <Button size="sm" variant="ghost" onClick={onClose}>

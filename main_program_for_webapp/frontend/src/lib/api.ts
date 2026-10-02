@@ -127,10 +127,18 @@ export const api = {
 
   // Camera
   listCameras: () =>
-    request<{ devices: CameraDevice[]; current_index: number; is_mock: boolean; resolution: [number, number]; fps: number }>(
+    request<{
+      devices: CameraDevice[];
+      current_index: number;
+      is_mock: boolean;
+      resolution: [number, number];
+      capture_resolution?: [number, number];
+      output_mode?: "fit" | "crop";
+      fps: number;
+    }>(
       "/api/camera/devices"
     ),
-  startCamera: (device_index: number, width: number, height: number, output?: [number, number]) =>
+  startCamera: (device_index: number, width: number, height: number, output?: [number, number], mode: "fit" | "crop" = "fit") =>
     post<{ success: boolean; is_mock: boolean; resolution: [number, number] }>("/api/camera/start", {
       device_index,
       width,
@@ -138,6 +146,7 @@ export const api = {
       fps: 30,
       output_width: output?.[0],
       output_height: output?.[1],
+      output_mode: mode,
     }),
 
   // Inspection
