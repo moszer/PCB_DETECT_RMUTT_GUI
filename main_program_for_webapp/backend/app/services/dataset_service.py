@@ -210,7 +210,8 @@ class DatasetService:
     # ── Export ──
 
     def export_zip(self, dataset_id: str, val_ratio: float = 0.2) -> Path:
-        """YOLO-ready archive: images/{train,val}, labels/{train,val}, data.yaml, classes.txt."""
+        """YOLO-ready archive in the Roboflow layout used by train_lab and the training dashboard:
+        {train,valid}/{images,labels}, data.yaml, classes.txt."""
         meta = self.get(dataset_id)
         if not meta:
             raise FileNotFoundError("Dataset not found")
@@ -222,16 +223,16 @@ class DatasetService:
         tmp.close()
         with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_DEFLATED) as zf:
             for n, image in enumerate(meta["images"]):
-                split = "val" if k and (n * k) // total != ((n + 1) * k) // total else "train"
+                split = "valid" if k and (n * k) // total != ((n + 1) * k) // total else "train"
                 stem = Path(image["file"]).stem
-                zf.write(base / "images" / image["file"], f"images/{split}/{image['file']}")
+                zf.write(base / "images" / image["file"], f"{split}/images/{image['file']}")
                 label = base / "labels" / f"{stem}.txt"
-                zf.writestr(f"labels/{split}/{stem}.txt", label.read_text(encoding="utf-8") if label.is_file() else "")
+                zf.writestr(f"{split}/labels/{stem}.txt", label.read_text(encoding="utf-8") if label.is_file() else "")
             names = json.dumps(meta["classes"], ensure_ascii=False)
             zf.writestr(
                 "data.yaml",
                 f"# {meta['name']} — exported from RMUTT AOI web station\n"
-                f"path: .\ntrain: images/train\nval: images/val\nnc: {len(meta['classes'])}\nnames: {names}\n",
+                f"path: .\ntrain: train/images\nval: valid/images\nnc: {len(meta['classes'])}\nnames: {names}\n",
             )
             zf.writestr("classes.txt", "\n".join(meta["classes"]) + "\n")
         return Path(tmp.name)

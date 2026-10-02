@@ -101,11 +101,11 @@ class CaptureFlowTests(unittest.TestCase):
         with zipfile.ZipFile(io.BytesIO(zip_res.content)) as zf:
             names = zf.namelist()
             self.assertIn("data.yaml", names)
-            self.assertEqual(sum(n.startswith("images/") for n in names), 4)
-            self.assertTrue(any(n.startswith("images/val/") for n in names))
+            self.assertEqual(sum("/images/" in n for n in names), 4)
+            self.assertTrue(any(n.startswith("valid/images/") for n in names))  # train_lab / dashboard layout
             data_yaml = zf.read("data.yaml").decode()
             self.assertIn("nc: 3", data_yaml)
-            fuse_line = zf.read(f"labels/train/{first.replace('.jpg', '.txt')}").decode().strip()
+            fuse_line = zf.read(f"train/labels/{first.replace('.jpg', '.txt')}").decode().strip()
             self.assertTrue(fuse_line.startswith("2 "))
 
         self.assertEqual(self.client.delete(f"/api/datasets/{ds_id}", headers=self.headers).status_code, 200)
