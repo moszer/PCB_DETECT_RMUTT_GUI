@@ -16,6 +16,7 @@ import { captureInspection } from "@/lib/capture-inspection";
 import { api, errorMessage } from "@/lib/api";
 import { formatFromCamera, formatLabel } from "@/lib/cameraFormat";
 import { CameraFormatPanel } from "./CameraFormatPanel";
+import { BoxOverlay, LabelModeSwitch, type LabelMode } from "./BoxOverlay";
 import { sfx } from "@/lib/sound";
 import type { CustomPointRequest } from "@/types";
 import type { InspectionParams } from "@/lib/params";
@@ -53,7 +54,14 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
   const [formatText, setFormatText] = useState<string>("");
   const [message, setMessage] = useState<{ tone: "info" | "pass" | "fail"; text: string } | null>(null);
   const abort = useRef<AbortController | null>(null);
-  const dragStart = useRef<[number, number] | null>(null);
+  const [hovered, setHovered] = useState<number | null>(null);
+  const [labelMode, setLabelMode] = useState<LabelMode>("all");
+  const listRef = useRef<HTMLUListElement>(null);
+
+  // Keep the selected component's row visible when it's picked on the image.
+  useEffect(() => {
+    listRef.current?.querySelector(`[data-row="${selected}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [selected]);
 
   const targetFrames = params.targetFrames;
   const passThreshold = Math.max(1, Math.ceil(targetFrames * params.passRatio));
@@ -167,11 +175,6 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
     setMessage({ tone: "info", text: "หยุดรอบตรวจแล้ว — ยังสรุปผลไม่ได้" });
   };
 
-  const normPoint = (e: React.PointerEvent<SVGSVGElement>): [number, number] => {
-    const r = e.currentTarget.getBoundingClientRect();
-    return [Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))];
-  };
-
   const valid = validateReference(items);
   const dirty =
     JSON.stringify(items) !== JSON.stringify(point.expected_components ?? []) || (reference?.image ?? null) !== (point.reference_image ?? null);
@@ -197,69 +200,39 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
               {drawing ? "ลากบนภาพเพื่อวาดกรอบ" : "เพิ่มกรอบที่ตกหล่น"}
             </Button>
           )}
+          {shownImage && items.length > 0 && (
+            <div className="ml-auto">
+              <LabelModeSwitch value={labelMode} onChange={setLabelMode} />
+            </div>
+          )}
         </div>
 
         {shownImage ? (
-          <div className="relative rounded-xl overflow-hidden bg-viewport border border-line">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={shownImage} alt="ภาพต้นแบบของจุดตรวจ" className="w-full block select-none" draggable={false} />
-            <svg
-              viewBox="0 0 1000 1000"
-              preserveAspectRatio="none"
-              className={cx("absolute inset-0 size-full touch-none", drawing ? "cursor-crosshair" : "cursor-pointer")}
-              onPointerDown={(e) => {
-                if (!drawing || running) return;
-                dragStart.current = normPoint(e);
-                e.currentTarget.setPointerCapture(e.pointerId);
-              }}
-              onPointerUp={(e) => {
-                const start = dragStart.current;
-                dragStart.current = null;
-                if (!start || !drawing) return;
-                const end = normPoint(e);
-                if (Math.abs(start[0] - end[0]) < 0.004 || Math.abs(start[1] - end[1]) < 0.004) return;
-                let n = items.length + 1;
-                while (items.some((i) => i.id === `P${n}`)) n++;
-                edit([
-                  ...items,
-                  {
-                    id: `P${n}`,
-                    name: items[selected]?.name ?? "component",
-                    bbox: [Math.min(start[0], end[0]), Math.min(start[1], end[1]), Math.max(start[0], end[0]), Math.max(start[1], end[1])],
-                  },
-                ]);
-                setSelected(items.length);
-                setDrawing(false);
-              }}
-            >
-              {items.map((item, i) => {
-                const matched = frameRec ? frameRec.matchedIndices.includes(i) : null;
-                const isSel = i === selected;
-                const color = matched === null ? (isSel ? "#f59e0b" : "#22d3ee") : matched ? "#22c55e" : "#ef4444";
-                const [x1, y1, x2, y2] = item.bbox.map((v) => v * 1000);
-                return (
-                  <g key={i} onClick={() => !drawing && setSelected(i)}>
-                    <rect
-                      x={x1}
-                      y={y1}
-                      width={x2 - x1}
-                      height={y2 - y1}
-                      fill={color}
-                      fillOpacity={isSel ? 0.22 : 0.08}
-                      stroke={color}
-                      strokeWidth={isSel ? 4 : 2.5}
-                      strokeDasharray={matched === false ? "8 5" : undefined}
-                      vectorEffect="non-scaling-stroke"
-                    />
-                    <rect x={x1} y={Math.max(0, y1 - 22)} width={item.id.length * 11 + 12} height={20} fill={color} rx={2} />
-                    <text x={x1 + 5} y={Math.max(15, y1 - 7)} fontSize={13} fontWeight={700} fill="#000" fontFamily="ui-monospace, monospace">
-                      {item.id}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
-          </div>
+          <BoxOverlay
+            src={shownImage}
+            alt="ภาพต้นแบบของจุดตรวจ"
+            boxes={items.map((item, i) => {
+              const matched = frameRec ? frameRec.matchedIndices.includes(i) : null;
+              return {
+                bbox: item.bbox,
+                label: item.id,
+                color: matched === null ? (i === selected ? "#f59e0b" : "#22d3ee") : matched ? "#22c55e" : "#ef4444",
+                dashed: matched === false,
+              };
+            })}
+            selected={items.length ? selected : null}
+            hovered={hovered}
+            labelMode={labelMode}
+            onSelect={(i) => i !== null && setSelected(i)}
+            drawing={drawing && !running}
+            onDraw={(bbox) => {
+              let n = items.length + 1;
+              while (items.some((i) => i.id === `P${n}`)) n++;
+              edit([...items, { id: `P${n}`, name: items[selected]?.name ?? "component", bbox }]);
+              setSelected(items.length);
+              setDrawing(false);
+            }}
+          />
         ) : items.length ? (
           <EmptyState icon={Camera} title="ไม่มีภาพต้นแบบในเครื่องนี้" className="rounded-xl border border-dashed border-line">
             ต้นแบบ {items.length} ตำแหน่งยังใช้สแกนได้ แต่ต้องถ่ายภาพใหม่หากต้องการแก้ไขกรอบ
@@ -298,12 +271,18 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
             dirty && <Badge tone="review">ยังไม่ได้บันทึก</Badge>
           )}
         </div>
-        <ul className="rounded-lg border border-line divide-y divide-line max-h-72 overflow-y-auto">
+        <ul ref={listRef} className="rounded-lg border border-line divide-y divide-line max-h-72 overflow-y-auto" onMouseLeave={() => setHovered(null)}>
           {items.map((item, i) => {
             const hits = round?.hits[i] ?? 0;
             const status = round?.status === "complete" ? slotStatus(hits, targetFrames, passThreshold) : null;
             return (
-              <li key={i} className={cx("flex items-center gap-1.5 p-1.5", i === selected && "bg-accent-soft")} onClick={() => setSelected(i)}>
+              <li
+                key={i}
+                data-row={i}
+                className={cx("flex items-center gap-1.5 p-1.5", i === selected ? "bg-accent-soft" : i === hovered && "bg-surface-2")}
+                onClick={() => setSelected(i)}
+                onMouseEnter={() => setHovered(i)}
+              >
                 <TextInput
                   aria-label={`รหัสตำแหน่ง ${i + 1}`}
                   className="w-16! h-8! font-mono text-xs"

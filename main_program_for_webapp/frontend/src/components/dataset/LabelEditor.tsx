@@ -7,13 +7,16 @@ import { datasetApi, errorMessage } from "@/lib/api";
 import { classColor } from "@/lib/format";
 import { sfx } from "@/lib/sound";
 import { Badge, Button, Modal, SectionLabel, Spinner, TextInput, cx } from "../ui";
+import { LabelModeSwitch, type LabelMode } from "../BoxOverlay";
+import { LABEL_FONT, LABEL_HEIGHT, layoutLabels, paintOrder, pickAt } from "@/lib/labelLayout";
+import { useElementSize } from "@/hooks/useElementSize";
 import { useToast } from "../Toast";
 
 type Box = LabelBox["bbox"];
 type Handle = "nw" | "ne" | "sw" | "se";
 type Drag =
   | { mode: "draw"; start: [number, number] }
-  | { mode: "move"; index: number; start: [number, number]; orig: Box }
+  | { mode: "move"; index: number; start: [number, number]; orig: Box; moved: boolean; wasSelected: boolean }
   | { mode: "resize"; index: number; handle: Handle; orig: Box };
 
 const MIN_SIZE = 0.004;
@@ -45,6 +48,9 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
   const [saving, setSaving] = useState(false);
   const surface = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
+  const [hovered, setHovered] = useState<number | null>(null);
+  const [labelMode, setLabelMode] = useState<LabelMode>("all");
+  const surfaceSize = useElementSize(surface);
 
   // Load this image's labels (the editable copy is reset from the server response).
   const file = image?.file;
@@ -126,14 +132,20 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
     if (readOnly || !ready) return;
     const target = e.target as HTMLElement;
     const p = point(e);
-    const boxIndex = target.closest<HTMLElement>("[data-box]")?.dataset.box;
     const handle = target.dataset.handle as Handle | undefined;
     surface.current!.setPointerCapture(e.pointerId);
-    if (boxIndex !== undefined) {
-      const i = Number(boxIndex);
+    const nboxes = boxes.map((b) => b.bbox);
+    const sel = selected !== null ? boxes[selected]?.bbox : undefined;
+    const onSelected = !!sel && p[0] >= sel[0] && p[0] <= sel[2] && p[1] >= sel[1] && p[1] <= sel[3];
+    // Keep the selected box if the click is inside it (so it can be dragged), otherwise
+    // take the smallest box under the pointer — big boxes no longer swallow small ones.
+    const i = handle && selected !== null ? selected : onSelected ? selected! : pickAt(nboxes, p[0], p[1], null);
+    if (i !== null) {
       setSelected(i);
       setActiveClass(boxes[i].label);
-      drag.current = handle ? { mode: "resize", index: i, handle, orig: boxes[i].bbox } : { mode: "move", index: i, start: p, orig: boxes[i].bbox };
+      drag.current = handle
+        ? { mode: "resize", index: i, handle, orig: boxes[i].bbox }
+        : { mode: "move", index: i, start: p, orig: boxes[i].bbox, moved: false, wasSelected: onSelected };
     } else {
       setSelected(null);
       drag.current = { mode: "draw", start: p };
@@ -147,6 +159,8 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
     const [x, y] = point(e);
     if (d.mode === "draw") return setDraft([d.start[0], d.start[1], x, y]);
     if (d.mode === "move") {
+      if (Math.hypot(x - d.start[0], y - d.start[1]) > 0.003) d.moved = true;
+      if (!d.moved) return;
       const [x1, y1, x2, y2] = d.orig;
       const dx = Math.min(1 - x2, Math.max(-x1, x - d.start[0]));
       const dy = Math.min(1 - y2, Math.max(-y1, y - d.start[1]));
@@ -162,9 +176,19 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
     setBoxes((all) => all.map((b, i) => (i === d.index ? { ...b, bbox: normalize(next) } : b)));
   };
 
-  const onPointerUp = () => {
+  const onPointerUp = (e: React.PointerEvent) => {
     const d = drag.current;
     drag.current = null;
+    // A plain click on the already-selected box cycles to the next box stacked under it.
+    if (d?.mode === "move" && !d.moved && d.wasSelected) {
+      const [x, y] = point(e);
+      const next = pickAt(boxes.map((b) => b.bbox), x, y, d.index);
+      if (next !== null) {
+        setSelected(next);
+        setActiveClass(boxes[next].label);
+      }
+      return;
+    }
     if (d?.mode === "draw" && draft) {
       const box = normalize(draft);
       setDraft(null);
@@ -225,7 +249,10 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
+            onPointerCancel={() => {
+              drag.current = null;
+              setDraft(null);
+            }}
             className={cx("relative inline-block select-none touch-none rounded-lg overflow-hidden bg-viewport", readOnly ? "cursor-default" : "cursor-crosshair")}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -236,10 +263,15 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
               </div>
             )}
             {ready &&
-              boxes.map((b, i) => {
+              paintOrder(
+                boxes.map((b) => b.bbox),
+                [hovered !== selected ? hovered : null, selected]
+              ).map((i) => {
+                const b = boxes[i];
                 const [x1, y1, x2, y2] = b.bbox;
                 const color = classColor(b.label);
                 const isSel = i === selected;
+                const active = isSel || i === hovered;
                 return (
                   <div
                     key={i}
@@ -251,16 +283,10 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
                       width: `${(x2 - x1) * 100}%`,
                       height: `${(y2 - y1) * 100}%`,
                       borderColor: isSel ? "#fff" : color,
-                      background: isSel ? `${color}40` : `${color}14`,
-                      zIndex: isSel ? 2 : 1,
+                      borderWidth: active ? 3 : 2,
+                      background: active ? `${color}40` : `${color}14`,
                     }}
                   >
-                    <span
-                      className="absolute -top-4 left-[-2px] h-4 px-1 text-[10px] leading-4 font-semibold text-white whitespace-nowrap pointer-events-none"
-                      style={{ background: isSel ? "#111827" : color }}
-                    >
-                      {b.label}
-                    </span>
                     {isSel &&
                       !readOnly &&
                       (["nw", "ne", "sw", "se"] as Handle[]).map((h) => (
@@ -280,6 +306,7 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
                   </div>
                 );
               })}
+            {ready && labelMode !== "none" && <LabelLayer boxes={boxes} selected={selected} hovered={hovered} mode={labelMode} size={surfaceSize} />}
             {draft && (
               <div
                 className="absolute border-2 border-dashed border-white pointer-events-none"
@@ -330,10 +357,19 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
           </div>
 
           <div className="flex flex-col gap-2 min-h-0">
-            <SectionLabel>กรอบในภาพนี้ ({boxes.length})</SectionLabel>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <SectionLabel>กรอบในภาพนี้ ({boxes.length})</SectionLabel>
+              <LabelModeSwitch value={labelMode} onChange={setLabelMode} />
+            </div>
             <ul className="rounded-lg border border-line divide-y divide-line max-h-64 overflow-y-auto">
               {boxes.map((b, i) => (
-                <li key={i} className={cx("flex items-center gap-2 px-2.5 py-1.5 text-sm cursor-pointer", i === selected ? "bg-accent-soft" : "hover:bg-surface-2")} onClick={() => setSelected(i)}>
+                <li
+                  key={i}
+                  className={cx("flex items-center gap-2 px-2.5 py-1.5 text-sm cursor-pointer", i === selected ? "bg-accent-soft" : "hover:bg-surface-2")}
+                  onClick={() => setSelected(i)}
+                  onMouseEnter={() => setHovered(i)}
+                  onMouseLeave={() => setHovered(null)}
+                >
                   <span className="size-2.5 rounded-sm shrink-0" style={{ background: classColor(b.label) }} />
                   <span className="flex-1 truncate">{b.label}</span>
                   {!readOnly && (
@@ -369,5 +405,62 @@ export function LabelEditor({ datasetId, images, index, classes, readOnly, onInd
         </div>
       </div>
     </Modal>
+  );
+}
+
+/** Auto-placed, non-overlapping labels drawn above every box (see lib/labelLayout). */
+function LabelLayer({
+  boxes,
+  selected,
+  hovered,
+  mode,
+  size,
+}: {
+  boxes: LabelBox[];
+  selected: number | null;
+  hovered: number | null;
+  mode: LabelMode;
+  size: { width: number; height: number };
+}) {
+  const focus = [selected, hovered].filter((i): i is number => i !== null && i < boxes.length);
+  const spots = layoutLabels(
+    boxes.map((b) => b.bbox),
+    boxes.map((b) => b.label),
+    size.width,
+    size.height,
+    focus
+  );
+  const hidden = mode === "all" ? spots.filter((s, i) => s.hidden && !focus.includes(i)).length : 0;
+  return (
+    <>
+      {spots.map((s, i) => {
+        const visible = mode === "all" ? !s.hidden || focus.includes(i) : focus.includes(i);
+        if (!visible || !s.width) return null;
+        const isSel = i === selected;
+        return (
+          <span
+            key={i}
+            className="absolute pointer-events-none whitespace-nowrap rounded-sm px-1 text-white"
+            style={{
+              left: s.left,
+              top: s.top,
+              height: LABEL_HEIGHT,
+              lineHeight: `${LABEL_HEIGHT}px`,
+              font: LABEL_FONT,
+              background: isSel ? "#111827" : classColor(boxes[i].label),
+              outline: focus.includes(i) ? "1px solid #fff" : undefined,
+              zIndex: focus.includes(i) ? 4 : 3,
+            }}
+          >
+            {boxes[i].label}
+          </span>
+        );
+      })}
+      {hidden > 0 && (
+        <span className="absolute bottom-2 right-2 z-[5] h-6 px-2 rounded-md bg-black/65 text-[11px] text-white flex items-center pointer-events-none">
+          ซ่อน {hidden} ป้ายที่ทับกัน — คลิกกรอบหรือชี้รายการเพื่อดู
+        </span>
+      )}
+    </>
   );
 }
