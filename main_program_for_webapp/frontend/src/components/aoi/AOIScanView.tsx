@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Camera, Columns2, Grid3x3, Image as ImageIcon, MapPin, Move, SlidersHorizontal, Video } from "lucide-react";
 import type { AOIPointResult, AOIRunReport, CustomPointRequest, InspectionResult, ReferenceSummary, ScanProgressEvent, SystemStatus } from "@/types";
-import { api, errorMessage } from "@/lib/api";
+import { API_BASE, api, errorMessage } from "@/lib/api";
 import { captureInspection } from "@/lib/capture-inspection";
 import type { ExpectedComponent } from "@/lib/board-inspection";
 import { formatMm, refsOfType } from "@/lib/format";
@@ -18,7 +18,17 @@ import { useToast } from "../Toast";
 import { StageBar } from "./StageBar";
 import { PointsPanel } from "./PointsPanel";
 import { DEFAULT_GRID, DEFAULT_MOTION, GridPanel, JogPanel, ParamsPanel, type GridPlan, type MotionSettings } from "./panels";
-import { Filmstrip, OutputView, ScanStatusStrip, type OutputItem } from "./ScanResults";
+import { Filmstrip, OutputView, ScanStatusStrip, type OutputItem, type PendingFrame } from "./ScanResults";
+
+/** One camera frame as an object URL (for the "analyzing" view); null if unavailable. */
+async function grabFrame(): Promise<string | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/camera/snapshot?t=${Date.now()}`, { cache: "no-store" });
+    return res.ok ? URL.createObjectURL(await res.blob()) : null;
+  } catch {
+    return null;
+  }
+}
 
 interface AOIScanViewProps {
   status: SystemStatus | null;
@@ -86,6 +96,9 @@ export function AOIScanView({ status, report, progress, references, params, setP
     setLocalFlash(Date.now());
   };
   const [pick, setPick] = useState<{ item: OutputItem; at: string | null } | null>(null);
+  // Frozen frame shown in the output pane while a test snap / scan point is analyzed.
+  const [snapPending, setSnapPending] = useState<PendingFrame | null>(null);
+  const [scanFrame, setScanFrame] = useState<{ key: string; image: string } | null>(null);
   const [detail, setDetail] = useState<AOIPointResult | null>(null);
 
   const selected = Math.min(selectedRaw, Math.max(0, points.length - 1));
@@ -265,6 +278,15 @@ export function AOIScanView({ status, report, progress, references, params, setP
 
   const testSnap = async () => {
     setSnapping(true);
+    const key = `snap:${Date.now()}`;
+    let frozen: string | null = null;
+    setSnapPending({ key, image: null, label: "ถ่ายทดสอบ" });
+    if (viewMode === "live") setViewMode("split");
+    // The same moment the backend captures, for the "analyzing" view (best effort).
+    grabFrame().then((url) => {
+      frozen = url;
+      if (url) setSnapPending((p) => (p?.key === key ? { ...p, image: url } : p));
+    });
     try {
       shutter();
       const result: InspectionResult = await api.inspectLive({ ...params });
@@ -275,6 +297,9 @@ export function AOIScanView({ status, report, progress, references, params, setP
       toast.error("ถ่ายทดสอบไม่สำเร็จ", err);
     } finally {
       setSnapping(false);
+      setSnapPending((p) => (p?.key === key ? null : p));
+      // Let the pane swap to the result before dropping the frozen frame.
+      setTimeout(() => frozen && URL.revokeObjectURL(frozen), 1000);
     }
   };
 
@@ -321,6 +346,36 @@ export function AOIScanView({ status, report, progress, references, params, setP
     const pt = points[movingIndex];
     hud = { tone: "review", title: `กำลังเคลื่อนไป ${pt.name}`, detail: `${formatMm(pt.x_mm)}, ${formatMm(pt.y_mm)} mm` };
   }
+
+  // While a scan captures a point that has no result yet, show its frozen frame analyzing.
+  const capturingKey =
+    capturing && progress?.point_index !== undefined && !results.some((r) => r.point_index === progress.point_index)
+      ? `${progress.run_id}:${progress.point_index}`
+      : null;
+  useEffect(() => {
+    if (!capturingKey) return;
+    let live = true;
+    grabFrame().then((url) => {
+      if (!url) return;
+      if (!live) return URL.revokeObjectURL(url);
+      setScanFrame((old) => {
+        if (old) setTimeout(() => URL.revokeObjectURL(old.image), 1000);
+        return { key: capturingKey, image: url };
+      });
+    });
+    return () => {
+      live = false;
+    };
+  }, [capturingKey]);
+  const pending: PendingFrame | null =
+    snapPending ??
+    (capturingKey
+      ? {
+          key: capturingKey,
+          image: scanFrame?.key === capturingKey ? scanFrame.image : null,
+          label: `จุด ${(progress?.point_index ?? 0) + 1}/${progress?.total_points ?? "?"}`,
+        }
+      : null);
 
   const panelDisabled = scanning;
   const showLive = viewMode !== "output";
@@ -441,7 +496,7 @@ export function AOIScanView({ status, report, progress, references, params, setP
             )}
             {showOutput && (
               <div className="min-h-[260px]">
-                <OutputView item={output} onOpen={openOutput} />
+                <OutputView item={output} pending={pending} onOpen={openOutput} />
               </div>
             )}
           </div>
