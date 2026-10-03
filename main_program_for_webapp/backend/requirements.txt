@@ -18,3 +18,6 @@ torch>=2.1.0
 torchvision>=0.16.0
 numpy>=1.24.0
 pillow>=10.0.0
+
+# OCR of part markings: Apple Vision on macOS (falls back to the tesseract CLI elsewhere)
+pyobjc-framework-Vision>=12; sys_platform == "darwin"

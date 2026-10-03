@@ -43,6 +43,12 @@ async def lifespan(app: FastAPI):
 
     logger.info("Machine service ready (starting offline/disconnected).")
 
+    # Load the OCR models in the background so the first "read text" click is fast.
+    import threading
+    from .core.ocr import warm_up
+
+    threading.Thread(target=warm_up, name="ocr-warmup", daemon=True).start()
+
     yield
 
     logger.info("PCB Inspection Backend shutting down...")

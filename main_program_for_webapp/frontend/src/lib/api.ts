@@ -8,6 +8,7 @@ import type {
   DatasetSummary,
   DepthResult,
   InspectionResult,
+  OcrResult,
   LabelBox,
   ModelFile,
   ReferenceProfile,
@@ -153,6 +154,9 @@ export const api = {
   // Inspection
   inspectUpload: (file: File, o: InspectOptions) =>
     postForm<InspectionResult>("/api/inspection/inspect-upload", { file, ...inspectFields(o) }),
+  /** Read the markings inside boxes (normalized) of a stored station image. */
+  readText: (image_url: string, boxes: number[][]) =>
+    post<{ engine: string; results: OcrResult[] }>("/api/inspection/ocr", { image_url, boxes }),
   inspectLive: (o: InspectOptions) => postForm<InspectionResult>("/api/inspection/inspect-live", inspectFields(o)),
 
   // Stage & AOI

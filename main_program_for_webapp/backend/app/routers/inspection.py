@@ -6,7 +6,13 @@ import cv2
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 import numpy as np
 
-from ..config import UPLOADS_DIR, settings
+from collections import OrderedDict
+from pathlib import Path
+
+from pydantic import BaseModel, Field
+
+from ..config import STORAGE_DIR, UPLOADS_DIR, settings
+from ..core.ocr import engine_name, read_part_text
 from ..core.inspection import (
     draw_annotated_image,
     evaluate_inspection,
@@ -21,6 +27,64 @@ from ..services.inference_service import inference_service
 from ..services.storage_service import storage_service
 
 router = APIRouter(prefix="/api/inspection", tags=["inspection"])
+
+
+# ── OCR of part markings ──
+
+OCR_ASSET_DIRS = ("uploads", "runs", "references", "datasets")
+_ocr_cache: "OrderedDict[tuple, Dict[str, Any]]" = OrderedDict()
+
+
+class OcrRequest(BaseModel):
+    image_url: str
+    # Normalized [x1, y1, x2, y2] boxes in that image.
+    boxes: List[List[float]] = Field(..., min_length=1, max_length=300)
+
+
+def _storage_image(url: str) -> Path:
+    """Map an /api/storage/... image URL back to its file, refusing anything outside storage."""
+    prefix = "/api/storage/"
+    rel = url.split("?", 1)[0]
+    if not rel.startswith(prefix):
+        raise HTTPException(400, "image_url must be a station image (/api/storage/...)")
+    rel = rel[len(prefix):]
+    top = rel.split("/", 1)[0]
+    if top not in OCR_ASSET_DIRS:
+        raise HTTPException(400, "Unsupported image location")
+    root = (STORAGE_DIR / top).resolve()
+    path = (STORAGE_DIR / rel).resolve()
+    if not path.is_relative_to(root) or not path.is_file():
+        raise HTTPException(404, "Image not found")
+    return path
+
+
+@router.post("/ocr")
+def read_markings(req: OcrRequest):
+    """Text printed on each part (IC codes, capacitor values...), read in any orientation."""
+    engine = engine_name()
+    if not engine:
+        raise HTTPException(503, "No OCR engine available (Apple Vision or tesseract)")
+    path = _storage_image(req.image_url)
+    image = None
+    results = []
+    for box in req.boxes:
+        if len(box) != 4 or not (0 <= box[0] < box[2] <= 1 and 0 <= box[1] < box[3] <= 1):
+            raise HTTPException(400, "boxes must be normalized [x1, y1, x2, y2]")
+        key = (str(path), path.stat().st_mtime, *(round(v, 4) for v in box))
+        if key in _ocr_cache:
+            _ocr_cache.move_to_end(key)
+            results.append(_ocr_cache[key])
+            continue
+        if image is None:
+            image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+            if image is None:
+                raise HTTPException(400, "Image could not be read")
+        result = read_part_text(image, box)
+        _ocr_cache[key] = result
+        if len(_ocr_cache) > 2000:
+            _ocr_cache.popitem(last=False)
+        results.append(result)
+    return {"engine": engine, "results": results}
 
 # Limit concurrent inference to prevent GPU/RAM saturation while keeping event loop free
 _INSPECTION_SEMAPHORE = asyncio.Semaphore(2)

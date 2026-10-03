@@ -364,6 +364,15 @@ export interface SerialPort {
   is_usb: boolean;
 }
 
+/** Text printed on a part, read by /api/inspection/ocr. */
+export interface OcrResult {
+  text: string;
+  lines: { text: string; confidence: number }[];
+  /** Orientation (degrees) the text was read at. */
+  rotation: number;
+  confidence: number;
+}
+
 /** Height map of one part from /api/aoi/depth (motion stereo). */
 export interface DepthResult {
   grid_w: number;

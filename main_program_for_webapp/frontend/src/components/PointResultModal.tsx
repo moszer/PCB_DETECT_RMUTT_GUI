@@ -1,13 +1,15 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Box } from "lucide-react";
-import type { AOIPointResult, SlotStatus } from "@/types";
+import { Box, ScanText } from "lucide-react";
+import type { AOIPointResult, OcrResult, SlotStatus } from "@/types";
+import { api } from "@/lib/api";
 import { classColor, formatMm, percent } from "@/lib/format";
 import type { NBox } from "@/lib/labelLayout";
 import { BoxOverlay, type OverlayBox } from "./BoxOverlay";
 import { DepthModal, type DepthTarget } from "./DepthModal";
-import { Badge, Button, Modal, SectionLabel, Stat, VerdictBadge, cx } from "./ui";
+import { Badge, Button, Modal, SectionLabel, Spinner, Stat, VerdictBadge, cx } from "./ui";
+import { useToast } from "./Toast";
 
 const SLOT_COLOR: Record<SlotStatus, string> = { confirmed: "#22c55e", uncertain: "#f59e0b", missing: "#ef4444", wrong: "#ef4444" };
 
@@ -42,6 +44,10 @@ function PointResultDetail({ point, onClose }: { point: AOIPointResult; onClose:
   const src = point.image_url || point.annotated_url;
   const [selected, setSelected] = useState<number | null>(null);
   const [depth, setDepth] = useState<DepthTarget | null>(null);
+  const toast = useToast();
+  // Text read on each part (by part index); "loading" while a request is in flight.
+  const [ocr, setOcr] = useState<Record<number, OcrResult | "loading">>({});
+  const [showText, setShowText] = useState(false);
   // Detection boxes are in pixels: normalizing them needs the image size.
   const [dims, setDims] = useState<{ src: string; w: number; h: number } | null>(null);
   useEffect(() => {
@@ -68,6 +74,39 @@ function PointResultDetail({ point, onClose }: { point: AOIPointResult; onClose:
         })
       : [];
   const part = selected !== null ? parts[selected] : null;
+  const canOcr = src.startsWith("/api/storage/");
+
+  const readText = async (indices: number[]) => {
+    const todo = indices.filter((i) => ocr[i] === undefined && parts[i]);
+    if (!todo.length || !canOcr) return;
+    setOcr((o) => ({ ...o, ...Object.fromEntries(todo.map((i) => [i, "loading" as const])) }));
+    try {
+      const res = await api.readText(src, todo.map((i) => parts[i].bbox.map((v) => Math.min(1, Math.max(0, v)))));
+      setOcr((o) => ({ ...o, ...Object.fromEntries(todo.map((i, k) => [i, res.results[k]])) }));
+    } catch (err) {
+      setOcr((o) => Object.fromEntries(Object.entries(o).filter(([i]) => !todo.includes(Number(i)))));
+      toast.error("อ่านตัวอักษรไม่สำเร็จ", err);
+    }
+  };
+  const choose = (i: number | null) => {
+    setSelected(i);
+    if (i !== null) readText([i]);
+  };
+  const readAll = async () => {
+    setShowText(true);
+    await readText(parts.map((_, i) => i));
+  };
+  const textOf = (i: number) => {
+    const r = ocr[i];
+    return r && r !== "loading" ? r.text : "";
+  };
+  const reading = Object.values(ocr).some((r) => r === "loading");
+  const withText = parts.map((p, i) => ({ p, i, text: textOf(i) })).filter((x) => x.text);
+  const overlays = parts.map((p, i) => {
+    const first = textOf(i).split("\n")[0];
+    return showText && first ? { ...p.overlay, label: `${p.overlay.label} · ${first}` } : p.overlay;
+  });
+  const selectedText = selected !== null ? ocr[selected] : undefined;
   const openDepth = () =>
     part &&
     setDepth({
@@ -94,7 +133,7 @@ function PointResultDetail({ point, onClose }: { point: AOIPointResult; onClose:
       >
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
           <div className="flex flex-col gap-2 min-w-0">
-            <BoxOverlay src={src} alt="ภาพผลตรวจของจุดนี้" boxes={parts.map((p) => p.overlay)} selected={selected} onSelect={setSelected} />
+            <BoxOverlay src={src} alt="ภาพผลตรวจของจุดนี้" boxes={overlays} selected={selected} onSelect={choose} />
             <div className="flex items-center gap-2 flex-wrap min-h-9">
               {part ? (
                 <>
@@ -105,9 +144,33 @@ function PointResultDetail({ point, onClose }: { point: AOIPointResult; onClose:
                   <span className="text-[11px] text-subtle">เลื่อนสเตจไปที่จุดนี้ ถ่าย 2 ภาพ แล้วกลับ — บอร์ดต้องอยู่ที่เดิม</span>
                 </>
               ) : (
-                <span className="text-xs text-muted">คลิกกรอบบนภาพ (หรือในรายการ) เพื่อเลือกชิ้น แล้วดูความสูงแบบ 3D</span>
+                <span className="text-xs text-muted">คลิกกรอบบนภาพ (หรือในรายการ) เพื่อเลือกชิ้น — อ่านตัวอักษรบนชิ้นและดูความสูงแบบ 3D</span>
+              )}
+              {canOcr && parts.length > 0 && (
+                <Button size="sm" variant="ghost" icon={ScanText} loading={reading && showText} className="ml-auto" onClick={readAll}>
+                  อ่านตัวอักษรทุกชิ้น
+                </Button>
               )}
             </div>
+            {part && canOcr && (
+              <div className="rounded-lg bg-surface-2 px-3 py-2 flex items-start gap-2 min-h-10">
+                <ScanText className="size-4 text-muted shrink-0 mt-0.5" />
+                {selectedText === "loading" || selectedText === undefined ? (
+                  <span className="text-xs text-muted flex items-center gap-2">
+                    <Spinner className="size-3.5" /> กำลังอ่านตัวอักษรบนชิ้น…
+                  </span>
+                ) : selectedText.text ? (
+                  <div className="flex flex-col min-w-0">
+                    <pre className="font-mono text-sm text-text whitespace-pre-wrap break-all leading-snug">{selectedText.text}</pre>
+                    <span className="text-[10px] text-subtle">
+                      ความมั่นใจ {Math.round(selectedText.confidence * 100)}%{selectedText.rotation ? ` · ตัวอักษรหมุน ${selectedText.rotation}°` : ""}
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-xs text-muted">ไม่พบตัวอักษรบนชิ้นนี้</span>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col gap-4 min-w-0">
@@ -144,7 +207,7 @@ function PointResultDetail({ point, onClose }: { point: AOIPointResult; onClose:
                       <li
                         key={`${slot.expected.id}-${i}`}
                         className={cx("px-3 py-2 flex items-center gap-2 text-sm cursor-pointer", selected === i ? "bg-accent-soft" : "hover:bg-surface-2")}
-                        onClick={() => setSelected(i)}
+                        onClick={() => choose(i)}
                       >
                         <span className="font-mono text-xs text-subtle w-8 shrink-0">{slot.expected.id}</span>
                         <span className="flex-1 truncate">
@@ -158,6 +221,24 @@ function PointResultDetail({ point, onClose }: { point: AOIPointResult; onClose:
                       </li>
                     );
                   })}
+                </ul>
+              </div>
+            )}
+
+            {withText.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <SectionLabel>ตัวอักษรที่อ่านได้ ({withText.length})</SectionLabel>
+                <ul className="rounded-lg border border-line divide-y divide-line max-h-60 overflow-y-auto">
+                  {withText.map(({ p, i, text }) => (
+                    <li
+                      key={i}
+                      className={cx("px-3 py-1.5 flex items-start gap-2 text-sm cursor-pointer", selected === i ? "bg-accent-soft" : "hover:bg-surface-2")}
+                      onClick={() => choose(i)}
+                    >
+                      <span className="text-xs text-muted w-24 shrink-0 truncate pt-0.5">{p.name}</span>
+                      <span className="font-mono text-xs whitespace-pre-wrap break-all">{text}</span>
+                    </li>
+                  ))}
                 </ul>
               </div>
             )}
