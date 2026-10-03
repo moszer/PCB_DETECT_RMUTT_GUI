@@ -41,6 +41,7 @@ SYSTEM_PROMPT = f"""คุณคือผู้ช่วย AI ของสถ�
 เว็บแอปมีหน้าต่างๆ: {json.dumps(PAGES, ensure_ascii=False)}
 - ถ้าคำถามต้องใช้ข้อมูล ให้เรียกเครื่องมือก่อนตอบ (เรียกได้หลายตัว/หลายรอบ)
 - ถามเบอร์/ยี่ห้อของ IC หรือตัวอักษรบนชิ้น ให้เรียก list_scan_runs แล้ว read_part_markings (ต้องระบุ run_id; ถ้าผู้ใช้ไม่ระบุรอบ ใช้รอบล่าสุด) แล้วสรุปเบอร์ที่อ่านได้พร้อมบอกว่าชิปนั้นคืออะไรจากความรู้ของคุณ บอกด้วยว่า OCR อาจผิดบางตัวอักษร
+- "บอร์ด" ที่บันทึกไว้คือชุดจุดตรวจที่ตั้งชื่อในหน้าสแกน AOI (list_boards / get_board) — การเปิดบอร์ดหรือแก้บอร์ดต้องทำเองที่หน้า aoi
 - ถ้าผู้ใช้ขอให้ไป/เปิดหน้าใด หรือคำตอบจะดูต่อได้ดีที่หน้าใด ให้เรียก navigate
 - คุณอ่านข้อมูลได้อย่างเดียว สั่งเครื่อง/สแกน/แก้การตั้งค่าไม่ได้ ถ้าถูกขอให้บอกว่าต้องทำที่หน้าไหน
 - เวลาเป็นเวลาท้องถิ่นของสถานี ตอบสรุปเป็นข้อๆ หรือตารางเมื่อเหมาะสม"""
@@ -246,6 +247,39 @@ def get_reference_profile(ref_id: str) -> Dict[str, Any]:
             "grid_cells": len(grid), "components_by_class": dict(labels)}
 
 
+def list_boards() -> List[Dict[str, Any]]:
+    from . import point_set_store
+
+    return [{"id": b["id"], "name": b["name"], "points": b["point_count"], "taught_parts": b["component_count"],
+             "created": _time(b["created_at"]), "updated": _time(b["updated_at"])} for b in point_set_store.list_sets()]
+
+
+def get_board(board_id: Optional[str] = None, name: Optional[str] = None) -> Dict[str, Any]:
+    from . import point_set_store
+
+    boards = point_set_store.list_sets()
+    if not board_id and name:
+        wanted = name.strip().lower()
+        match = [b for b in boards if b["name"].lower() == wanted] or [b for b in boards if wanted in b["name"].lower()]
+        if not match:
+            return {"error": f"ไม่พบบอร์ดชื่อ {name}", "boards": [b["name"] for b in boards]}
+        board_id = match[0]["id"]
+    found = point_set_store.get_set(board_id or "")
+    if not found:
+        return {"error": "ไม่พบบอร์ดนี้", "boards": [b["name"] for b in boards]}
+    points = []
+    for i, p in enumerate(found["points"]):
+        comps = p.get("expected_components") or []
+        points.append({"index": i + 1, "name": p.get("name"), "x_mm": p.get("x_mm"), "y_mm": p.get("y_mm"), "zoom": p.get("zoom"),
+                       "taught_parts": len(comps), "parts_by_class": dict(Counter(c.get("name") for c in comps))})
+    totals = Counter()
+    for p in points:
+        totals.update(p["parts_by_class"])
+    return {"id": found["id"], "name": found["name"], "created": _time(found["created_at"]), "updated": _time(found["updated_at"]),
+            "point_count": len(points), "untaught_points": sum(1 for p in points if not p["taught_parts"]),
+            "parts_by_class": dict(totals), "points": points}
+
+
 def list_datasets() -> List[Dict[str, Any]]:
     from ..routers.datasets import list_datasets as ds
 
@@ -307,6 +341,8 @@ TOOLS: Dict[str, Callable[..., Any]] = {
     "list_single_inspections": list_single_inspections,
     "list_reference_profiles": list_reference_profiles,
     "get_reference_profile": get_reference_profile,
+    "list_boards": list_boards,
+    "get_board": get_board,
     "list_datasets": list_datasets,
     "get_dataset": get_dataset,
     "list_models": list_models,
@@ -335,6 +371,9 @@ DECLARATIONS = [
     {"name": "list_reference_profiles", "description": "รายการโปรไฟล์อ้างอิง (ต้นแบบ)"},
     {"name": "get_reference_profile", "description": "รายละเอียดโปรไฟล์อ้างอิงหนึ่งตัว: จำนวนจุด ชิ้นแต่ละคลาส",
      "parameters": {"type": "object", "properties": {"ref_id": _STR}, "required": ["ref_id"]}},
+    {"name": "list_boards", "description": "รายการบอร์ดที่บันทึกไว้ (ชุดจุดตรวจที่ตั้งชื่อไว้ในหน้าสแกน AOI): ชื่อ จำนวนจุด จำนวนชิ้นต้นแบบ วันที่แก้ล่าสุด"},
+    {"name": "get_board", "description": "รายละเอียดบอร์ดที่บันทึกไว้หนึ่งบอร์ด: ทุกจุดตรวจ พิกัด ซูม และชิ้นส่วนต้นแบบแยกคลาสต่อจุด ระบุ board_id หรือ name อย่างใดอย่างหนึ่ง",
+     "parameters": {"type": "object", "properties": {"board_id": _STR, "name": {"type": "string", "description": "ชื่อบอร์ด (ตรงทั้งหมดหรือบางส่วน)"}}}},
     {"name": "list_datasets", "description": "รายการชุดข้อมูลเทรนที่ถ่ายจากสถานี"},
     {"name": "get_dataset", "description": "รายละเอียดชุดข้อมูลหนึ่งชุด: คลาส จำนวนภาพ/กรอบ ติด label อย่างไร",
      "parameters": {"type": "object", "properties": {"dataset_id": _STR}, "required": ["dataset_id"]}},
@@ -348,7 +387,7 @@ TOOL_LABELS = {
     "get_station_status": "ดูสถานะสถานี", "get_statistics": "ดูสถิติ Yield", "list_scan_runs": "ดูรายการรอบสแกน",
     "get_scan_run": "ดูผลรอบสแกน", "read_part_markings": "อ่านตัวอักษรบนชิ้น (OCR)", "list_single_inspections": "ดูการตรวจภาพเดี่ยว", "list_reference_profiles": "ดูโปรไฟล์อ้างอิง",
     "get_reference_profile": "ดูรายละเอียดโปรไฟล์", "list_datasets": "ดูชุดข้อมูล", "get_dataset": "ดูรายละเอียดชุดข้อมูล",
-    "list_models": "ดูรายการโมเดล", "get_settings": "ดูการตั้งค่า", "navigate": "เปิดหน้า",
+    "list_models": "ดูรายการโมเดล", "list_boards": "ดูบอร์ดที่บันทึกไว้", "get_board": "ดูรายละเอียดบอร์ด", "get_settings": "ดูการตั้งค่า", "navigate": "เปิดหน้า",
 }
 
 

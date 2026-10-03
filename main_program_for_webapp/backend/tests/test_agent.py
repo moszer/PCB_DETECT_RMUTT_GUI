@@ -228,3 +228,20 @@ class PartMarkingsToolTests(unittest.TestCase):
         top = res["likely_part_numbers"][0]
         self.assertEqual((top["part_number"], top["count"], top["points"]), ("LM317T", 2, [1, 2]))
         self.assertIn("read_part_markings", {d["name"] for d in agent_service.DECLARATIONS})
+
+
+class BoardToolTests(unittest.TestCase):
+    def test_list_and_detail_by_name(self):
+        from app.services import point_set_store
+
+        board = point_set_store.create_set("บอร์ดทดสอบ agent", [
+            {"name": "จุด 1", "x_mm": 10, "y_mm": 10, "zoom": 1,
+             "expected_components": [{"id": "P1", "name": "ic", "bbox": [0, 0, .1, .1]}, {"id": "P2", "name": "ic", "bbox": [.2, .2, .3, .3]}]},
+            {"name": "จุด 2", "x_mm": 15, "y_mm": 20, "zoom": 2}])
+        self.addCleanup(point_set_store.delete_set, board["id"])
+        listed = agent_service.run_tool("list_boards", {})
+        self.assertIn(("บอร์ดทดสอบ agent", 2, 2), [(b["name"], b["points"], b["taught_parts"]) for b in listed])
+        detail = agent_service.run_tool("get_board", {"name": "ทดสอบ agent"})
+        self.assertEqual((detail["point_count"], detail["untaught_points"], detail["parts_by_class"]), (2, 1, {"ic": 2}))
+        self.assertEqual(detail["points"][1]["zoom"], 2)
+        self.assertIn("error", agent_service.run_tool("get_board", {"name": "ไม่มีจริง"}))
