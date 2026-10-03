@@ -61,9 +61,8 @@ export function AppShell({ tab, onTab, status, socketConnected, onRefreshStatus,
       {/* Sidebar (md+) */}
       <aside className="hidden md:flex w-[76px] xl:w-60 shrink-0 flex-col border-r border-line bg-surface">
         <div className="h-14 flex items-center gap-2.5 px-4 border-b border-line">
-          <div className="size-8 rounded-lg bg-accent text-on-accent grid place-items-center shrink-0">
-            <Crosshair className="size-4.5" />
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/rmutt-logo.png" alt="RMUTT" className="h-10 w-auto shrink-0 drop-shadow" draggable={false} />
           <div className="hidden xl:block min-w-0">
             <div className="text-sm font-semibold leading-tight">RMUTT AOI</div>
             <div className="text-[11px] text-muted leading-tight truncate">PCB Inspection Station</div>
