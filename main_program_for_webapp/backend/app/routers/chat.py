@@ -1,4 +1,4 @@
-"""AI chat about the inspected board (OpenRouter)."""
+"""AI chat about the inspected board (Gemini or OpenRouter)."""
 from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -24,14 +24,15 @@ class ChatRequest(BaseModel):
 
 @router.get("/status")
 def chat_status():
-    return {"configured": chat_service.configured(), "model": chat_service.model_name()}
+    return {"configured": chat_service.configured(), "provider": chat_service.provider(), "model": chat_service.model_name()}
 
 
 @router.post("")
 async def chat(req: ChatRequest):
     """Streams the reply as plain text chunks."""
     if not chat_service.configured():
-        raise HTTPException(503, "ยังไม่ได้ตั้งค่า OPENROUTER_API_KEY ใน backend/.env")
+        key = "GEMINI_API_KEY" if chat_service.provider() == "gemini" else "OPENROUTER_API_KEY"
+        raise HTTPException(503, f"ยังไม่ได้ตั้งค่า {key} ใน backend/.env")
     image = chat_service.image_data_url(_storage_image(req.image_url)) if req.image_url else None
     messages = chat_service.build_messages([m.model_dump() for m in req.messages], req.context, image)
     return StreamingResponse(chat_service.stream_reply(messages), media_type="text/plain; charset=utf-8",
