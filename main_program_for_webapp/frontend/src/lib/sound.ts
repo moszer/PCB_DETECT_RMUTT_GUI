@@ -25,6 +25,7 @@ class SoundEngine {
   private listeners = new Set<() => void>();
   private lastTick = 0;
   private lastAlarm = 0;
+  private lastStep = 0;
   enabled = true;
   volume = 0.6;
   private snapshot = { enabled: true, volume: 0.6 };
@@ -211,6 +212,44 @@ class SoundEngine {
 
   error() {
     this.tone(330, 0.14, { type: "triangle", gain: 0.16, slideTo: 220 });
+  }
+
+  /* ── AI assistant ─────────────────────────────────────── */
+
+  /** Assistant window opened. */
+  chatOpen() {
+    this.tone(659.25, 0.09, { gain: 0.1 });
+    this.tone(987.77, 0.16, { gain: 0.1, delay: 0.07 });
+  }
+
+  /** Assistant window closed. */
+  chatClose() {
+    this.tone(880, 0.08, { gain: 0.08 });
+    this.tone(587.33, 0.14, { gain: 0.08, delay: 0.07 });
+  }
+
+  /** A question was sent. */
+  chatSend() {
+    this.tone(520, 0.11, { type: "triangle", gain: 0.1, slideTo: 940 });
+  }
+
+  /** The agent started a tool step (reading data). Rate-limited like tick(). */
+  chatStep() {
+    const now = performance.now();
+    if (now - this.lastStep < 120) return;
+    this.lastStep = now;
+    this.tone(1320, 0.05, { gain: 0.07 });
+  }
+
+  /** The agent opened another page. */
+  whoosh() {
+    this.noise(0.14, { gain: 0.1, freq: 1400, q: 0.5 });
+    this.tone(400, 0.14, { type: "sine", gain: 0.05, slideTo: 800 });
+  }
+
+  /** The answer is complete. */
+  chatReply() {
+    [783.99, 987.77, 1174.66].forEach((f, i) => this.tone(f, 0.16, { gain: 0.11, delay: i * 0.07 }));
   }
 }
 

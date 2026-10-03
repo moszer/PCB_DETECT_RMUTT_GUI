@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Bot, Check, Loader2, Send, Sparkles, Square, Trash2, User, X } from "lucide-react";
 import { API_BASE } from "@/lib/api";
+import { sfx } from "@/lib/sound";
 import type { TabId } from "./AppShell";
 import { Rich } from "./ChatPanel";
 import { Button, Spinner, cx } from "./ui";
@@ -50,6 +51,7 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
     setMessages((m) => [...m, { role: "user", content: q }, { role: "assistant", content: "", steps: [] }]);
     setInput("");
     setBusy(true);
+    sfx.chatSend();
     const controller = new AbortController();
     abort.current = controller;
     try {
@@ -74,18 +76,23 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
           const ev = JSON.parse(line);
           if (ev.type === "ping") continue; // keep-alive while the AI waits
           if (ev.type === "tool") {
+            sfx.chatStep();
             updateLast((m) => ({ ...m, steps: [...(m.steps ?? []).map((s) => ({ ...s, done: true })), { label: ev.label, done: false }] }));
           } else if (ev.type === "navigate") {
+            sfx.whoosh();
             onNavigate(ev.page as TabId);
           } else if (ev.type === "text") {
+            sfx.chatReply();
             updateLast((m) => ({ ...m, content: ev.text, steps: (m.steps ?? []).map((s) => ({ ...s, done: true })) }));
           } else if (ev.type === "error") {
+            sfx.error();
             updateLast((m) => ({ ...m, content: `⚠️ ${ev.message}`, error: true, steps: (m.steps ?? []).map((s) => ({ ...s, done: true })) }));
           }
         }
       }
     } catch (err) {
       if (!controller.signal.aborted) {
+        sfx.error();
         const msg = (err as Error).message;
         const friendly = /network|fetch|load failed/i.test(msg)
           ? "การเชื่อมต่อกับ backend ถูกตัดระหว่างรอ AI — ตรวจว่า backend ยังทำงานอยู่ แล้วลองถามใหม่"
@@ -110,6 +117,8 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
       <button
         type="button"
         onClick={() => {
+          if (open) sfx.chatClose();
+          else sfx.chatOpen();
           setOpen((o) => !o);
           setTimeout(() => inputRef.current?.focus(), 50);
         }}

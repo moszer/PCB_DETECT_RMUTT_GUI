@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Bot, Send, Square, Trash2, User } from "lucide-react";
 import { API_BASE } from "@/lib/api";
+import { sfx } from "@/lib/sound";
 import { Button, Modal, Spinner, cx } from "./ui";
 
 export interface BoardContext {
@@ -183,10 +184,14 @@ export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContex
     setMessages([...history, { role: "assistant", content: "" }]);
     setInput("");
     setBusy(true);
+    sfx.chatSend();
     const controller = new AbortController();
     abort.current = controller;
-    const append = (chunk: string) =>
+    let reply = "";
+    const append = (chunk: string) => {
+      reply += chunk;
       setMessages((m) => m.map((msg, i) => (i === m.length - 1 ? { ...msg, content: msg.content + chunk } : msg)));
+    };
     try {
       const res = await fetch(`${API_BASE}/api/chat`, {
         method: "POST",
@@ -211,6 +216,7 @@ export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContex
     } finally {
       setBusy(false);
       abort.current = null;
+      if (reply.trim() && !controller.signal.aborted) (reply.includes("⚠️") ? sfx.error : sfx.chatReply)();
     }
   };
 

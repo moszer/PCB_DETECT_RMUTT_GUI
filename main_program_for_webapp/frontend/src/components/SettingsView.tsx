@@ -189,6 +189,10 @@ const SOUND_PREVIEWS: Array<{ label: string; play: () => void }> = [
   { label: "สแกนครบ (ผ่าน)", play: () => sfx.complete("PASS") },
   { label: "สแกนครบ (ไม่ผ่าน)", play: () => sfx.complete("FAIL") },
   { label: "STOP", play: () => sfx.alarm() },
+  { label: "AI: เปิดหน้าต่าง", play: () => sfx.chatOpen() },
+  { label: "AI: ส่งคำถาม", play: () => sfx.chatSend() },
+  { label: "AI: อ่านข้อมูล", play: () => sfx.chatStep() },
+  { label: "AI: ตอบเสร็จ", play: () => sfx.chatReply() },
 ];
 
 /** Sound preference is per browser (saved locally) and applies immediately — no Save needed. */
