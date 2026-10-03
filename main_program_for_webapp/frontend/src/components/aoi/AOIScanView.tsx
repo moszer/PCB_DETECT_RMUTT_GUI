@@ -9,11 +9,12 @@ import type { ExpectedComponent } from "@/lib/board-inspection";
 import { formatMm, refsOfType } from "@/lib/format";
 import type { InspectionParams, SetParams } from "@/lib/params";
 import { usePersistentState } from "@/hooks/usePersistentState";
+import { useElementSize } from "@/hooks/useElementSize";
 import { sfx } from "@/lib/sound";
 import { LiveCameraFeed, type FeedHud } from "../LiveCameraFeed";
 import PointReferenceModal from "../PointReferenceModal";
 import { PointResultModal } from "../PointResultModal";
-import { Button, Segmented } from "../ui";
+import { Button, Segmented, cx } from "../ui";
 import { useToast } from "../Toast";
 import { StageBar } from "./StageBar";
 import { PointsPanel } from "./PointsPanel";
@@ -46,6 +47,20 @@ type PanelTab = "points" | "grid" | "jog" | "params";
 type ViewMode = "live" | "output" | "split";
 
 const POINTS_KEY = "pcb_aoi_points";
+const VIEW_GAP = 12;
+
+/**
+ * Size the camera/result cards to the camera's aspect ratio, as large as the area allows:
+ * side by side or stacked, whichever gives the bigger picture (no letterbox bars).
+ */
+function fitViewers(width: number, height: number, count: number, ratio: number) {
+  const gaps = VIEW_GAP * (count - 1);
+  const rowW = Math.min((width - gaps) / count, height * ratio);
+  const colW = Math.min(width, ((height - gaps) / count) * ratio);
+  const row = count === 1 || rowW >= colW;
+  const w = Math.max(160, Math.floor(row ? rowW : colW));
+  return { row, w, h: Math.floor(w / ratio), total: row ? w * count + gaps : w };
+}
 const stripImages = (points: CustomPointRequest[]) => points.map((p) => ({ ...p, reference_image: undefined }));
 
 const PROGRESS_TITLE: Partial<Record<ScanProgressEvent["event"], string>> = {
@@ -383,6 +398,19 @@ export function AOIScanView({ status, report, progress, pointFrames, references,
   const showLive = viewMode !== "output";
   const showOutput = viewMode !== "live";
 
+  // Viewer cards take the camera frame's aspect ratio (1:1 for a 2160x2160 crop).
+  const viewArea = useRef<HTMLDivElement>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const area = useElementSize(viewArea);
+  const strip = useElementSize(stripRef);
+  const camRes = status?.camera_resolution;
+  const ratio = camRes && camRes[0] > 0 && camRes[1] > 0 ? camRes[0] / camRes[1] : 1;
+  const stripSpace = results.length && strip.height ? strip.height + VIEW_GAP : 0;
+  // Below lg the page scrolls, so only the width limits the cards (full-width, stacked).
+  const scrolls = typeof window !== "undefined" && window.innerWidth < 1024;
+  const availH = scrolls ? Number.POSITIVE_INFINITY : Math.max(200, area.height - stripSpace);
+  const fit = area.width > 0 && (scrolls || area.height > 0) ? fitViewers(area.width, availH, showLive && showOutput ? 2 : 1, ratio) : null;
+
   return (
     <div className="h-full flex flex-col">
       <StageBar machine={machine} scanning={scanning} onChange={onRefreshStatus} />
@@ -479,51 +507,58 @@ export function AOIScanView({ status, report, progress, pointFrames, references,
 
         {/* ── Right: camera + results ── */}
         <section className="min-h-[560px] lg:min-h-0 p-3 flex flex-col gap-3">
-          {report && report.status !== "idle" && <ScanStatusStrip report={report} onStop={stopScan} />}
+          <div className="flex flex-col gap-3 mx-auto w-full" style={fit ? { maxWidth: Math.max(fit.total, 480) } : undefined}>
+            {report && report.status !== "idle" && <ScanStatusStrip report={report} onStop={stopScan} />}
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <Segmented
-              size="sm"
-              value={viewMode}
-              onChange={setViewMode}
-              options={[
-                { value: "live", label: "ภาพสด", icon: Video },
-                { value: "split", label: "คู่", icon: Columns2 },
-                { value: "output", label: "ผลตรวจ", icon: ImageIcon },
-              ]}
-            />
-            <Button size="sm" className="ml-auto" icon={Camera} loading={snapping} disabled={scanning} onClick={testSnap}>
-              ถ่ายทดสอบ
-            </Button>
-          </div>
-
-          <div className="flex-1 min-h-0 grid gap-3 grid-rows-[minmax(260px,1fr)] xl:grid-rows-1" style={{ gridTemplateColumns: showLive && showOutput ? "repeat(auto-fit, minmax(320px, 1fr))" : "1fr" }}>
-            {showLive && (
-              <LiveCameraFeed
-                className="min-h-[260px]"
-                zoom={scanZoom}
-                onZoomChange={scanning ? undefined : setLiveZoom}
-                stagePosition={machine?.connected ? machine.position_mm : undefined}
-                hud={hud}
-                scanning={capturing}
-                locked={scanning}
+            <div className="flex items-center gap-2 flex-wrap">
+              <Segmented
+                size="sm"
+                value={viewMode}
+                onChange={setViewMode}
+                options={[
+                  { value: "live", label: "ภาพสด", icon: Video },
+                  { value: "split", label: "คู่", icon: Columns2 },
+                  { value: "output", label: "ผลตรวจ", icon: ImageIcon },
+                ]}
               />
-            )}
-            {showOutput && (
-              <div className="min-h-[260px]">
-                <OutputView item={output} pending={pending} onOpen={openOutput} />
-              </div>
-            )}
+              <Button size="sm" className="ml-auto" icon={Camera} loading={snapping} disabled={scanning} onClick={testSnap}>
+                ถ่ายทดสอบ
+              </Button>
+            </div>
           </div>
 
-          <Filmstrip
-            results={results}
-            activeIndex={output?.kind === "point" ? output.point.point_index : null}
-            onPick={(pt) => {
-              setOutput({ kind: "point", point: pt });
-              if (viewMode === "live") setViewMode("split");
-            }}
-          />
+          <div ref={viewArea} className="flex-1 min-h-0 flex flex-col items-center gap-3">
+            <div className={cx("flex gap-3", fit ? (fit.row ? "flex-row" : "flex-col") : "w-full flex-col xl:flex-row")}>
+              {showLive && (
+                <div className="shrink-0" style={fit ? { width: fit.w, height: fit.h } : { width: "100%", height: 420 }}>
+                  <LiveCameraFeed
+                    className="size-full"
+                    zoom={scanZoom}
+                    onZoomChange={scanning ? undefined : setLiveZoom}
+                    stagePosition={machine?.connected ? machine.position_mm : undefined}
+                    hud={hud}
+                    scanning={capturing}
+                    locked={scanning}
+                  />
+                </div>
+              )}
+              {showOutput && (
+                <div className="shrink-0" style={fit ? { width: fit.w, height: fit.h } : { width: "100%", height: 420 }}>
+                  <OutputView item={output} pending={pending} onOpen={openOutput} />
+                </div>
+              )}
+            </div>
+            <div ref={stripRef} className="w-full" style={fit ? { maxWidth: fit.total } : undefined}>
+              <Filmstrip
+                results={results}
+                activeIndex={output?.kind === "point" ? output.point.point_index : null}
+                onPick={(pt) => {
+                  setOutput({ kind: "point", point: pt });
+                  if (viewMode === "live") setViewMode("split");
+                }}
+              />
+            </div>
+          </div>
         </section>
       </div>
 

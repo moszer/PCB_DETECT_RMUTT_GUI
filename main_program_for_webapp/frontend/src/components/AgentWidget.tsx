@@ -125,16 +125,21 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
         aria-label="ผู้ช่วย AI"
         title="ผู้ช่วย AI — ถามข้อมูลอะไรในระบบก็ได้"
         className={cx(
-          "fixed bottom-5 right-5 z-40 h-12 rounded-full shadow-lg flex items-center gap-2 px-4 cursor-pointer transition-transform hover:scale-105",
+          "group fixed bottom-4 right-4 z-40 size-12 rounded-full shadow-lg grid place-items-center cursor-pointer transition-transform hover:scale-105",
           open ? "bg-surface-2 text-text border border-line" : "bg-accent text-on-accent"
         )}
       >
         {open ? <X className="size-5" /> : <Sparkles className="size-5" />}
-        <span className="text-sm font-semibold">{open ? "ปิด" : "ถาม AI"}</span>
+        {/* Label on hover only, so the button doesn't cover the viewers. */}
+        {!open && (
+          <span className="pointer-events-none absolute right-14 whitespace-nowrap rounded-md bg-surface border border-line px-2 py-1 text-xs text-text shadow opacity-0 transition-opacity group-hover:opacity-100">
+            ถาม AI
+          </span>
+        )}
       </button>
 
       {open && (
-        <div className="fixed bottom-20 right-5 z-40 w-[440px] max-w-[calc(100vw-2.5rem)] h-[620px] max-h-[calc(100vh-7rem)] rounded-2xl border border-line bg-surface shadow-2xl flex flex-col animate-rise">
+        <div className="fixed bottom-20 right-4 z-40 w-[440px] max-w-[calc(100vw-2.5rem)] h-[620px] max-h-[calc(100vh-7rem)] rounded-2xl border border-line bg-surface shadow-2xl flex flex-col animate-rise">
           <div className="flex items-center gap-2 px-4 py-3 border-b border-line">
             <span className="size-8 rounded-full bg-accent-soft text-accent grid place-items-center">
               <Bot className="size-4" />
