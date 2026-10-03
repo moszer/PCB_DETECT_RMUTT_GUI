@@ -2,12 +2,16 @@
 from fastapi import APIRouter, HTTPException, Request, Response, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
+import logging
 import time
 from typing import Literal, Optional
 import cv2
 
 from ..core.inspection import digital_zoom
+from ..config import save_settings_to_disk, settings
 from ..services.camera_service import camera_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/camera", tags=["camera"])
 
@@ -106,6 +110,8 @@ def start_camera(req: CameraStartRequest):
         output_size=(req.output_width, req.output_height) if req.output_width else None,
         output_mode=req.output_mode,
     )
+    if success and not camera_service.is_mock:
+        _remember_camera_format(req)
     return {
         "success": success,
         "is_mock": camera_service.is_mock,
@@ -114,6 +120,30 @@ def start_camera(req: CameraStartRequest):
         "output_mode": camera_service.output_mode,
         "fps": camera_service.fps
     }
+
+
+def _remember_camera_format(req: CameraStartRequest) -> None:
+    """The format the operator just applied becomes the station default (survives restarts)."""
+    name = next((d["name"] for d in camera_service.list_devices() if d["index"] == req.device_index), "")
+    name = name.split(" (Index", 1)[0].strip()
+    changes = {
+        "camera_index": req.device_index,
+        "camera_width": req.width,
+        "camera_height": req.height,
+        "camera_fps": req.fps,
+        "camera_output_width": req.output_width,
+        "camera_output_height": req.output_height,
+        "camera_output_mode": req.output_mode,
+    }
+    if name and not name.startswith("Camera Device"):
+        changes["camera_device_name"] = name
+    try:
+        candidate = settings.model_copy(update=changes)
+        save_settings_to_disk(candidate)
+        for key, value in changes.items():
+            setattr(settings, key, value)
+    except RuntimeError:
+        logger.warning("Could not save the camera format as default", exc_info=True)
 
 
 @router.post("/stop")

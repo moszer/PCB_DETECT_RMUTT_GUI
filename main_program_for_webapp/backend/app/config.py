@@ -3,6 +3,8 @@ import os
 import logging
 import uuid
 from pathlib import Path
+from typing import Optional
+
 from pydantic import BaseModel, Field, ConfigDict
 
 # Root directory of the repository (parent of backend/)
@@ -64,11 +66,17 @@ class Settings(BaseModel):
     default_match_dist: float = Field(50.0, gt=0)
     default_fail_on_extra: bool = True
 
-    # Camera defaults
+    # Camera defaults: the last format applied in the camera panel is saved here and used
+    # when the backend (re)opens the camera. Shipped default: 4K -> 2160x2160 1:1 center cut.
     camera_index: int = 0
-    camera_width: int = 1920
-    camera_height: int = 1080
+    # Preferred device by name (substring); its index can change when USB cameras are replugged.
+    camera_device_name: str = "OBSBOT"
+    camera_width: int = 3840
+    camera_height: int = 2160
     camera_fps: int = 30
+    camera_output_width: Optional[int] = 2160
+    camera_output_height: Optional[int] = 2160
+    camera_output_mode: str = "crop"
     camera_backend: str = "default"  # or 'avfoundation', 'v4l2'
 
     # Machine & AOI defaults

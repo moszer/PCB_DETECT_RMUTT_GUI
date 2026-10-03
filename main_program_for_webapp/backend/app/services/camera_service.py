@@ -12,6 +12,8 @@ from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, Tuple
 import cv2
 import numpy as np
 
+from ..config import settings
+
 logger = logging.getLogger("camera_service")
 
 _KEEP: Any = object()  # sentinel: keep the previous output size
@@ -37,18 +39,24 @@ class CameraService:
         self._latest_timestamp: float = 0.0
         self._actual_width: int = 0
         self._actual_height: int = 0
-        self._requested_width: int = 1920
-        self._requested_height: int = 1080
-        self._requested_fps: int = 30
-        self._output_size: Optional[Tuple[int, int]] = None  # (w, h) of every frame handed out
+        # Station defaults (settings.json): last format applied in the camera panel.
+        self._requested_width: int = settings.camera_width
+        self._requested_height: int = settings.camera_height
+        self._requested_fps: int = settings.camera_fps
+        # (w, h) of every frame handed out
+        self._output_size: Optional[Tuple[int, int]] = (
+            (settings.camera_output_width, settings.camera_output_height)
+            if settings.camera_output_width and settings.camera_output_height else None
+        )
         # "fit": crop to the output aspect then resize; "crop": cut exactly (w, h) from the
         # center at 1:1 pixels (a sharp digital zoom, e.g. 640x640 out of a 4K frame).
-        self._output_mode: str = "fit"
+        self._output_mode: str = settings.camera_output_mode if settings.camera_output_mode in ("fit", "crop") else "fit"
         self._actual_fps: float = 0.0
         self._fps_count: int = 0
         self._fps_timer: float = 0.0
         self._is_mock = False
-        self._device_index = 0
+        # None = not chosen yet: the first start() picks the preferred camera by name.
+        self._device_index: Optional[int] = None
 
     @property
     def is_active(self) -> bool:
@@ -82,7 +90,19 @@ class CameraService:
 
     @property
     def device_index(self) -> int:
-        return self._device_index
+        return self._device_index if self._device_index is not None else settings.camera_index
+
+    def preferred_device_index(self) -> int:
+        """Index of the camera whose name contains settings.camera_device_name, else the saved index."""
+        wanted = (settings.camera_device_name or "").lower()
+        if wanted:
+            try:
+                for dev in self.list_devices():
+                    if wanted in dev["name"].lower():
+                        return int(dev["index"])
+            except Exception:  # pragma: no cover - device listing is best effort
+                logger.debug("Camera listing failed", exc_info=True)
+        return settings.camera_index
 
     def list_devices(self) -> List[Dict[str, Any]]:
         """List available physical camera devices and their active status."""
@@ -145,6 +165,8 @@ class CameraService:
         silently switch the operator away from the USB camera they had selected.
         """
         with self._lifecycle_lock:
+            if device_index is None and self._device_index is None:
+                device_index = self.preferred_device_index()
             device_index = self._device_index if device_index is None else device_index
             width = self._requested_width if width is None else width
             height = self._requested_height if height is None else height
