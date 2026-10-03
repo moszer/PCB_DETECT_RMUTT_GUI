@@ -110,6 +110,33 @@ function Rich({ text }: { text: string }) {
   return <>{out}</>;
 }
 
+const THINKING_STEPS = ["กำลังดูภาพบอร์ด", "กำลังอ่านข้อมูลชิ้นส่วนและตัวอักษร", "กำลังวิเคราะห์", "กำลังเรียบเรียงคำตอบ"];
+
+/** "AI is thinking": three softly bouncing dots, a status that advances with time, elapsed seconds. */
+function ThinkingIndicator() {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const start = Date.now();
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 250);
+    return () => clearInterval(timer);
+  }, []);
+  const step = THINKING_STEPS[Math.min(THINKING_STEPS.length - 1, Math.floor(elapsed / 3))];
+  return (
+    <div className="flex items-center gap-2.5 text-xs text-muted" role="status" aria-live="polite">
+      <span className="flex items-end gap-1 h-3" aria-hidden>
+        {[0, 1, 2].map((i) => (
+          <span key={i} className="size-1.5 rounded-full bg-accent chat-dot" style={{ animationDelay: `${i * 160}ms` }} />
+        ))}
+      </span>
+      <span key={step} className="animate-fade">
+        {step}…
+      </span>
+      <span className="font-mono tabular text-subtle">{elapsed}s</span>
+      {elapsed >= 15 && <span className="text-subtle animate-fade">· เซิร์ฟเวอร์ AI อาจมีคิว กำลังรอ</span>}
+    </div>
+  );
+}
+
 /** Chat with an AI about the inspected board; context + photo go along with every question. */
 export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContext; imageUrl?: string; onClose: () => void }) {
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -215,9 +242,7 @@ export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContex
                 )}
               >
                 {m.role === "user" ? m.content : m.content ? <Rich text={m.content} /> : null}
-                {thinking && i === messages.length - 1 && (
-                  <span className="text-xs text-muted">AI กำลังดูภาพและคิด… (โมเดลฟรีอาจใช้เวลา 10–40 วินาที)</span>
-                )}
+                {thinking && i === messages.length - 1 && <ThinkingIndicator />}
               </div>
             </div>
           ))}
