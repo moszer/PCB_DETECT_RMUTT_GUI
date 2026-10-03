@@ -11,6 +11,7 @@ from .routers import (
     aoi_router,
     auth_router,
     camera_router,
+    chat_router,
     datasets_router,
     history_router,
     inspection_router,
@@ -85,6 +86,7 @@ for asset_dir in ("uploads", "runs", "references", "datasets"):
 app.include_router(system_router)
 app.include_router(auth_router)
 app.include_router(camera_router)
+app.include_router(chat_router)
 app.include_router(datasets_router)
 app.include_router(inspection_router)
 app.include_router(aoi_router)

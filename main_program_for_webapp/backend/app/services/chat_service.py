@@ -1,0 +1,126 @@
+"""AI chat about an inspected board via OpenRouter (any model; default a free vision model).
+
+The board context (photo, detected parts, OCR'd markings, verdict) goes in with every
+request so the model can explain what the board is and what it is for. The API key is
+read from the environment (backend/.env) and never sent to the browser.
+"""
+from __future__ import annotations
+
+import base64
+import json
+import logging
+import os
+from pathlib import Path
+from typing import Any, AsyncIterator, Dict, List, Optional
+
+import cv2
+import httpx
+
+logger = logging.getLogger(__name__)
+
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+DEFAULT_MODEL = "qwen/qwen3.8-27b:free"
+
+SYSTEM_PROMPT = """คุณคือผู้ช่วยวิศวกรอิเล็กทรอนิกส์ประจำสถานีตรวจ PCB (AOI) ของ RMUTT
+ตอบเป็นภาษาไทย กระชับ เข้าใจง่าย ใช้ศัพท์เทคนิคภาษาอังกฤษได้ตามปกติ
+
+คุณได้รับภาพบอร์ดหนึ่งจุดตรวจ พร้อมข้อมูลจากระบบ: ชิ้นส่วนที่ YOLO ตรวจพบ ตัวอักษรบนชิ้นที่อ่านด้วย OCR และผลตรวจ
+- ใช้เบอร์ชิปจาก OCR ระบุว่าชิปคืออะไร ทำหน้าที่อะไร (เช่น MAX232 = แปลงระดับสัญญาณ RS-232)
+- อนุมานว่าบอร์ดนี้ใช้ทำอะไรจากชิ้นส่วนทั้งหมดรวมกัน และบอกว่าเห็นอะไรในภาพประกอบ
+- ภาพเป็นแค่บางส่วนของบอร์ด และ OCR อาจอ่านผิดบางตัว ถ้าไม่แน่ใจให้บอกตรงๆ ว่าเป็นการคาดการณ์
+- อย่าแต่งสเปกหรือตัวเลขที่ไม่รู้จริง"""
+
+
+def configured() -> bool:
+    return bool(os.environ.get("OPENROUTER_API_KEY"))
+
+
+def model_name() -> str:
+    return os.environ.get("OPENROUTER_MODEL") or DEFAULT_MODEL
+
+
+def image_data_url(path: Path, max_side: int = 1280) -> Optional[str]:
+    img = cv2.imread(str(path), cv2.IMREAD_COLOR)
+    if img is None:
+        return None
+    h, w = img.shape[:2]
+    scale = min(1.0, max_side / max(h, w))
+    if scale < 1:
+        img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+    ok, jpeg = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+    return "data:image/jpeg;base64," + base64.b64encode(jpeg.tobytes()).decode() if ok else None
+
+
+def context_text(ctx: Dict[str, Any]) -> str:
+    """Board facts from the inspection, as plain text for the model."""
+    lines = ["ข้อมูลจากระบบตรวจ:"]
+    if ctx.get("point_name"):
+        lines.append(f"- จุดตรวจ: {ctx['point_name']}")
+    if ctx.get("verdict"):
+        lines.append(f"- ผลตรวจ: {ctx['verdict']}" + (f" ({ctx['reason']})" if ctx.get("reason") else ""))
+    counts = ctx.get("counts") or {}
+    if counts:
+        lines.append("- ชิ้นส่วนที่ตรวจพบ: " + ", ".join(f"{k} ×{v}" for k, v in counts.items()))
+    parts = [p for p in ctx.get("parts") or [] if p.get("text") or p.get("status")]
+    if parts:
+        lines.append("- รายละเอียดชิ้น (ชื่อ / สถานะ / ตัวอักษรที่อ่านได้):")
+        for p in parts[:80]:
+            text = " ".join(str(p.get("text") or "").split())
+            status = f" [{p['status']}]" if p.get("status") else ""
+            lines.append(f"  • {p.get('name', '?')}{status}" + (f": \"{text}\"" if text else ""))
+    if not any(p.get("text") for p in ctx.get("parts") or []):
+        lines.append("- (ยังไม่ได้อ่านตัวอักษรบนชิ้น — ถ้าต้องการให้ระบุชิปแม่นขึ้น กด \"อ่านตัวอักษรทุกชิ้น\" ก่อน)")
+    return "\n".join(lines)
+
+
+def build_messages(history: List[Dict[str, str]], ctx: Dict[str, Any], image: Optional[str]) -> List[Dict[str, Any]]:
+    intro: List[Dict[str, Any]] = [{"type": "text", "text": context_text(ctx)}]
+    if image:
+        intro.append({"type": "image_url", "image_url": {"url": image}})
+    messages: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": intro},
+                                      {"role": "assistant", "content": "รับทราบข้อมูลบอร์ดแล้ว ถามได้เลยครับ"}]
+    for m in history[-20:]:
+        if m.get("role") in ("user", "assistant") and m.get("content"):
+            messages.append({"role": m["role"], "content": str(m["content"])[:4000]})
+    return messages
+
+
+async def stream_reply(messages: List[Dict[str, Any]]) -> AsyncIterator[str]:
+    """Yield text deltas from OpenRouter (SSE); errors come back as a readable message."""
+    headers = {
+        "Authorization": f"Bearer {os.environ.get('OPENROUTER_API_KEY', '')}",
+        "Content-Type": "application/json",
+        "X-Title": "RMUTT PCB AOI Station",
+    }
+    body = {"model": model_name(), "messages": messages, "stream": True, "max_tokens": 4000}
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=15)) as client:
+            async with client.stream("POST", OPENROUTER_URL, headers=headers, json=body) as res:
+                if res.status_code != 200:
+                    detail = (await res.aread()).decode("utf-8", "replace")
+                    try:
+                        detail = json.loads(detail).get("error", {}).get("message", detail)
+                    except ValueError:
+                        pass
+                    hint = " (โควตาโมเดลฟรีหมดหรือถูกจำกัดความถี่ — รอสักครู่แล้วลองใหม่)" if res.status_code == 429 else ""
+                    yield f"\n⚠️ AI ตอบไม่ได้ (HTTP {res.status_code}): {detail[:300]}{hint}"
+                    return
+                async for line in res.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue  # keep-alive comments
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        return
+                    try:
+                        chunk = json.loads(data)
+                    except ValueError:
+                        continue
+                    if chunk.get("error"):
+                        yield f"\n⚠️ {chunk['error'].get('message', 'error')}"
+                        return
+                    delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
+                    if delta.get("content"):
+                        yield delta["content"]
+    except httpx.HTTPError as exc:
+        logger.warning("OpenRouter request failed: %s", exc)
+        yield f"\n⚠️ เชื่อมต่อ AI ไม่ได้: {exc.__class__.__name__}"

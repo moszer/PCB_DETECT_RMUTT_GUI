@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Box, ScanText } from "lucide-react";
+import { Bot, Box, ScanText } from "lucide-react";
 import type { AOIPointResult, OcrResult, SlotStatus } from "@/types";
 import { api } from "@/lib/api";
 import { classColor, formatMm, percent } from "@/lib/format";
 import type { NBox } from "@/lib/labelLayout";
 import { BoxOverlay, type OverlayBox } from "./BoxOverlay";
 import { DepthModal, type DepthTarget } from "./DepthModal";
+import { ChatPanel, type BoardContext } from "./ChatPanel";
 import { Badge, Button, Modal, SectionLabel, Spinner, Stat, VerdictBadge, cx } from "./ui";
 import { useToast } from "./Toast";
 
@@ -48,6 +49,7 @@ function PointResultDetail({ point, onClose }: { point: AOIPointResult; onClose:
   // Text read on each part (by part index); "loading" while a request is in flight.
   const [ocr, setOcr] = useState<Record<number, OcrResult | "loading">>({});
   const [showText, setShowText] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   // Detection boxes are in pixels: normalizing them needs the image size.
   const [dims, setDims] = useState<{ src: string; w: number; h: number } | null>(null);
   useEffect(() => {
@@ -107,6 +109,13 @@ function PointResultDetail({ point, onClose }: { point: AOIPointResult; onClose:
     return showText && first ? { ...p.overlay, label: `${p.overlay.label} · ${first}` } : p.overlay;
   });
   const selectedText = selected !== null ? ocr[selected] : undefined;
+  const chatContext: BoardContext = {
+    point_name: point.name || `จุด ${point.point_index + 1}`,
+    verdict: point.verdict,
+    reason: point.reason,
+    counts: Object.fromEntries(countByLabel(point.detections)),
+    parts: parts.map((p, i) => ({ name: p.name, status: slots[i] ? SLOT[slots[i].status]?.label : undefined, text: textOf(i) || undefined })),
+  };
   const openDepth = () =>
     part &&
     setDepth({
@@ -121,7 +130,7 @@ function PointResultDetail({ point, onClose }: { point: AOIPointResult; onClose:
     <>
       <Modal
         open
-        onClose={depth ? () => undefined : onClose /* Esc closes the 3D view first */}
+        onClose={depth || chatOpen ? () => undefined : onClose /* Esc closes the inner window first */}
         size="xl"
         title={
           <>
@@ -151,6 +160,9 @@ function PointResultDetail({ point, onClose }: { point: AOIPointResult; onClose:
                   อ่านตัวอักษรทุกชิ้น
                 </Button>
               )}
+              <Button size="sm" variant="secondary" icon={Bot} className={canOcr && parts.length > 0 ? undefined : "ml-auto"} onClick={() => setChatOpen(true)}>
+                ถาม AI
+              </Button>
             </div>
             {part && canOcr && (
               <div className="rounded-lg bg-surface-2 px-3 py-2 flex items-start gap-2 min-h-10">
@@ -260,6 +272,7 @@ function PointResultDetail({ point, onClose }: { point: AOIPointResult; onClose:
         </div>
       </Modal>
       {depth && <DepthModal target={depth} onClose={() => setDepth(null)} />}
+      {chatOpen && <ChatPanel context={chatContext} imageUrl={src} onClose={() => setChatOpen(false)} />}
     </>
   );
 }

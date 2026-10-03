@@ -9,6 +9,21 @@ from pydantic import BaseModel, Field, ConfigDict
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
+
+def _load_dotenv(path: Path) -> None:
+    """KEY=VALUE lines from backend/.env (secrets such as OPENROUTER_API_KEY); real env vars win."""
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+_load_dotenv(BACKEND_ROOT / ".env")
+
 # Default paths
 DEFAULT_MODEL_PATH = str(REPO_ROOT / "best.pt")
 DEFAULT_EXP_MODEL_PATH = str(REPO_ROOT / "exp.pt")
