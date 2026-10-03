@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell, type TabId } from "@/components/AppShell";
+import { AgentWidget } from "@/components/AgentWidget";
 import { ToastProvider } from "@/components/Toast";
 import { InspectionView } from "@/components/InspectionView";
 import { AOIScanView } from "@/components/aoi/AOIScanView";
@@ -182,6 +183,7 @@ function Station() {
           {tab === "settings" && <SettingsView onRefreshStatus={refreshStatus} />}
         </div>
       </AppShell>
+      <AgentWidget page={tab} onNavigate={setTab} />
     </ToastProvider>
   );
 }

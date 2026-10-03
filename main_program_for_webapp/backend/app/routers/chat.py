@@ -1,4 +1,5 @@
-"""AI chat about the inspected board (Gemini or OpenRouter)."""
+"""AI chat about the inspected board (Gemini or OpenRouter) and the station-wide agent."""
+import json
 from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -70,3 +71,43 @@ def chat_history(key: str):
 @router.delete("/history")
 def clear_chat_history(key: str):
     return {"deleted": chat_store.clear(key)}
+
+
+# ── Station-wide agent (every page) ──
+
+AGENT_CONVERSATION = "agent:station"
+
+
+class AgentRequest(BaseModel):
+    messages: List[ChatMessage] = Field(..., min_length=1, max_length=40)
+    page: Optional[str] = Field(None, max_length=32)
+
+
+@router.post("/agent")
+async def agent(req: AgentRequest):
+    """NDJSON stream of agent events (tool steps, navigate, final text); the exchange is saved."""
+    from ..services import agent_service
+
+    question = req.messages[-1].content
+
+    async def events():
+        answer = ""
+        async for line in agent_service.run_agent([m.model_dump() for m in req.messages], req.page):
+            event = json.loads(line)
+            if event.get("type") == "text":
+                answer = event.get("text", "")
+            yield line
+        if answer:
+            chat_store.append_exchange(AGENT_CONVERSATION, question, answer)
+
+    return StreamingResponse(events(), media_type="application/x-ndjson", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@router.get("/agent/history")
+def agent_history():
+    return {"messages": chat_store.history(AGENT_CONVERSATION)}
+
+
+@router.delete("/agent/history")
+def clear_agent_history():
+    return {"deleted": chat_store.clear(AGENT_CONVERSATION)}

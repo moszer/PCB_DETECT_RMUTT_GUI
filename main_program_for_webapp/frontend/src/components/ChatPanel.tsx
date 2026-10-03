@@ -39,7 +39,7 @@ function Inline({ text }: { text: string }) {
 const cells = (row: string) => row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
 
 /** Minimal markdown: headings, bullets, tables, **bold**, `code` (what the model actually emits). */
-function Rich({ text }: { text: string }) {
+export function Rich({ text }: { text: string }) {
   const lines = text.split("\n");
   const out: React.ReactNode[] = [];
   for (let i = 0; i < lines.length; i++) {
