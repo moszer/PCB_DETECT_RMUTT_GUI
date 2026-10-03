@@ -2,10 +2,10 @@
 
 import React, { useCallback } from "react";
 import { Expand, ImageOff, Square } from "lucide-react";
-import type { AOIPointResult, AOIRunReport, InspectionResult } from "@/types";
+import type { AOIPointResult, AOIRunReport, CapturedFrame, InspectionResult } from "@/types";
 import { VERDICT_TONE } from "@/lib/format";
 import { Badge, Button, VerdictBadge, cx } from "../ui";
-import { AnalyzingFrame, AnimatedResult, revealDelay } from "./ResultOverlay";
+import { AnimatedResult, CaptureProgress, revealDelay } from "./ResultOverlay";
 
 const RUN_STATUS: Record<AOIRunReport["status"], { label: string; tone: "accent" | "pass" | "review" | "fail" | "neutral" }> = {
   idle: { label: "ว่าง", tone: "neutral" },
@@ -80,14 +80,14 @@ function Count({ value }: { value: number }) {
 export type OutputItem = { kind: "point"; point: AOIPointResult } | { kind: "snap"; result: InspectionResult };
 
 /** A frame being analyzed right now (test snap, or the point a scan is capturing). */
-export type PendingFrame = { key: string; image: string | null; label: string };
+export type PendingFrame = { key: string; image: string | null; label: string; frames?: CapturedFrame[]; target?: number; waiting?: string };
 
 /** The latest inspected image with its verdict, click to open the full detail. */
 export function OutputView({ item, pending, onOpen }: { item: OutputItem | null; pending?: PendingFrame | null; onOpen: () => void }) {
   if (pending) {
     return (
       <div className="relative size-full rounded-xl overflow-hidden bg-viewport border border-line">
-        <AnalyzingFrame key={pending.key} image={pending.image} label={pending.label} />
+        <CaptureProgress key={pending.key} image={pending.image} label={pending.label} frames={pending.frames} target={pending.target} waiting={pending.waiting} />
       </div>
     );
   }
@@ -108,7 +108,6 @@ export function OutputView({ item, pending, onOpen }: { item: OutputItem | null;
     item.kind === "point"
       ? `${item.point.name || `จุด ${item.point.point_index + 1}`} · พบ ${item.point.detections.length} ชิ้น`
       : `ถ่ายทดสอบ · พบ ${item.result.detections.length} ชิ้น · ${item.result.speed_ms?.inference?.toFixed(0) ?? "–"} ms`;
-  const glow = { PASS: "text-pass", FAIL: "text-fail", REVIEW: "text-review", ERROR: "text-subtle" }[verdict];
   // The verdict lands when the box sweep finishes.
   const reveal = { animationDelay: `${revealDelay(item)}ms` };
   return (
@@ -116,10 +115,7 @@ export function OutputView({ item, pending, onOpen }: { item: OutputItem | null;
       {/* Keyed by image: each new result replays the reveal. */}
       <div key={url} className="absolute inset-0 animate-fade">
         <AnimatedResult item={item} />
-        <div className="absolute inset-0 pointer-events-none res-fade" style={reveal}>
-          <div className={cx("absolute inset-0 rounded-xl animate-glow", glow)} style={reveal} />
-        </div>
-        <div className={cx("absolute top-3 left-3 flex items-center gap-1.5", verdict === "FAIL" ? "animate-shake" : "animate-pop")} style={reveal}>
+        <div className="absolute top-3 left-3 flex items-center gap-1.5 res-fade" style={reveal}>
           <VerdictBadge verdict={verdict} />
         </div>
       </div>

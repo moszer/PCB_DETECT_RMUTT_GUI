@@ -226,7 +226,6 @@ function CaptureMode({
       detail: `ภาพ ${progress.dataset.captured}/${progress.dataset.planned}${progress.target_mm ? ` · ${formatMm(progress.target_mm[0])}, ${formatMm(progress.target_mm[1])} mm` : ""}`,
     };
   }
-  const flashKey = progress?.event === "captured" ? `${progress.dataset.id}:${progress.dataset.captured}` : null;
 
   return (
     <div className="h-full flex flex-col">
@@ -379,7 +378,6 @@ function CaptureMode({
             className="flex-1 min-h-[300px]"
             stagePosition={machine?.connected ? machine.position_mm : undefined}
             hud={hud}
-            flashKey={flashKey}
             scanning={running}
             locked={running}
           />

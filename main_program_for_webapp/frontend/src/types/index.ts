@@ -244,6 +244,27 @@ export interface ReferenceProfile {
 }
 
 
+export interface FrameBox {
+  label: string;
+  conf: number;
+  /** Normalized [x1, y1, x2, y2]. */
+  box: [number, number, number, number];
+}
+
+export interface CapturedFrame {
+  index: number;
+  preview: string | null;
+  boxes: FrameBox[];
+}
+
+/** Every frame analyzed so far for the point a scan is working on. */
+export interface PointFrames {
+  key: string;
+  pointIndex: number;
+  target: number;
+  frames: CapturedFrame[];
+}
+
 export interface ScanProgressEvent {
   event: "active_run" | "point_start" | "point_capturing" | "point_frame" | "point_complete" | "complete" | "aborted" | "error";
   run_id?: string;
@@ -254,6 +275,9 @@ export interface ScanProgressEvent {
   name?: string;
   frame_index?: number;
   target_frames?: number;
+  /** point_frame: small JPEG data URL of the analyzed frame + its boxes (normalized). */
+  preview?: string | null;
+  boxes?: FrameBox[];
   message?: string;
   error?: string;
   report?: AOIRunReport;

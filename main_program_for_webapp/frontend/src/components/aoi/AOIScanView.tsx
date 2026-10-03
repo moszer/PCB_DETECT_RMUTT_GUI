@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Camera, Columns2, Grid3x3, Image as ImageIcon, MapPin, Move, SlidersHorizontal, Video } from "lucide-react";
-import type { AOIPointResult, AOIRunReport, CustomPointRequest, InspectionResult, ReferenceSummary, ScanProgressEvent, SystemStatus } from "@/types";
+import type { AOIPointResult, AOIRunReport, CustomPointRequest, InspectionResult, PointFrames, ReferenceSummary, ScanProgressEvent, SystemStatus } from "@/types";
 import { API_BASE, api, errorMessage } from "@/lib/api";
 import { captureInspection } from "@/lib/capture-inspection";
 import type { ExpectedComponent } from "@/lib/board-inspection";
@@ -34,6 +34,7 @@ interface AOIScanViewProps {
   status: SystemStatus | null;
   report: AOIRunReport | null;
   progress: ScanProgressEvent | null;
+  pointFrames: PointFrames | null;
   references: ReferenceSummary[];
   params: InspectionParams;
   setParams: SetParams;
@@ -53,7 +54,7 @@ const PROGRESS_TITLE: Partial<Record<ScanProgressEvent["event"], string>> = {
   point_complete: "ตรวจจุดเสร็จ",
 };
 
-export function AOIScanView({ status, report, progress, references, params, setParams, onRefreshStatus }: AOIScanViewProps) {
+export function AOIScanView({ status, report, progress, pointFrames, references, params, setParams, onRefreshStatus }: AOIScanViewProps) {
   const toast = useToast();
   const machine = status?.machine ?? null;
   const scanning = report?.status === "running";
@@ -90,11 +91,7 @@ export function AOIScanView({ status, report, progress, references, params, setP
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [pickedGridRef, setGridReferenceId] = useState("");
   const [snapping, setSnapping] = useState(false);
-  const [localFlash, setLocalFlash] = useState<number | null>(null);
-  const shutter = () => {
-    sfx.shutter();
-    setLocalFlash(Date.now());
-  };
+  const shutter = () => sfx.shutter();
   const [pick, setPick] = useState<{ item: OutputItem; at: string | null } | null>(null);
   // Frozen frame shown in the output pane while a test snap / scan point is analyzed.
   const [snapPending, setSnapPending] = useState<PendingFrame | null>(null);
@@ -330,7 +327,6 @@ export function AOIScanView({ status, report, progress, references, params, setP
 
   const scanZoom = scanning ? progress?.zoom ?? 1 : liveZoom;
   const capturing = scanning && (progress?.event === "point_frame" || progress?.event === "point_capturing");
-  const flashKey = capturing ? `${progress?.run_id}:${progress?.point_index}:${progress?.frame_index ?? "c"}` : localFlash;
   const scanningIndex = scanning && report?.plan.plan_mode === "custom" ? (progress?.point_index ?? null) : null;
   let hud: FeedHud | null = null;
   if (scanning && progress?.point_index !== undefined) {
@@ -373,7 +369,10 @@ export function AOIScanView({ status, report, progress, references, params, setP
       ? {
           key: capturingKey,
           image: scanFrame?.key === capturingKey ? scanFrame.image : null,
+          frames: pointFrames?.key === capturingKey ? pointFrames.frames : [],
+          target: progress?.target_frames ?? (pointFrames?.key === capturingKey ? pointFrames.target : undefined),
           label: `จุด ${(progress?.point_index ?? 0) + 1}/${progress?.total_points ?? "?"}`,
+          waiting: "รอภาพนิ่งและถ่ายภาพ",
         }
       : null);
 
@@ -489,7 +488,6 @@ export function AOIScanView({ status, report, progress, references, params, setP
                 onZoomChange={scanning ? undefined : setLiveZoom}
                 stagePosition={machine?.connected ? machine.position_mm : undefined}
                 hud={hud}
-                flashKey={flashKey}
                 scanning={capturing}
                 locked={scanning}
               />

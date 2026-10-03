@@ -256,7 +256,7 @@ input[type="number"]::-webkit-outer-spin-button {
 
 /* ── Detection result reveal (components/aoi/ResultOverlay.tsx) ──
    Boxes trace their outline in scan order (--len = perimeter, per-box delay inline),
-   then fill; problems pulse red rings, OK slots flash a check. */
+   then fill. Nothing flashes or pulses. */
 .res-draw {
   stroke-dashoffset: var(--len);
   fill-opacity: 0;
@@ -267,20 +267,8 @@ input[type="number"]::-webkit-outer-spin-button {
 .res-fade {
   animation: res-fade 260ms ease-out both;
 }
-.res-ripple {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: res-ripple 1.1s ease-out 3 both;
-}
-.res-tick {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: res-tick 900ms ease-out both;
-}
-.res-grid {
-  background-image: radial-gradient(circle, rgb(103 232 249 / 0.45) 1px, transparent 1.6px);
-  background-size: 28px 28px;
-  animation: res-grid 1.4s ease-in-out infinite alternate;
+.res-indeterminate {
+  animation: res-indeterminate 1.2s ease-in-out infinite;
 }
 @keyframes res-draw {
   from { stroke-dashoffset: var(--len); }
@@ -294,21 +282,9 @@ input[type="number"]::-webkit-outer-spin-button {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-@keyframes res-ripple {
-  0% { transform: scale(0.5); opacity: 0; }
-  15% { opacity: 0.95; }
-  100% { transform: scale(1.7); opacity: 0; }
-}
-@keyframes res-tick {
-  0% { transform: scale(0.4); opacity: 0; }
-  25% { transform: scale(1.15); opacity: 1; }
-  45% { transform: scale(1); }
-  75% { opacity: 1; }
-  100% { opacity: 0; }
-}
-@keyframes res-grid {
-  from { opacity: 0.25; }
-  to { opacity: 0.7; }
+@keyframes res-indeterminate {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
 }
 
 @media (prefers-reduced-motion: reduce) {

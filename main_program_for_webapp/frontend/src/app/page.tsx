@@ -86,7 +86,7 @@ function Station() {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [polledScan, setPolledScan] = useState<AOIRunReport | null>(null);
   const [references, setReferences] = useState<ReferenceSummary[]>([]);
-  const { connected, machineState, scanProgress, datasetProgress } = useStationSocket();
+  const { connected, machineState, scanProgress, datasetProgress, pointFrames } = useStationSocket();
   useScanSounds(scanProgress);
   useDatasetSounds(datasetProgress);
 
@@ -168,6 +168,7 @@ function Station() {
               status={liveStatus}
               report={activeReport}
               progress={scanProgress}
+              pointFrames={pointFrames}
               references={references}
               params={params}
               setParams={setParams}

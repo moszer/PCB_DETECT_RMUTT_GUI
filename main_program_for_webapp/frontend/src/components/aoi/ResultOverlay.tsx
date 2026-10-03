@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useRef, useState } from "react";
-import { ScanSearch } from "lucide-react";
-import type { AOIPointResult, InspectionResult } from "@/types";
+import { Loader2 } from "lucide-react";
+import type { AOIPointResult, CapturedFrame, InspectionResult } from "@/types";
 import { classColor } from "@/lib/format";
 import { LABEL_FONT, LABEL_HEIGHT, layoutLabels, type NBox } from "@/lib/labelLayout";
 import { useElementSize } from "@/hooks/useElementSize";
+import { cx } from "../ui";
 
 type Kind = "ok" | "fail" | "review" | "plain";
 
@@ -89,7 +90,7 @@ function revealMs(n: number) {
 
 /**
  * Result image with boxes drawn in the browser so they can animate: each box traces its
- * outline in scan order, then OK slots flash a check and problems pulse red rings.
+ * outline in scan order; problems are drawn thicker in red with a label.
  * Falls back to the server-annotated image when the clean frame isn't available.
  */
 export function AnimatedResult({ item }: { item: ResultSource }) {
@@ -189,44 +190,6 @@ export function AnimatedResult({ item }: { item: ResultSource }) {
             );
           })}
 
-          {/* After the sweep: problems pulse, OK slots flash a check. */}
-          {order.map((m, k) => {
-            const [x1, y1, x2, y2] = m.box;
-            const cxp = (x1 + x2) / 2;
-            const cyp = (y1 + y2) / 2;
-            if (m.kind === "fail") {
-              const r = Math.max(Math.hypot(x2 - x1, y2 - y1) / 2, px(14));
-              return (
-                <circle
-                  key={`p${k}`}
-                  cx={cxp}
-                  cy={cyp}
-                  r={r}
-                  fill="none"
-                  stroke={KIND_COLOR.fail}
-                  strokeWidth={px(3)}
-                  className="res-ripple"
-                  style={{ animationDelay: `${done + (k % 6) * 90}ms` }}
-                />
-              );
-            }
-            if (m.kind !== "ok") return null;
-            const s = Math.min(px(9), (x2 - x1) * 0.35, (y2 - y1) * 0.35);
-            if (s < px(4)) return null;
-            return (
-              <path
-                key={`c${k}`}
-                d={`M${cxp - s},${cyp}L${cxp - s * 0.3},${cyp + s * 0.7}L${cxp + s},${cyp - s * 0.6}`}
-                fill="none"
-                stroke="#fff"
-                strokeWidth={px(2.5)}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="res-tick"
-                style={{ animationDelay: `${done + k * 6}ms` }}
-              />
-            );
-          })}
         </svg>
       )}
 
@@ -257,24 +220,128 @@ export function AnimatedResult({ item }: { item: ResultSource }) {
   );
 }
 
-/** The frozen frame being analyzed, with a sweep line — shown until the result arrives. */
-export function AnalyzingFrame({ image, label }: { image: string | null; label: string }) {
+/** Boxes of one captured frame, drawn statically over its preview (object-contain aligned). */
+function FrameImage({ frame, className = "absolute inset-0" }: { frame: CapturedFrame; className?: string }) {
+  const [dims, setDims] = useState<{ src: string; w: number; h: number } | null>(null);
+  const size = frame.preview && dims?.src === frame.preview ? dims : null;
+  if (!frame.preview) return <div className={cx("bg-viewport", className)} />;
   return (
-    <div className="absolute inset-0 animate-fade">
-      {image ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={image} alt="ภาพที่กำลังวิเคราะห์" className="absolute inset-0 size-full object-contain brightness-75 saturate-50" />
-      ) : (
-        <div className="absolute inset-0 bg-viewport" />
+    <div className={className}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={frame.preview}
+        alt={`เฟรม ${frame.index}`}
+        className="absolute inset-0 size-full object-contain"
+        onLoad={(e) => setDims({ src: frame.preview!, w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
+      />
+      {size && (
+        <svg viewBox={`0 0 ${size.w} ${size.h}`} preserveAspectRatio="xMidYMid meet" className="absolute inset-0 size-full pointer-events-none">
+          {frame.boxes.map((b, i) => (
+            <rect
+              key={i}
+              x={b.box[0] * size.w}
+              y={b.box[1] * size.h}
+              width={(b.box[2] - b.box[0]) * size.w}
+              height={(b.box[3] - b.box[1]) * size.h}
+              fill={classColor(b.label)}
+              fillOpacity={0.12}
+              stroke={classColor(b.label)}
+              strokeWidth={1.5}
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+        </svg>
       )}
-      <div className="absolute inset-0 res-grid pointer-events-none" />
-      <div className="absolute inset-x-0 h-0.5 bg-cyan-300/90 shadow-[0_0_14px_3px_rgb(103_232_249/0.6)] animate-scanline pointer-events-none" />
-      <div className="absolute inset-0 grid place-items-center pointer-events-none">
-        <span className="h-8 px-3 rounded-full bg-black/65 backdrop-blur text-sm text-white flex items-center gap-2 animate-pop">
-          <ScanSearch className="size-4 text-cyan-300 animate-pulse" />
-          กำลังวิเคราะห์… <span className="text-white/60 text-xs">{label}</span>
-        </span>
+    </div>
+  );
+}
+
+/**
+ * Shown while a test snap / scan point is being analyzed: a loading bar plus every frame
+ * captured so far (click a thumbnail to look at it), no flashing effects.
+ */
+export function CaptureProgress({
+  image,
+  label,
+  frames = [],
+  target,
+  waiting = "กำลังวิเคราะห์",
+}: {
+  image: string | null;
+  label: string;
+  frames?: CapturedFrame[];
+  target?: number;
+  /** Status text before the first frame arrives. */
+  waiting?: string;
+}) {
+  const [picked, setPicked] = useState<number | null>(null);
+  const sorted = [...frames].sort((a, b) => a.index - b.index);
+  const latest = sorted[sorted.length - 1];
+  const shown = (picked !== null && sorted.find((f) => f.index === picked)) || latest;
+  const total = Math.max(target ?? 0, sorted.length);
+  const percent = total ? (sorted.length / total) * 100 : 0;
+  const status = !sorted.length ? waiting : total > 1 ? `เฟรม ${sorted.length}/${total}` : "กำลังวิเคราะห์";
+
+  return (
+    <div className="absolute inset-0 flex flex-col">
+      <div className="relative flex-1 min-h-0">
+        {shown ? (
+          <FrameImage frame={shown} />
+        ) : image ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={image} alt="ภาพที่กำลังวิเคราะห์" className="absolute inset-0 size-full object-contain" />
+        ) : null}
+
+        <div className="absolute top-3 left-3 right-3 flex flex-col gap-1.5 pointer-events-none">
+          <span className="self-start h-7 px-2.5 rounded-md bg-black/65 backdrop-blur text-xs text-white flex items-center gap-2">
+            <Loader2 className="size-3.5 animate-spin text-cyan-300" />
+            กำลังตรวจ {label} · {status}
+            {shown && <span className="text-white/60">· พบ {shown.boxes.length} ชิ้น</span>}
+          </span>
+          <div className="h-1 rounded-full bg-white/15 overflow-hidden">
+            {sorted.length ? (
+              <div className="h-full bg-cyan-400 transition-[width] duration-300 ease-out" style={{ width: `${percent}%` }} />
+            ) : (
+              <div className="h-full w-1/3 bg-cyan-400/70 res-indeterminate" />
+            )}
+          </div>
+        </div>
       </div>
+
+      {total > 1 && (
+        <div className="flex gap-1.5 p-2 overflow-x-auto shrink-0 bg-black/40">
+          {Array.from({ length: total }, (_, i) => {
+            const f = sorted.find((x) => x.index === i + 1);
+            const active = !!f && shown?.index === f.index;
+            return (
+              <button
+                key={i}
+                type="button"
+                disabled={!f}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (f) setPicked(f === latest ? null : f.index);
+                }}
+                className={cx(
+                  "relative h-14 aspect-square shrink-0 rounded-md overflow-hidden border-2 bg-viewport",
+                  f ? "cursor-pointer" : "cursor-default",
+                  active ? "border-cyan-400" : f ? "border-transparent hover:border-white/40" : "border-white/10"
+                )}
+              >
+                {f ? (
+                  <FrameImage frame={f} />
+                ) : i === sorted.length ? (
+                  <Loader2 className="absolute inset-0 m-auto size-4 animate-spin text-white/50" />
+                ) : null}
+                <span className="absolute bottom-0 inset-x-0 bg-black/65 text-[9px] text-white font-mono tabular leading-4">
+                  F{i + 1}
+                  {f ? ` · ${f.boxes.length}` : ""}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

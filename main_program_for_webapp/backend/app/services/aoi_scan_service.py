@@ -1,6 +1,7 @@
 """AOI scan orchestration: Move -> Settle -> Fresh Frame -> Infer -> Evaluate -> Save."""
 from __future__ import annotations
 
+import base64
 import logging
 import threading
 import time
@@ -31,6 +32,8 @@ from ..core.schemas import (
     ScanPoint,
     Verdict,
 )
+import cv2
+
 from .camera_service import camera_service
 from .inference_service import inference_service
 from .machine_service import machine_service
@@ -261,6 +264,21 @@ class AOIScanService:
             "report": report.model_dump()
         })
 
+    @staticmethod
+    def frame_preview(frame, detections: List[Detection], max_side: int = 640) -> Dict[str, Any]:
+        """Small JPEG of an analyzed frame + its normalized boxes, so the UI can show every frame live."""
+        h, w = frame.shape[:2]
+        scale = min(1.0, max_side / max(h, w))
+        small = cv2.resize(frame, (max(1, int(w * scale)), max(1, int(h * scale))), interpolation=cv2.INTER_AREA) if scale < 1 else frame
+        ok, jpeg = cv2.imencode(".jpg", small, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+        return {
+            "preview": "data:image/jpeg;base64," + base64.b64encode(jpeg.tobytes()).decode() if ok else None,
+            "boxes": [
+                {"label": d.label, "conf": round(d.conf, 3), "box": [d.box[0] / w, d.box[1] / h, d.box[2] / w, d.box[3] / h]}
+                for d in detections
+            ],
+        }
+
     def _broadcast_point_event(self, event: str, report: AOIRunReport, pt: ScanPoint, **extra: Any):
         self._broadcast_progress({
             "event": event,
@@ -390,7 +408,8 @@ class AOIScanService:
                         frame_results.append(frame_dets)
 
                         self._broadcast_point_event(
-                            "point_frame", report, pt, frame_index=f_idx + 1, target_frames=actual_frames
+                            "point_frame", report, pt, frame_index=f_idx + 1, target_frames=actual_frames,
+                            **self.frame_preview(cur_f, cur_dets),
                         )
 
                         if f_idx < actual_frames - 1:
@@ -480,6 +499,9 @@ class AOIScanService:
 
                     if self._stop_event.is_set():
                         break
+                    self._broadcast_point_event(
+                        "point_frame", report, pt, frame_index=1, target_frames=1, **self.frame_preview(frame, detections)
+                    )
 
                     # 6. Evaluate against reference or record golden points
                     pt_key = f"{pt.col}_{pt.row}"

@@ -23,8 +23,6 @@ interface LiveCameraFeedProps {
   hud?: FeedHud | null;
   /** Disable camera switching (e.g. during a scan the backend rejects it anyway). */
   locked?: boolean;
-  /** Changing this value plays a shutter flash (one per captured frame). */
-  flashKey?: string | number | null;
   /** Sweep a scan line over the image while a scan is capturing. */
   scanning?: boolean;
 }
@@ -79,7 +77,7 @@ function MjpegImage({ src, onFail, ...rest }: { src: string; onFail: () => void 
  * The single live camera view used across the app: MJPEG stream with an automatic
  * snapshot fallback, alignment reticle, zoom preview and the one camera-settings menu.
  */
-export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePosition, hud, locked, flashKey, scanning }: LiveCameraFeedProps) {
+export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePosition, hud, locked, scanning }: LiveCameraFeedProps) {
   const [mode, setMode] = useState<"stream" | "snapshot">("stream");
   const [streamKey, setStreamKey] = useState(() => Date.now());
   const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
@@ -180,8 +178,6 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
       {scanning && (
         <div className="absolute inset-x-0 h-0.5 bg-cyan-300/90 shadow-[0_0_14px_3px_rgb(103_232_249/0.6)] animate-scanline pointer-events-none" />
       )}
-      {/* Remounting on a new key restarts the CSS animation: one flash per captured frame. */}
-      {flashKey != null && <div key={flashKey} className="absolute inset-0 bg-white animate-flash pointer-events-none" />}
 
       {/* Top-left: source + resolution */}
       <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap max-w-[70%]">
