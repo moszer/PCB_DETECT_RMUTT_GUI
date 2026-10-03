@@ -39,9 +39,13 @@ SYSTEM_PROMPT = """คุณคือผู้ช่วยวิศวกรอ�
 
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse"
-# Tried in order: the next one is used when a model is overloaded (503) or rate-limited (429).
-DEFAULT_GEMINI_MODELS = "gemini-flash-latest,gemini-3.5-flash,gemini-2.5-flash,gemini-flash-lite-latest"
+# Tried in order: the next one is used when a model is overloaded (503), rate-limited (429)
+# or gone (404 - e.g. "no longer available to new users", while still listed by the API).
+DEFAULT_GEMINI_MODELS = "gemini-flash-latest,gemini-3.8-flash,gemini-3.5-flash,gemini-flash-lite-latest"
 RETRYABLE = (429, 500, 502, 503, 504)
+UNAVAILABLE = (404,)
+# Models that answered 404 this session: skipped from then on (cleared on restart).
+_dead_models: set = set()
 
 
 def provider() -> str:
@@ -57,7 +61,15 @@ def configured() -> bool:
 
 def gemini_models() -> List[str]:
     raw = os.environ.get("GEMINI_MODELS") or os.environ.get("GEMINI_MODEL") or DEFAULT_GEMINI_MODELS
-    return [m.strip() for m in raw.split(",") if m.strip()]
+    models = [m.strip() for m in raw.split(",") if m.strip()]
+    alive = [m for m in models if m not in _dead_models]
+    return alive or models  # never end up with nothing to try
+
+
+def mark_unavailable(model: str) -> None:
+    if model not in _dead_models:
+        logger.warning("Gemini model %s is unavailable (404); skipping it from now on", model)
+        _dead_models.add(model)
 
 
 def model_name() -> str:
@@ -171,6 +183,9 @@ async def _stream_gemini(messages: List[Dict[str, Any]]) -> AsyncIterator[str]:
                         except ValueError:
                             pass
                         last_error = f"HTTP {res.status_code} ({model}): {detail[:200]}"
+                        if res.status_code in UNAVAILABLE:
+                            mark_unavailable(model)
+                            continue
                         if res.status_code in RETRYABLE:
                             logger.info("Gemini %s busy (%s), trying next", model, res.status_code)
                             continue

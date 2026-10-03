@@ -284,7 +284,10 @@ def _event(kind: str, **data: Any) -> str:
     return json.dumps({"type": kind, **data}, ensure_ascii=False, default=str) + "\n"
 
 
-RETRY_DELAYS_SEC = (2, 4, 6)
+# One quick retry per model, then move on; if every model is busy, wait and go round again.
+RETRY_DELAYS_SEC = (1,)
+ROUND_PAUSE_SEC = 5.0
+MODEL_ROUNDS = 2
 
 
 class _ModelBusy(Exception):
@@ -301,6 +304,9 @@ async def _generate(client: httpx.AsyncClient, model: str, headers: Dict[str, st
         if res.status_code == 200:
             return res.json()
         last = f"HTTP {res.status_code} ({model}): {res.text[:200]}"
+        if res.status_code in chat_service.UNAVAILABLE:
+            chat_service.mark_unavailable(model)
+            raise _ModelBusy(last)  # same handling as a busy model: restart the turn on the next one
         if res.status_code not in chat_service.RETRYABLE:
             raise RuntimeError(last)
         logger.info("Agent model %s busy (%s), retrying", model, res.status_code)
@@ -324,48 +330,52 @@ async def run_agent(history: List[Dict[str, str]], page: Optional[str]) -> Async
     last_error = ""
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=15)) as client:
-            for model in chat_service.gemini_models():
-                contents = list(base)
-                body: Dict[str, Any] = {
-                    "systemInstruction": {"parts": [{"text": system}]},
-                    "tools": [{"functionDeclarations": DECLARATIONS}],
-                    "generationConfig": {"maxOutputTokens": 8192},
-                    "contents": contents,
-                }
-                try:
-                    for _ in range(MAX_TOOL_ROUNDS + 1):
-                        data = await _generate(client, model, headers, body)
-                        content = ((data.get("candidates") or [{}])[0]).get("content") or {"role": "model", "parts": []}
-                        content.setdefault("role", "model")
-                        parts = content.get("parts") or []
-                        calls = [p["functionCall"] for p in parts if p.get("functionCall")]
-                        if not calls:
-                            text = "".join(p.get("text", "") for p in parts if p.get("text") and not p.get("thought")).strip()
-                            yield _event("text", text=text or "(ไม่มีคำตอบ)", model=model)
-                            return
-                        contents.append(content)  # keep thought signatures exactly as returned
-                        responses = []
-                        for call in calls:
-                            name, args = call.get("name", ""), call.get("args") or {}
-                            yield _event("tool", name=name, label=TOOL_LABELS.get(name, name), args=args)
-                            result = await asyncio.to_thread(run_tool, name, args)
-                            if name == "navigate" and isinstance(result, dict) and result.get("ok") and result["page"] not in navigated:
-                                navigated.add(result["page"])
-                                yield _event("navigate", page=result["page"])
-                            response = {"name": name, "response": {"result": result}}
-                            if call.get("id"):
-                                response["id"] = call["id"]
-                            responses.append({"functionResponse": response})
-                        contents.append({"role": "user", "parts": responses})
-                    yield _event("error", message="ใช้เครื่องมือหลายรอบเกินไป ลองถามให้เจาะจงขึ้น")
-                    return
-                except _ModelBusy as exc:
-                    last_error = str(exc)
-                    yield _event("tool", name="retry", label=f"{model} ไม่ว่าง — เปลี่ยนรุ่น AI แล้วลองใหม่", args={})
-                    continue
-                except RuntimeError as exc:
-                    yield _event("error", message=f"AI ตอบไม่ได้ — {exc}")
-                    return
+            for round_no in range(MODEL_ROUNDS):
+                if round_no:
+                    await asyncio.sleep(ROUND_PAUSE_SEC)
+                    yield _event("tool", name="retry", label="ทุกรุ่นไม่ว่าง — รอสักครู่แล้วลองใหม่", args={})
+                for model in chat_service.gemini_models():
+                    contents = list(base)
+                    body: Dict[str, Any] = {
+                        "systemInstruction": {"parts": [{"text": system}]},
+                        "tools": [{"functionDeclarations": DECLARATIONS}],
+                        "generationConfig": {"maxOutputTokens": 8192},
+                        "contents": contents,
+                    }
+                    try:
+                        for _ in range(MAX_TOOL_ROUNDS + 1):
+                            data = await _generate(client, model, headers, body)
+                            content = ((data.get("candidates") or [{}])[0]).get("content") or {"role": "model", "parts": []}
+                            content.setdefault("role", "model")
+                            parts = content.get("parts") or []
+                            calls = [p["functionCall"] for p in parts if p.get("functionCall")]
+                            if not calls:
+                                text = "".join(p.get("text", "") for p in parts if p.get("text") and not p.get("thought")).strip()
+                                yield _event("text", text=text or "(ไม่มีคำตอบ)", model=model)
+                                return
+                            contents.append(content)  # keep thought signatures exactly as returned
+                            responses = []
+                            for call in calls:
+                                name, args = call.get("name", ""), call.get("args") or {}
+                                yield _event("tool", name=name, label=TOOL_LABELS.get(name, name), args=args)
+                                result = await asyncio.to_thread(run_tool, name, args)
+                                if name == "navigate" and isinstance(result, dict) and result.get("ok") and result["page"] not in navigated:
+                                    navigated.add(result["page"])
+                                    yield _event("navigate", page=result["page"])
+                                response = {"name": name, "response": {"result": result}}
+                                if call.get("id"):
+                                    response["id"] = call["id"]
+                                responses.append({"functionResponse": response})
+                            contents.append({"role": "user", "parts": responses})
+                        yield _event("error", message="ใช้เครื่องมือหลายรอบเกินไป ลองถามให้เจาะจงขึ้น")
+                        return
+                    except _ModelBusy as exc:
+                        last_error = str(exc)
+                        yield _event("tool", name="retry", label=f"{model} ใช้ไม่ได้ตอนนี้ — เปลี่ยนรุ่น AI แล้วลองใหม่", args={})
+                        continue
+                    except RuntimeError as exc:
+                        yield _event("error", message=f"AI ตอบไม่ได้ — {exc}")
+                        return
             yield _event("error", message=f"Gemini ทุกรุ่นไม่ว่างตอนนี้ ลองใหม่ในอีกสักครู่ — {last_error}")
     except httpx.HTTPError as exc:
         logger.warning("Agent request failed: %s", exc)

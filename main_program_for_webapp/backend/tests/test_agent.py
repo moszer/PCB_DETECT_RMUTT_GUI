@@ -122,3 +122,82 @@ class HeartbeatTests(unittest.TestCase):
         out = asyncio.run(run())
         self.assertGreaterEqual(out.count('{"type": "ping"}\n'), 1)
         self.assertEqual([l for l in out if "ping" not in l], ["a\n", "b\n"])
+
+
+class RetiredModelTests(unittest.TestCase):
+    """A model that is still listed but answers 404 ('no longer available to new users') is skipped."""
+
+    def setUp(self):
+        from app.services import chat_service
+
+        self.chat_service = chat_service
+        chat_service._dead_models.clear()
+        self.addCleanup(chat_service._dead_models.clear)
+
+    def _handler(self, calls):
+        def handler(request):
+            model = request.url.path.split("/")[-1].split(":")[0]
+            calls.append(model)
+            if model == "old-model":
+                return httpx.Response(404, json={"error": {"message": "no longer available to new users"}})
+            return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "ok"}]}}]})
+
+        return handler
+
+    def test_agent_skips_a_404_model_and_remembers_it(self):
+        calls = []
+        real = httpx.AsyncClient
+        env = {"AI_PROVIDER": "gemini", "GEMINI_API_KEY": "k", "GEMINI_MODELS": "old-model,new-model"}
+        with patch.dict(os.environ, env), \
+                patch("app.services.agent_service.httpx.AsyncClient", lambda **kw: real(transport=httpx.MockTransport(self._handler(calls)), **kw)):
+            async def run():
+                return [json.loads(l) async for l in agent_service.run_agent([{"role": "user", "content": "q"}], None)]
+
+            first = asyncio.run(run())
+            self.assertEqual(first[-1]["text"], "ok")
+            self.assertEqual(calls, ["old-model", "new-model"])
+            calls.clear()
+            asyncio.run(run())
+            self.assertEqual(calls, ["new-model"])  # the dead model is not tried again
+
+    def test_board_chat_skips_a_404_model(self):
+        calls = []
+        real = httpx.AsyncClient
+
+        def handler(request):
+            model = request.url.path.split("/")[-1].split(":")[0]
+            calls.append(model)
+            if model == "old-model":
+                return httpx.Response(404, json={"error": {"message": "gone"}})
+            return httpx.Response(200, text='data: {"candidates":[{"content":{"parts":[{"text":"hi"}]}}]}\n\n')
+
+        env = {"AI_PROVIDER": "gemini", "GEMINI_API_KEY": "k", "GEMINI_MODELS": "old-model,new-model"}
+        with patch.dict(os.environ, env), \
+                patch("app.services.chat_service.httpx.AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw)):
+            async def run():
+                return "".join([x async for x in self.chat_service.stream_reply([{"role": "user", "content": "q"}])])
+
+            self.assertEqual(asyncio.run(run()), "hi")
+        self.assertEqual(calls, ["old-model", "new-model"])
+
+
+class AllBusyTests(unittest.TestCase):
+    def test_goes_round_all_models_again_before_giving_up(self):
+        calls = []
+
+        def handler(request):
+            calls.append(request.url.path.split("/")[-1].split(":")[0])
+            if len(calls) <= 4:  # first pass: both models busy (2 tries each)
+                return httpx.Response(503, json={"error": {"message": "high demand"}})
+            return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "later"}]}}]})
+
+        real = httpx.AsyncClient
+        with patch.dict(os.environ, {"AI_PROVIDER": "gemini", "GEMINI_API_KEY": "k", "GEMINI_MODELS": "m1,m2"}), \
+                patch.object(agent_service, "RETRY_DELAYS_SEC", (0,)), patch.object(agent_service, "ROUND_PAUSE_SEC", 0), \
+                patch("app.services.agent_service.httpx.AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw)):
+            async def run():
+                return [json.loads(l) async for l in agent_service.run_agent([{"role": "user", "content": "q"}], None)]
+
+            events = asyncio.run(run())
+        self.assertEqual(events[-1]["text"], "later")
+        self.assertEqual(calls, ["m1", "m1", "m2", "m2", "m1"])
