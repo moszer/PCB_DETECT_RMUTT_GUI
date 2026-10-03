@@ -201,3 +201,30 @@ class AllBusyTests(unittest.TestCase):
             events = asyncio.run(run())
         self.assertEqual(events[-1]["text"], "later")
         self.assertEqual(calls, ["m1", "m1", "m2", "m2", "m1"])
+
+
+class PartMarkingsToolTests(unittest.TestCase):
+    def test_reads_only_the_asked_classes_and_merges_part_numbers(self):
+        import cv2
+        import numpy as np
+
+        from app.config import UPLOADS_DIR
+
+        img = np.full((400, 600, 3), 40, np.uint8)
+        cv2.putText(img, "LM317T", (200, 215), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (225, 225, 225), 3)
+        path = UPLOADS_DIR / "test_agent_markings.png"
+        cv2.imwrite(str(path), img)
+        self.addCleanup(path.unlink, missing_ok=True)
+        ic_box = [140, 130, 460, 270]
+        report = {"results": [
+            {"point_index": 0, "name": "จุด 1", "image_path": str(path), "detections": [
+                {"label": "ic", "box": ic_box}, {"label": "resistor", "box": [10, 10, 60, 40]}]},
+            {"point_index": 1, "name": "จุด 2", "image_path": str(path), "detections": [{"label": "ic", "box": ic_box}]},
+        ]}
+        with patch("app.routers.history.get_run_details", return_value=report):
+            res = agent_service.run_tool("read_part_markings", {"run_id": "r", "labels": ["ic"]})
+        self.assertEqual(res["with_text"], 2)  # the resistor was not read
+        self.assertEqual({p["class"] for p in res["parts"]}, {"ic"})
+        top = res["likely_part_numbers"][0]
+        self.assertEqual((top["part_number"], top["count"], top["points"]), ("LM317T", 2, [1, 2]))
+        self.assertIn("read_part_markings", {d["name"] for d in agent_service.DECLARATIONS})

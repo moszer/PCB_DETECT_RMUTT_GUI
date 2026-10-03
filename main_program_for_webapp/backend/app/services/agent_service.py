@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -39,6 +40,7 @@ SYSTEM_PROMPT = f"""คุณคือผู้ช่วย AI ของสถ�
 
 เว็บแอปมีหน้าต่างๆ: {json.dumps(PAGES, ensure_ascii=False)}
 - ถ้าคำถามต้องใช้ข้อมูล ให้เรียกเครื่องมือก่อนตอบ (เรียกได้หลายตัว/หลายรอบ)
+- ถามเบอร์/ยี่ห้อของ IC หรือตัวอักษรบนชิ้น ให้เรียก list_scan_runs แล้ว read_part_markings (ต้องระบุ run_id; ถ้าผู้ใช้ไม่ระบุรอบ ใช้รอบล่าสุด) แล้วสรุปเบอร์ที่อ่านได้พร้อมบอกว่าชิปนั้นคืออะไรจากความรู้ของคุณ บอกด้วยว่า OCR อาจผิดบางตัวอักษร
 - ถ้าผู้ใช้ขอให้ไป/เปิดหน้าใด หรือคำตอบจะดูต่อได้ดีที่หน้าใด ให้เรียก navigate
 - คุณอ่านข้อมูลได้อย่างเดียว สั่งเครื่อง/สแกน/แก้การตั้งค่าไม่ได้ ถ้าถูกขอให้บอกว่าต้องทำที่หน้าไหน
 - เวลาเป็นเวลาท้องถิ่นของสถานี ตอบสรุปเป็นข้อๆ หรือตารางเมื่อเหมาะสม"""
@@ -140,6 +142,79 @@ def get_scan_run(run_id: str) -> Dict[str, Any]:
     return {**_run_row(r), "point_results": [_point_summary(p) for p in points]}
 
 
+MAX_OCR_PARTS = 60
+_PART_NUMBER = re.compile(r"[A-Za-z0-9][A-Za-z0-9\-/+]{4,}")
+
+
+def part_number_candidates(parts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Tokens that look like part numbers (5+ chars, letters and digits), merged across points."""
+    found: Dict[str, Dict[str, Any]] = {}
+    for part in parts:
+        for token in _PART_NUMBER.findall(part["text"].replace("|", " ")):
+            if not (any(c.isalpha() for c in token) and any(c.isdigit() for c in token)):
+                continue
+            g = found.setdefault(token.upper(), {"part_number": token.upper(), "count": 0, "points": [], "class": part["class"]})
+            g["count"] += 1
+            if part["point"] not in g["points"]:
+                g["points"].append(part["point"])
+    return sorted(found.values(), key=lambda g: (-g["count"], g["part_number"]))
+
+
+def read_part_markings(run_id: str, labels: Optional[List[str]] = None, point_index: Optional[int] = None) -> Dict[str, Any]:
+    """OCR the text printed on parts (IC part numbers, capacitor values...) of one scan run.
+
+    Crops each detected part out of the point's full-resolution photo and reads it in all four
+    orientations (Apple Vision, or tesseract). Only YOLO's detections of the asked classes are read.
+    """
+    import cv2
+
+    from ..core.ocr import engine_name, read_part_text
+    from ..routers.history import get_run_details
+
+    if not engine_name():
+        return {"error": "ไม่มี OCR engine ในเครื่องนี้"}
+    wanted = {l.strip().lower() for l in (labels or ["ic"]) if l and l.strip()}
+    report = get_run_details(run_id)
+    parts: List[Dict[str, Any]] = []
+    no_text = skipped = 0
+    for p in report.get("results") or []:
+        if point_index is not None and p.get("point_index") != point_index:
+            continue
+        dets = [d for d in p.get("detections") or [] if str(d.get("label", "")).lower() in wanted]
+        if not dets:
+            continue
+        image = cv2.imread(p.get("image_path") or "")
+        if image is None:
+            skipped += len(dets)
+            continue
+        h, w = image.shape[:2]
+        for d in sorted(dets, key=lambda d: (d["box"][1], d["box"][0])):  # top-to-bottom, left-to-right
+            if len(parts) + no_text >= MAX_OCR_PARTS:
+                skipped += 1
+                continue
+            x1, y1, x2, y2 = d["box"]
+            reading = read_part_text(image, [max(0, x1 / w), max(0, y1 / h), min(1, x2 / w), min(1, y2 / h)])
+            if not reading["text"]:
+                no_text += 1
+                continue
+            parts.append({"point": (p.get("point_index") or 0) + 1, "point_name": p.get("name"), "class": d.get("label"),
+                          "text": " | ".join(reading["text"].split("\n"))[:200], "confidence": reading["confidence"]})
+    groups: Dict[str, Dict[str, Any]] = {}
+    for part in parts:
+        key = "".join(ch for ch in part["text"].upper() if ch.isalnum())
+        g = groups.setdefault(key, {"text": part["text"], "count": 0, "points": []})
+        g["count"] += 1
+        if part["point"] not in g["points"]:
+            g["points"].append(part["point"])
+    return {
+        "run_id": run_id, "classes": sorted(wanted), "with_text": len(parts), "no_readable_text": no_text, "skipped_over_limit": skipped,
+        "note": "OCR อาจอ่านผิดบางตัวอักษร และชิ้นเล็ก/ไม่มีตัวอักษรจะอ่านไม่ได้; ภาพแต่ละจุดเป็นแค่บางส่วนของบอร์ด ชิปเดียวกันอาจถูกนับซ้ำข้ามจุดที่ภาพซ้อนกัน",
+        "likely_part_numbers": part_number_candidates(parts),
+        "distinct_markings": sorted(groups.values(), key=lambda g: -g["count"]),
+        "parts": parts,
+    }
+
+
 def list_single_inspections(limit: int = 10) -> Dict[str, Any]:
     from ..routers.history import list_single_inspections as singles
 
@@ -228,6 +303,7 @@ TOOLS: Dict[str, Callable[..., Any]] = {
     "get_statistics": get_statistics,
     "list_scan_runs": list_scan_runs,
     "get_scan_run": get_scan_run,
+    "read_part_markings": read_part_markings,
     "list_single_inspections": list_single_inspections,
     "list_reference_profiles": list_reference_profiles,
     "get_reference_profile": get_reference_profile,
@@ -247,6 +323,13 @@ DECLARATIONS = [
                                                      "verdict": {"type": "string", "enum": ["PASS", "FAIL", "REVIEW", "ERROR"]}}}},
     {"name": "get_scan_run", "description": "รายละเอียดรอบสแกนหนึ่งรอบ: ผลทุกจุด เหตุผล ชิ้นที่พบ ชิ้นที่ขาด/ผิด",
      "parameters": {"type": "object", "properties": {"run_id": _STR}, "required": ["run_id"]}},
+    {"name": "read_part_markings",
+     "description": "อ่านตัวอักษรที่พิมพ์บนชิ้นส่วนด้วย OCR จากภาพถ่ายจริงของรอบสแกน เช่น เบอร์ IC (EPM570T144C5, MAX232CPE), ค่าตัวเก็บประจุ — ใช้เมื่อถามว่าชิปเบอร์อะไร/ยี่ห้ออะไร/มีชิปอะไรบ้าง (ช้ากว่าเครื่องมืออื่นเล็กน้อย)",
+     "parameters": {"type": "object", "properties": {
+         "run_id": _STR,
+         "labels": {"type": "array", "items": {"type": "string"}, "description": "คลาสที่จะอ่าน เช่น [\"ic\"] (ค่าเริ่ม ic) หรือ [\"capacitor\",\"connector\"]"},
+         "point_index": {"type": "integer", "description": "อ่านเฉพาะจุดนี้ (เริ่มที่ 0) ถ้าไม่ระบุอ่านทุกจุดของรอบ"}},
+         "required": ["run_id"]}},
     {"name": "list_single_inspections", "description": "รายการตรวจภาพเดี่ยวล่าสุด (รวมถ่ายทดสอบ)",
      "parameters": {"type": "object", "properties": {"limit": {"type": "integer"}}}},
     {"name": "list_reference_profiles", "description": "รายการโปรไฟล์อ้างอิง (ต้นแบบ)"},
@@ -263,7 +346,7 @@ DECLARATIONS = [
 
 TOOL_LABELS = {
     "get_station_status": "ดูสถานะสถานี", "get_statistics": "ดูสถิติ Yield", "list_scan_runs": "ดูรายการรอบสแกน",
-    "get_scan_run": "ดูผลรอบสแกน", "list_single_inspections": "ดูการตรวจภาพเดี่ยว", "list_reference_profiles": "ดูโปรไฟล์อ้างอิง",
+    "get_scan_run": "ดูผลรอบสแกน", "read_part_markings": "อ่านตัวอักษรบนชิ้น (OCR)", "list_single_inspections": "ดูการตรวจภาพเดี่ยว", "list_reference_profiles": "ดูโปรไฟล์อ้างอิง",
     "get_reference_profile": "ดูรายละเอียดโปรไฟล์", "list_datasets": "ดูชุดข้อมูล", "get_dataset": "ดูรายละเอียดชุดข้อมูล",
     "list_models": "ดูรายการโมเดล", "get_settings": "ดูการตั้งค่า", "navigate": "เปิดหน้า",
 }
