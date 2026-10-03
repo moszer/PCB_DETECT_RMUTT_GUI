@@ -58,6 +58,31 @@ class HeightMapTests(unittest.TestCase):
                 grid = np.array(r["heights"]).reshape(r["grid_h"], r["grid_w"])
                 self.assertLess(abs(float(np.median(grid[:5, :]))), 0.6)
 
+    def test_noise_and_shiny_tops_do_not_spike_the_max(self):
+        """Real frames: sensor noise and a texture-less (shiny) patch must not create 20+ mm spikes."""
+        a, b = scene((200, 0), 6.0)
+        rng = np.random.default_rng(7)
+        for img, dx in ((a, 0), (b, int(200 * Z0 / (Z0 - 6.0)))):
+            x1, y1, x2, y2 = BOX
+            img[y1 + 20:y2 - 20, x1 + 20 + dx:x1 + 80 + dx] = 235  # flat glare on the part's top
+            img[:] = np.clip(img.astype(np.int16) + rng.normal(0, 6, img.shape), 0, 255).astype(np.uint8)
+        dx, dy, _ = estimate_shift(a, b)
+        r = height_map(a, b, (dx, dy), BOX, Z0)
+        self.assertAlmostEqual(r["stats"]["median_mm"], 6.0, delta=1.0)
+        self.assertLess(r["stats"]["max_mm"], 9.0)
+        self.assertLess(max(r["heights"]), 12.0)
+
+    def test_isolated_spikes_are_rejected(self):
+        from app.core.depth import reject_outliers
+
+        h = np.full((60, 60), 5.0, np.float32)
+        h[10, 10] = 25.0
+        h[40, 30] = -4.0
+        valid = reject_outliers(h, np.ones_like(h, bool))
+        self.assertFalse(valid[10, 10])
+        self.assertFalse(valid[40, 30])
+        self.assertTrue(valid[30, 30])
+
     def test_rejects_frames_that_did_not_move(self):
         a, _ = scene((0, 0), 5)
         with self.assertRaises(ValueError):

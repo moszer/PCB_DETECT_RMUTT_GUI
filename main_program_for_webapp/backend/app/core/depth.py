@@ -25,7 +25,24 @@ from typing import Any, Dict, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
-MAX_PART_HEIGHT_MM = 30.0
+MAX_PART_HEIGHT_MM = 20.0
+# Matches on flat/shiny areas (local contrast below this) are dropped: they are mostly wrong.
+MIN_TEXTURE_STD = 4.0
+# A cell this far (mm) from its neighbourhood median is treated as a mismatch.
+OUTLIER_MM = 2.0
+
+
+def reject_outliers(heights: np.ndarray, valid: np.ndarray, window: int = 9, tol_mm: float = OUTLIER_MM) -> np.ndarray:
+    """Valid mask without isolated spikes (cells far from their neighbourhood median)."""
+    filled = np.where(valid, heights, np.nan).astype(np.float32)
+    fallback = float(np.nanmedian(filled)) if np.isfinite(filled).any() else 0.0
+    base = np.where(np.isfinite(filled), filled, fallback).astype(np.float32)
+    k = window if window % 2 else window + 1
+    # medianBlur needs uint8 for large kernels: quantize to 0.1 mm over the clipped range.
+    lo, hi = -5.0, MAX_PART_HEIGHT_MM + 5
+    q = np.clip((base - lo) / (hi - lo) * 255, 0, 255).astype(np.uint8)
+    med = cv2.medianBlur(q, k).astype(np.float32) / 255 * (hi - lo) + lo
+    return valid & (np.abs(base - med) <= tol_mm)
 
 
 def to_gray(frame: np.ndarray) -> np.ndarray:
@@ -112,22 +129,26 @@ def height_map(
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     pa, pb = clahe.apply(pa), clahe.apply(pb)
 
-    block = 7
+    block = 9
     sgbm = cv2.StereoSGBM_create(
         minDisparity=min_disp,
         numDisparities=num_disp,
         blockSize=block,
         P1=8 * block * block,
-        P2=32 * block * block,
-        disp12MaxDiff=2,
-        uniquenessRatio=5,
-        speckleWindowSize=80,
-        speckleRange=2,
+        P2=48 * block * block,
+        disp12MaxDiff=1,
+        uniquenessRatio=12,
+        speckleWindowSize=150,
+        speckleRange=1,
         mode=cv2.STEREO_SGBM_MODE_SGBM_3WAY,
     )
     # left = B, right = A: a point at u in B is at u - disp in A.
     raw = sgbm.compute(pb, pa).astype(np.float32) / 16.0
-    invalid = raw < min_disp
+    # Local contrast of the reference patch: texture-less areas give unreliable matches.
+    pbf = pb.astype(np.float32)
+    mean = cv2.blur(pbf, (block, block))
+    std = np.sqrt(np.maximum(cv2.blur(pbf * pbf, (block, block)) - mean * mean, 0))
+    invalid = (raw < min_disp) | (std < MIN_TEXTURE_STD)
     residual = np.where(invalid, np.nan, raw)
 
     # Back to frame-A orientation over the ROI: roi(x, y) -> patch(u, v).
@@ -153,9 +174,10 @@ def height_map(
     d_board = d0 + board_residual
     heights = camera_distance_mm * (1.0 - d_board / d)
     heights[~np.isfinite(heights)] = np.nan
-    heights = np.clip(heights, -5.0, MAX_PART_HEIGHT_MM + 5)
+    valid = np.isfinite(heights) & (heights > -5.0) & (heights < MAX_PART_HEIGHT_MM + 5)
+    valid = reject_outliers(np.nan_to_num(heights), valid)
+    heights = np.clip(np.nan_to_num(heights), -5.0, MAX_PART_HEIGHT_MM)
 
-    valid = np.isfinite(heights)
     valid_ratio = float(valid.mean())
     if valid_ratio < 0.15:
         raise ValueError("จับคู่ภาพได้น้อยเกินไป (ผิวเรียบหรือสะท้อนแสง)")
@@ -165,12 +187,14 @@ def height_map(
     if hole_mask.any():
         base = cv2.inpaint(base, hole_mask, 5, cv2.INPAINT_TELEA)
     base = cv2.medianBlur(base, 5)
+    base = cv2.GaussianBlur(base, (0, 0), 1.0)
 
     inside_vals = base[inside]
     inside_valid = valid[inside]
     measured = inside_vals[inside_valid] if inside_valid.any() else inside_vals
     stats = {
-        "max_mm": round(float(np.percentile(measured, 98)), 2) if measured.size else None,
+        # 95th percentile: the top of the part without the last few stray matches.
+        "max_mm": round(float(np.percentile(measured, 95)), 2) if measured.size else None,
         "median_mm": round(float(np.median(measured)), 2) if measured.size else None,
         "valid_ratio": round(valid_ratio, 3),
         "box_valid_ratio": round(float(inside_valid.mean()), 3) if inside_valid.size else 0.0,

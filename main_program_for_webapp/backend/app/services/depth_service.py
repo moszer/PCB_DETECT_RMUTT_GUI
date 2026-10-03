@@ -2,15 +2,17 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Sequence, Tuple
 
+import cv2
 import numpy as np
 
-from ..config import settings
+from ..config import STORAGE_DIR, settings
 from ..core.depth import crop_texture, estimate_shift, height_map
 from ..core.inspection import digital_zoom
 from .camera_service import camera_service
@@ -20,6 +22,22 @@ logger = logging.getLogger(__name__)
 
 # Short: a different board may be placed after a while (a new scan also clears the cache).
 PAIR_TTL_SEC = 5 * 60
+# The latest pair is kept on disk (overwritten each time) to diagnose odd heights offline.
+DEBUG_DIR = STORAGE_DIR / "depth"
+
+
+def _save_debug_pair(pair: "StereoPair", x_mm: float, y_mm: float, zoom: float) -> None:
+    try:
+        DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(DEBUG_DIR / "last_a.jpg"), pair.frame_a, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+        cv2.imwrite(str(DEBUG_DIR / "last_b.jpg"), pair.frame_b, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+        (DEBUG_DIR / "last.json").write_text(json.dumps({
+            "x_mm": x_mm, "y_mm": y_mm, "zoom": zoom, "shift_px": pair.shift, "response": pair.response,
+            "baseline_mm": pair.baseline_mm, "camera_distance_mm": settings.depth_camera_distance_mm,
+            "time": time.time(),
+        }, indent=2))
+    except OSError:
+        logger.warning("Could not save the stereo debug pair", exc_info=True)
 
 
 @dataclass
@@ -115,6 +133,7 @@ class DepthService:
             pair = StereoPair(key, frame_a, frame_b, (dx, dy), response, sign * baseline)
             self._pairs = {k: p for k, p in self._pairs.items() if time.monotonic() - p.created < PAIR_TTL_SEC}
             self._pairs[key] = pair
+            _save_debug_pair(pair, x_mm, y_mm, zoom)
             logger.info("Stereo pair at %s: shift (%.1f, %.1f) px, response %.2f", key, dx, dy, response)
             return pair
 

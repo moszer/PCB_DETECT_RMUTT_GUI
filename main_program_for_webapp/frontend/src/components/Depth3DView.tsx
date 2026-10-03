@@ -7,7 +7,7 @@ import { cx } from "./ui";
 export type DepthColorMode = "photo" | "height";
 
 /** Blue → cyan → green → yellow → red. */
-function heightColor(t: number): [number, number, number] {
+export function heightColor(t: number): [number, number, number] {
   const stops: Array<[number, number, number]> = [
     [0.19, 0.25, 0.85],
     [0.1, 0.75, 0.95],
@@ -21,6 +21,7 @@ function heightColor(t: number): [number, number, number] {
   return [0, 1, 2].map((k) => stops[i][k] + (stops[i + 1][k] - stops[i][k]) * f) as [number, number, number];
 }
 
+/** Robust display range (2nd–98th percentile, always including the board level). */
 export function heightRange(data: DepthResult): [number, number] {
   const sorted = [...data.heights].sort((a, b) => a - b);
   const lo = Math.min(0, sorted[Math.floor(sorted.length * 0.02)] ?? 0);
@@ -136,7 +137,8 @@ export function Depth3DView({
       const setExaggeration = (k: number) => {
         let top = 0;
         for (let i = 0; i < gw * gh; i++) {
-          const z = heights[i] * k;
+          // Clipped to the robust range: a few stray matches must not dwarf the part.
+          const z = Math.min(hi, Math.max(lo, heights[i])) * k;
           pos.setZ(i, z);
           top = Math.max(top, z);
         }

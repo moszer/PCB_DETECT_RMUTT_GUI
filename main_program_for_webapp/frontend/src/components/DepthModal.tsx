@@ -5,6 +5,7 @@ import { Box, RefreshCw } from "lucide-react";
 import type { DepthResult } from "@/types";
 import { api, errorMessage } from "@/lib/api";
 import { Depth3DView, HEIGHT_GRADIENT, heightRange, type DepthColorMode } from "./Depth3DView";
+import { DepthMap2D } from "./DepthMap2D";
 import { Button, Modal, Segmented, Spinner, Stat } from "./ui";
 
 export interface DepthTarget {
@@ -23,7 +24,8 @@ export function DepthModal({ target, onClose }: { target: DepthTarget; onClose: 
   const [nonce, setNonce] = useState(0);
   const [result, setResult] = useState<{ key: string; data?: DepthResult; error?: string } | null>(null);
   const [exaggeration, setExaggeration] = useState(1);
-  const [mode, setMode] = useState<DepthColorMode>("photo");
+  const [mode, setMode] = useState<DepthColorMode>("height");
+  const [view, setView] = useState<"2d" | "3d">("2d");
 
   const key = `${target.x_mm}:${target.y_mm}:${target.zoom}:${target.bbox.join(",")}:${nonce}`;
   useEffect(() => {
@@ -74,7 +76,7 @@ export function DepthModal({ target, onClose }: { target: DepthTarget; onClose: 
       ) : (
         data && (
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
-            <Depth3DView data={data} exaggeration={exaggeration} mode={mode} className="h-[440px]" />
+            {view === "2d" ? <DepthMap2D data={data} /> : <Depth3DView data={data} exaggeration={exaggeration} mode={mode} className="h-[440px]" />}
             <div className="flex flex-col gap-3 min-w-0">
               <div className="grid grid-cols-2 gap-2">
                 <Stat label="สูงสุดในกรอบ" value={data.stats.max_mm !== null ? `${data.stats.max_mm.toFixed(1)} mm` : "–"} />
@@ -86,6 +88,29 @@ export function DepthModal({ target, onClose }: { target: DepthTarget; onClose: 
               </p>
 
               <div className="flex flex-col gap-1.5">
+                <span className="text-xs text-muted">มุมมอง</span>
+                <Segmented
+                  size="sm"
+                  value={view}
+                  onChange={setView}
+                  options={[
+                    { value: "2d", label: "แผนที่ 2D" },
+                    { value: "3d", label: "3D หมุนได้" },
+                  ]}
+                />
+              </div>
+
+              {view === "2d" && range && (
+                <div className="flex flex-col gap-0.5">
+                  <div className="h-2 rounded-full" style={{ background: HEIGHT_GRADIENT }} />
+                  <div className="flex justify-between text-[10px] font-mono text-muted">
+                    <span>{range[0].toFixed(1)}</span>
+                    <span>{range[1].toFixed(1)} mm</span>
+                  </div>
+                </div>
+              )}
+
+              <div className={view === "3d" ? "flex flex-col gap-1.5" : "hidden"}>
                 <span className="text-xs text-muted">สี</span>
                 <Segmented
                   size="sm"
@@ -107,7 +132,7 @@ export function DepthModal({ target, onClose }: { target: DepthTarget; onClose: 
                 )}
               </div>
 
-              <div className="flex flex-col gap-1.5">
+              <div className={view === "3d" ? "flex flex-col gap-1.5" : "hidden"}>
                 <span className="text-xs text-muted">ขยายความสูง</span>
                 <Segmented size="sm" value={exaggeration} onChange={setExaggeration} options={EXAGGERATION.map((v) => ({ value: v, label: `×${v}` }))} />
               </div>
