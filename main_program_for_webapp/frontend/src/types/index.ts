@@ -364,6 +364,20 @@ export interface SerialPort {
   is_usb: boolean;
 }
 
+/** A named, saved set of test points (reloadable later). */
+export interface PointSetMeta {
+  id: string;
+  name: string;
+  point_count: number;
+  component_count: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface PointSet extends PointSetMeta {
+  points: CustomPointRequest[];
+}
+
 /** Text printed on a part, read by /api/inspection/ocr. */
 export interface OcrResult {
   text: string;

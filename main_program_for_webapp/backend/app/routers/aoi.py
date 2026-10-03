@@ -3,11 +3,12 @@ from typing import Any, Dict, List, Literal, Optional
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import Field
 
-from ..core.schemas import BaseModel, AOIRunReport, MachineState, ScanPlanRequest, ScanPoint
+from ..core.schemas import BaseModel, AOIRunReport, CustomPointRequest, MachineState, ScanPlanRequest, ScanPoint
 from ..core.security import lease_manager
 from ..services.aoi_scan_service import aoi_scan_service
 from ..services.dataset_service import dataset_service
 from ..services.depth_service import depth_service
+from ..services import point_set_store
 from ..services.machine_service import machine_service
 
 router = APIRouter(prefix="/api/aoi", tags=["aoi"])
@@ -32,6 +33,11 @@ class MoveRequest(BaseModel):
     y_mm: Optional[float] = None
     speed: int = Field(800, ge=20, le=1500)
 
+
+
+class PointSetRequest(BaseModel):
+    name: Optional[str] = Field(None, max_length=200)
+    points: Optional[List[CustomPointRequest]] = Field(None, max_length=200)
 
 
 class DepthRequest(BaseModel):
@@ -157,6 +163,72 @@ def move_stage(
         return {"success": True, "state": machine_service.get_state()}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+# ── Saved sets of test points ──
+
+def _dump(points: List[CustomPointRequest]) -> List[dict]:
+    return [p.model_dump(exclude_none=True) for p in points]
+
+
+@router.get("/point-sets")
+def list_point_sets():
+    return {"sets": point_set_store.list_sets()}
+
+
+@router.get("/point-sets/{set_id}")
+def get_point_set(set_id: str):
+    found = point_set_store.get_set(set_id)
+    if not found:
+        raise HTTPException(status_code=404, detail="ไม่พบชุดจุดตรวจนี้")
+    return found
+
+
+@router.post("/point-sets")
+def create_point_set(
+    req: PointSetRequest,
+    x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token"),
+    x_operator_id: Optional[str] = Header(None, alias="X-Operator-Id"),
+):
+    _require_operator_lease(x_operator_token, x_operator_id)
+    if not req.points:
+        raise HTTPException(status_code=400, detail="ไม่มีจุดตรวจให้บันทึก")
+    try:
+        return point_set_store.create_set(req.name or "", _dump(req.points))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.put("/point-sets/{set_id}")
+def update_point_set(
+    set_id: str,
+    req: PointSetRequest,
+    x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token"),
+    x_operator_id: Optional[str] = Header(None, alias="X-Operator-Id"),
+):
+    """Rename and/or replace the points of a saved set (fields left out stay as they are)."""
+    _require_operator_lease(x_operator_token, x_operator_id)
+    if req.points is not None and not req.points:
+        raise HTTPException(status_code=400, detail="ไม่มีจุดตรวจให้บันทึก")
+    try:
+        updated = point_set_store.update_set(set_id, req.name, _dump(req.points) if req.points is not None else None)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not updated:
+        raise HTTPException(status_code=404, detail="ไม่พบชุดจุดตรวจนี้")
+    return updated
+
+
+@router.delete("/point-sets/{set_id}")
+def delete_point_set(
+    set_id: str,
+    x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token"),
+    x_operator_id: Optional[str] = Header(None, alias="X-Operator-Id"),
+):
+    _require_operator_lease(x_operator_token, x_operator_id)
+    if not point_set_store.delete_set(set_id):
+        raise HTTPException(status_code=404, detail="ไม่พบชุดจุดตรวจนี้")
+    return {"success": True}
 
 
 @router.post("/depth")

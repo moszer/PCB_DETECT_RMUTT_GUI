@@ -17,6 +17,7 @@ import { Button, Segmented } from "../ui";
 import { useToast } from "../Toast";
 import { StageBar } from "./StageBar";
 import { PointsPanel } from "./PointsPanel";
+import { PointSets } from "./PointSets";
 import { DEFAULT_GRID, DEFAULT_MOTION, GridPanel, JogPanel, ParamsPanel, type GridPlan, type MotionSettings } from "./panels";
 import { Filmstrip, OutputView, ScanStatusStrip, type OutputItem, type PendingFrame } from "./ScanResults";
 
@@ -403,35 +404,46 @@ export function AOIScanView({ status, report, progress, pointFrames, references,
           </div>
           <div className="flex-1 lg:overflow-y-auto p-4">
             {tab === "points" && (
-              <PointsPanel
-                points={points}
-                selected={selected}
-                onSelect={(i) => {
-                  setSelected(i);
-                  setLiveZoom(points[i]?.zoom || 1);
-                }}
-                zoom={liveZoom}
-                onZoom={setLiveZoom}
-                onRename={(i, name) => updatePoint(i, { name })}
-                onSetPointZoom={(i, zoom) => {
-                  updatePoint(i, { zoom });
-                  setLiveZoom(zoom);
-                }}
-                onMark={markPoint}
-                onMove={(i) => moveToPoint(i).catch((err) => toast.error("เคลื่อนที่ไม่สำเร็จ", err))}
-                onEditReference={setEditingIndex}
-                onDelete={deletePoint}
-                onClear={clearPoints}
-                onTeachAll={teachAll}
-                onStart={startPointScan}
-                marking={marking}
-                movingIndex={movingIndex}
-                teachProgress={teachProgress}
-                canMove={canMove}
-                scanning={scanning}
-                frames={params.multiframeEnabled ? params.targetFrames : null}
-                scanningIndex={scanningIndex}
-              />
+              <div className="flex flex-col gap-5">
+                <PointSets
+                  points={points}
+                  disabled={scanning || marking || teachProgress !== null}
+                  onLoad={(loadedPoints) => {
+                    setPoints(loadedPoints);
+                    setSelected(0);
+                    setLiveZoom(loadedPoints[0]?.zoom || 1);
+                  }}
+                />
+                <PointsPanel
+                  points={points}
+                  selected={selected}
+                  onSelect={(i) => {
+                    setSelected(i);
+                    setLiveZoom(points[i]?.zoom || 1);
+                  }}
+                  zoom={liveZoom}
+                  onZoom={setLiveZoom}
+                  onRename={(i, name) => updatePoint(i, { name })}
+                  onSetPointZoom={(i, zoom) => {
+                    updatePoint(i, { zoom });
+                    setLiveZoom(zoom);
+                  }}
+                  onMark={markPoint}
+                  onMove={(i) => moveToPoint(i).catch((err) => toast.error("เคลื่อนที่ไม่สำเร็จ", err))}
+                  onEditReference={setEditingIndex}
+                  onDelete={deletePoint}
+                  onClear={clearPoints}
+                  onTeachAll={teachAll}
+                  onStart={startPointScan}
+                  marking={marking}
+                  movingIndex={movingIndex}
+                  teachProgress={teachProgress}
+                  canMove={canMove}
+                  scanning={scanning}
+                  frames={params.multiframeEnabled ? params.targetFrames : null}
+                  scanningIndex={scanningIndex}
+                />
+              </div>
             )}
             {tab === "grid" && (
               <GridPanel

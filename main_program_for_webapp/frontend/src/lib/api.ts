@@ -9,6 +9,9 @@ import type {
   DepthResult,
   InspectionResult,
   OcrResult,
+  PointSet,
+  PointSetMeta,
+  CustomPointRequest,
   LabelBox,
   ModelFile,
   ReferenceProfile,
@@ -166,6 +169,18 @@ export const api = {
   homeMachine: () => post("/api/aoi/home"),
   jogMachine: (dx_mm: number, dy_mm: number, speed: number) => post("/api/aoi/jog", { dx_mm, dy_mm, speed }),
   moveToPosition: (x_mm: number, y_mm: number, speed: number) => post("/api/aoi/move", { x_mm, y_mm, speed }),
+  pointSets: {
+    list: () => request<{ sets: PointSetMeta[] }>("/api/aoi/point-sets").then((r) => r.sets),
+    get: (id: string) => request<PointSet>(`/api/aoi/point-sets/${encodeURIComponent(id)}`),
+    create: (name: string, points: CustomPointRequest[]) => post<PointSet>("/api/aoi/point-sets", { name, points }),
+    update: (id: string, patch: { name?: string; points?: CustomPointRequest[] }) =>
+      request<PointSet>(`/api/aoi/point-sets/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      }),
+    remove: (id: string) => request<{ success: boolean }>(`/api/aoi/point-sets/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  },
   /** Height map of one part (moves the stage aside and back; the photo pair is cached per point). */
   measureDepth: (req: { x_mm: number; y_mm: number; zoom: number; bbox: number[]; recapture?: boolean }) =>
     post<DepthResult>("/api/aoi/depth", req),
