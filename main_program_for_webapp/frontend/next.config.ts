@@ -8,6 +8,9 @@ const nextConfig: NextConfig = {
     // /api is proxied to FastAPI; the default 10 MB request-body cap made every
     // YOLO weights upload (50-110 MB) fail with HTTP 500. Backend caps uploads at 1 GB.
     proxyClientMaxBodySize: "1gb",
+    // The proxy drops a response that stays silent for proxyTimeout (default 30 s). AI replies
+    // wait on busy models and 3D captures move the stage, so allow up to 5 minutes.
+    proxyTimeout: 300_000,
   },
   async rewrites() {
     return [

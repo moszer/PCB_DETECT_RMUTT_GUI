@@ -72,6 +72,7 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
         for (const line of lines) {
           if (!line.trim()) continue;
           const ev = JSON.parse(line);
+          if (ev.type === "ping") continue; // keep-alive while the AI waits
           if (ev.type === "tool") {
             updateLast((m) => ({ ...m, steps: [...(m.steps ?? []).map((s) => ({ ...s, done: true })), { label: ev.label, done: false }] }));
           } else if (ev.type === "navigate") {
@@ -84,7 +85,13 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
         }
       }
     } catch (err) {
-      if (!controller.signal.aborted) updateLast((m) => ({ ...m, content: `⚠️ ${(err as Error).message}`, error: true }));
+      if (!controller.signal.aborted) {
+        const msg = (err as Error).message;
+        const friendly = /network|fetch|load failed/i.test(msg)
+          ? "การเชื่อมต่อกับ backend ถูกตัดระหว่างรอ AI — ตรวจว่า backend ยังทำงานอยู่ แล้วลองถามใหม่"
+          : msg;
+        updateLast((m) => ({ ...m, content: `⚠️ ${friendly}`, error: true, steps: (m.steps ?? []).map((s) => ({ ...s, done: true })) }));
+      }
       else updateLast((m) => ({ ...m, content: m.content || "(หยุดแล้ว)", error: !m.content }));
     } finally {
       setBusy(false);

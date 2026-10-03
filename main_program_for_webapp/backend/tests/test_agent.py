@@ -105,3 +105,20 @@ class AgentFallbackTests(unittest.TestCase):
             events = asyncio.run(run())
         self.assertEqual(events[-1], {"type": "text", "text": "done", "model": "m2"})
         self.assertEqual(calls, ["m1", "m1", "m1", "m1", "m2"])
+
+
+class HeartbeatTests(unittest.TestCase):
+    def test_pings_while_waiting_then_passes_lines_through(self):
+        from app.routers.chat import with_heartbeat
+
+        async def slow():
+            await asyncio.sleep(0.25)
+            yield "a\n"
+            yield "b\n"
+
+        async def run():
+            return [l async for l in with_heartbeat(slow(), interval=0.1)]
+
+        out = asyncio.run(run())
+        self.assertGreaterEqual(out.count('{"type": "ping"}\n'), 1)
+        self.assertEqual([l for l in out if "ping" not in l], ["a\n", "b\n"])

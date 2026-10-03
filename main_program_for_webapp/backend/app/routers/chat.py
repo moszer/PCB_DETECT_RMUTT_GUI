@@ -1,4 +1,5 @@
 """AI chat about the inspected board (Gemini or OpenRouter) and the station-wide agent."""
+import asyncio
 import json
 from typing import Any, Dict, List, Literal, Optional
 
@@ -92,7 +93,7 @@ async def agent(req: AgentRequest):
 
     async def events():
         answer = ""
-        async for line in agent_service.run_agent([m.model_dump() for m in req.messages], req.page):
+        async for line in with_heartbeat(agent_service.run_agent([m.model_dump() for m in req.messages], req.page)):
             event = json.loads(line)
             if event.get("type") == "text":
                 answer = event.get("text", "")
@@ -101,6 +102,33 @@ async def agent(req: AgentRequest):
             chat_store.append_exchange(AGENT_CONVERSATION, question, answer)
 
     return StreamingResponse(events(), media_type="application/x-ndjson", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+HEARTBEAT_SEC = 5.0
+
+
+async def with_heartbeat(stream, interval: float = HEARTBEAT_SEC):
+    """Pass NDJSON lines through, adding a ping while the agent waits (keeps proxies from timing out)."""
+    it = stream.__aiter__()
+    pending = asyncio.ensure_future(it.__anext__())
+    try:
+        while True:
+            done, _ = await asyncio.wait({pending}, timeout=interval)
+            if not done:
+                yield json.dumps({"type": "ping"}) + "\n"
+                continue
+            try:
+                line = pending.result()
+            except StopAsyncIteration:
+                return
+            yield line
+            pending = asyncio.ensure_future(it.__anext__())
+    finally:
+        if not pending.done():
+            pending.cancel()
+        aclose = getattr(stream, "aclose", None)
+        if aclose:
+            await aclose()
 
 
 @router.get("/agent/history")
