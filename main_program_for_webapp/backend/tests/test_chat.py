@@ -26,6 +26,32 @@ class ChatContextTests(unittest.TestCase):
         self.assertEqual(len(msgs), 3 + 20)
 
 
+class RetryTests(unittest.TestCase):
+    def test_busy_free_model_is_retried_with_fallbacks(self):
+        import asyncio
+        import json
+
+        import httpx
+
+        calls = []
+
+        def handler(request):
+            calls.append(json.loads(request.content))
+            if len(calls) < 3:
+                return httpx.Response(429, json={"error": {"message": "Provider returned error"}})
+            return httpx.Response(200, text='data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n')
+
+        real = httpx.AsyncClient
+        with patch("app.services.chat_service.httpx.AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw)), \
+                patch.object(chat_service, "RETRY_DELAYS_SEC", (0, 0)):
+            async def run():
+                return "".join([x async for x in chat_service.stream_reply([{"role": "user", "content": "hi"}])])
+
+            self.assertEqual(asyncio.run(run()), "ok")
+        self.assertEqual(len(calls), 3)
+        self.assertGreater(len(calls[0]["models"]), 1)
+
+
 class ChatEndpointTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)

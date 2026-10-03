@@ -6,10 +6,12 @@ read from the environment (backend/.env) and never sent to the browser.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
 import os
+from contextlib import aclosing
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
 
@@ -20,6 +22,10 @@ logger = logging.getLogger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "qwen/qwen3.8-27b:free"
+# Free models are often overloaded upstream (HTTP 429 "Provider returned error"); OpenRouter
+# moves on to these (also free, with image input) when the main one is busy.
+DEFAULT_FALLBACKS = "google/gemma-4-31b-it:free,google/gemma-4-26b-a4b-it:free"
+RETRY_DELAYS_SEC = (3, 6)
 
 SYSTEM_PROMPT = """คุณคือผู้ช่วยวิศวกรอิเล็กทรอนิกส์ประจำสถานีตรวจ PCB (AOI) ของ RMUTT
 ตอบเป็นภาษาไทย กระชับ เข้าใจง่าย ใช้ศัพท์เทคนิคภาษาอังกฤษได้ตามปกติ
@@ -37,6 +43,11 @@ def configured() -> bool:
 
 def model_name() -> str:
     return os.environ.get("OPENROUTER_MODEL") or DEFAULT_MODEL
+
+
+def fallback_models() -> List[str]:
+    raw = os.environ.get("OPENROUTER_FALLBACK_MODELS", DEFAULT_FALLBACKS)
+    return [m.strip() for m in raw.split(",") if m.strip() and m.strip() != model_name()]
 
 
 def image_data_url(path: Path, max_side: int = 1280) -> Optional[str]:
@@ -92,35 +103,58 @@ async def stream_reply(messages: List[Dict[str, Any]]) -> AsyncIterator[str]:
         "Content-Type": "application/json",
         "X-Title": "RMUTT PCB AOI Station",
     }
-    body = {"model": model_name(), "messages": messages, "stream": True, "max_tokens": 4000}
+    body: Dict[str, Any] = {"model": model_name(), "messages": messages, "stream": True, "max_tokens": 4000}
+    fallbacks = fallback_models()
+    if fallbacks:
+        body["models"] = [model_name(), *fallbacks]
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=15)) as client:
-            async with client.stream("POST", OPENROUTER_URL, headers=headers, json=body) as res:
-                if res.status_code != 200:
-                    detail = (await res.aread()).decode("utf-8", "replace")
-                    try:
-                        detail = json.loads(detail).get("error", {}).get("message", detail)
-                    except ValueError:
-                        pass
-                    hint = " (โควตาโมเดลฟรีหมดหรือถูกจำกัดความถี่ — รอสักครู่แล้วลองใหม่)" if res.status_code == 429 else ""
-                    yield f"\n⚠️ AI ตอบไม่ได้ (HTTP {res.status_code}): {detail[:300]}{hint}"
+            for attempt in range(len(RETRY_DELAYS_SEC) + 1):
+                retry = False
+                async with aclosing(_one_attempt(client, headers, body, last=attempt == len(RETRY_DELAYS_SEC))) as pieces:
+                    async for piece in pieces:
+                        if piece is None:  # busy upstream: wait and try again
+                            retry = True
+                            break
+                        yield piece
+                if not retry:
                     return
-                async for line in res.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue  # keep-alive comments
-                    data = line[5:].strip()
-                    if data == "[DONE]":
-                        return
-                    try:
-                        chunk = json.loads(data)
-                    except ValueError:
-                        continue
-                    if chunk.get("error"):
-                        yield f"\n⚠️ {chunk['error'].get('message', 'error')}"
-                        return
-                    delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
-                    if delta.get("content"):
-                        yield delta["content"]
+                await asyncio.sleep(RETRY_DELAYS_SEC[attempt])
     except httpx.HTTPError as exc:
         logger.warning("OpenRouter request failed: %s", exc)
         yield f"\n⚠️ เชื่อมต่อ AI ไม่ได้: {exc.__class__.__name__}"
+
+
+async def _one_attempt(client: httpx.AsyncClient, headers: Dict[str, str], body: Dict[str, Any], last: bool) -> AsyncIterator[Optional[str]]:
+    """Text deltas of one request; yields None (once, before any text) when it should be retried."""
+    async with client.stream("POST", OPENROUTER_URL, headers=headers, json=body) as res:
+        if res.status_code != 200:
+            detail = (await res.aread()).decode("utf-8", "replace")
+            try:
+                detail = json.loads(detail).get("error", {}).get("message", detail)
+            except ValueError:
+                pass
+            if res.status_code in (429, 502, 503) and not last:
+                logger.info("OpenRouter busy (HTTP %s), retrying", res.status_code)
+                yield None
+                return
+            hint = (" — เซิร์ฟเวอร์โมเดลฟรีทุกตัวคิวเต็มตอนนี้ (ไม่ใช่โควตาหมด) ลองใหม่ในอีกสักครู่"
+                    if res.status_code == 429 else "")
+            yield f"\n⚠️ AI ตอบไม่ได้ (HTTP {res.status_code}): {detail[:300]}{hint}"
+            return
+        async for line in res.aiter_lines():
+            if not line.startswith("data:"):
+                continue  # keep-alive comments
+            data = line[5:].strip()
+            if data == "[DONE]":
+                return
+            try:
+                chunk = json.loads(data)
+            except ValueError:
+                continue
+            if chunk.get("error"):
+                yield f"\n⚠️ {chunk['error'].get('message', 'error')}"
+                return
+            delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
+            if delta.get("content"):
+                yield delta["content"]
