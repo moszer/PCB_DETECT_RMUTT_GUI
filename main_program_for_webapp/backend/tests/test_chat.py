@@ -106,3 +106,35 @@ class ChatEndpointTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChatHistoryTests(unittest.TestCase):
+    KEY = "/api/storage/uploads/test_chat_history.png"
+
+    def setUp(self):
+        self.client = TestClient(app)
+        self.client.delete("/api/chat/history", params={"key": self.KEY})
+
+    tearDown = setUp
+
+    def _ask(self, question, reply_pieces):
+        async def fake(_messages):
+            for piece in reply_pieces:
+                yield piece
+
+        with patch.dict(os.environ, {"AI_PROVIDER": "gemini", "GEMINI_API_KEY": "x"}), \
+                patch.object(chat_service, "stream_reply", fake):
+            res = self.client.post("/api/chat", json={"messages": [{"role": "user", "content": question}], "conversation_key": self.KEY})
+        self.assertEqual(res.status_code, 200, res.text)
+        return res.text
+
+    def test_exchange_is_saved_and_reloaded_then_cleared(self):
+        self.assertEqual(self._ask("บอร์ดนี้คืออะไร", ["บอร์ด", "ฝึก CPLD"]), "บอร์ดฝึก CPLD")
+        msgs = self.client.get("/api/chat/history", params={"key": self.KEY}).json()["messages"]
+        self.assertEqual([(m["role"], m["content"]) for m in msgs], [("user", "บอร์ดนี้คืออะไร"), ("assistant", "บอร์ดฝึก CPLD")])
+        self.assertEqual(self.client.delete("/api/chat/history", params={"key": self.KEY}).json()["deleted"], 2)
+        self.assertEqual(self.client.get("/api/chat/history", params={"key": self.KEY}).json()["messages"], [])
+
+    def test_failed_replies_are_not_saved(self):
+        self._ask("hi", ["\n⚠️ AI ตอบไม่ได้ (HTTP 503)"])
+        self.assertEqual(self.client.get("/api/chat/history", params={"key": self.KEY}).json()["messages"], [])

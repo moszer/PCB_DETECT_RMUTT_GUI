@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Bot, Send, Square, Trash2, User } from "lucide-react";
 import { API_BASE } from "@/lib/api";
-import { Button, Modal, cx } from "./ui";
+import { Button, Modal, Spinner, cx } from "./ui";
 
 export interface BoardContext {
   point_name?: string;
@@ -139,7 +139,10 @@ function ThinkingIndicator() {
 
 /** Chat with an AI about the inspected board; context + photo go along with every question. */
 export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContext; imageUrl?: string; onClose: () => void }) {
+  // One saved conversation per inspected image (kept in the station database).
+  const conversationKey = imageUrl?.startsWith("/api/storage/") ? imageUrl : null;
   const [messages, setMessages] = useState<Msg[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(!!conversationKey);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [model, setModel] = useState("");
@@ -151,8 +154,23 @@ export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContex
       .then((r) => r.json())
       .then((s) => setModel(s.configured ? s.model : "ยังไม่ได้ตั้งค่า API key"))
       .catch(() => undefined);
+    if (conversationKey) {
+      fetch(`${API_BASE}/api/chat/history?key=${encodeURIComponent(conversationKey)}`)
+        .then((r) => r.json())
+        .then((h) => setMessages((m) => (m.length ? m : (h.messages ?? []).map((x: Msg) => ({ role: x.role, content: x.content })))))
+        .catch(() => undefined)
+        .finally(() => setLoadingHistory(false));
+    }
     return () => abort.current?.abort();
-  }, []);
+  }, [conversationKey]);
+
+  const clearHistory = async () => {
+    if (!window.confirm("ลบประวัติแชทของจุดนี้ทั้งหมด?")) return;
+    setMessages([]);
+    if (conversationKey) {
+      await fetch(`${API_BASE}/api/chat/history?key=${encodeURIComponent(conversationKey)}`, { method: "DELETE" }).catch(() => undefined);
+    }
+  };
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
@@ -173,7 +191,7 @@ export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContex
       const res = await fetch(`${API_BASE}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history, context, image_url: imageUrl?.startsWith("/api/storage/") ? imageUrl : null }),
+        body: JSON.stringify({ messages: history, context, image_url: conversationKey, conversation_key: conversationKey }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
@@ -210,11 +228,16 @@ export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContex
           ถาม AI เกี่ยวกับบอร์ดนี้
         </>
       }
-      subtitle={`ส่งภาพจุดนี้ + ชิ้นส่วน + ตัวอักษรที่อ่านได้ ให้ AI ทุกคำถาม${model ? ` · ${model}` : ""}`}
+      subtitle={`ส่งภาพจุดนี้ + ชิ้นส่วน + ตัวอักษรที่อ่านได้ ให้ AI ทุกคำถาม${conversationKey ? " · บันทึกประวัติแชทของจุดนี้" : ""}${model ? ` · ${model}` : ""}`}
     >
       <div className="flex flex-col h-[62vh] min-h-[420px]">
         <div className="flex-1 overflow-y-auto flex flex-col gap-3 pr-1">
-          {!messages.length && (
+          {loadingHistory && (
+            <div className="m-auto flex items-center gap-2 text-sm text-muted">
+              <Spinner className="size-4" /> กำลังโหลดประวัติแชท…
+            </div>
+          )}
+          {!messages.length && !loadingHistory && (
             <div className="m-auto flex flex-col items-center gap-3 text-center max-w-md">
               <Bot className="size-8 text-subtle" />
               <p className="text-sm text-muted">
@@ -257,7 +280,7 @@ export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContex
           }}
         >
           {messages.length > 0 && (
-            <Button type="button" variant="ghost" icon={Trash2} disabled={busy} onClick={() => setMessages([])} title="เริ่มแชทใหม่" />
+            <Button type="button" variant="ghost" icon={Trash2} disabled={busy} onClick={clearHistory} title="ลบประวัติแชทของจุดนี้" />
           )}
           <textarea
             value={input}
