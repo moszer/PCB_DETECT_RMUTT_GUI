@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AppShell, type TabId } from "@/components/AppShell";
 import { AgentWidget } from "@/components/AgentWidget";
+import { SplashScreen } from "@/components/SplashScreen";
 import { ToastProvider } from "@/components/Toast";
 import { InspectionView } from "@/components/InspectionView";
 import { AOIScanView } from "@/components/aoi/AOIScanView";
@@ -90,6 +91,8 @@ function Station() {
   const { connected, machineState, scanProgress, datasetProgress, pointFrames } = useStationSocket();
   useScanSounds(scanProgress);
   useDatasetSounds(datasetProgress);
+  const [splash, setSplash] = useState(true);
+  const hideSplash = useCallback(() => setSplash(false), []);
 
   // Browsers only allow audio after a gesture; unlock on the operator's first interaction.
   useEffect(() => {
@@ -184,6 +187,7 @@ function Station() {
         </div>
       </AppShell>
       <AgentWidget page={tab} onNavigate={setTab} />
+      {splash && <SplashScreen onDone={hideSplash} />}
     </ToastProvider>
   );
 }
