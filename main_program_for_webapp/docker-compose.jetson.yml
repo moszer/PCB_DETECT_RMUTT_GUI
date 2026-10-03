@@ -1,0 +1,13 @@
+# NVIDIA Jetson (JetPack 7 / CUDA 13) GPU inference in Docker. Needs the NVIDIA container runtime
+# (installed with JetPack). Combine with the hardware file for camera + stage:
+#   docker compose -f docker-compose.yml -f docker-compose.hardware.yml -f docker-compose.jetson.yml up --build
+# For JetPack 6 set TORCH_INDEX to NVIDIA's wheel index for your release (see INSTALL.md).
+services:
+  backend:
+    build:
+      args:
+        TORCH_INDEX: ${TORCH_INDEX:-https://download.pytorch.org/whl/cu130}
+    runtime: nvidia
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      PCB_DEVICE: cuda:0

@@ -1,0 +1,6 @@
+# Install after requirements.txt with the same Python interpreter.
+# CUDA 13.0 build tested on Orin Nano Super, L4T 39.2.1, Python 3.12.
+# Other JetPack releases need their own compatible PyTorch build; see NVIDIA.md.
+--index-url https://download.pytorch.org/whl/cu130
+torch==2.13.0+cu130
+torchvision==0.28.0+cu130

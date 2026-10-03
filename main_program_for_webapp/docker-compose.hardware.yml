@@ -1,0 +1,11 @@
+# Real camera + XY stage on a Linux host / Jetson (Docker Desktop on macOS cannot pass USB devices).
+#   docker compose -f docker-compose.yml -f docker-compose.hardware.yml up --build
+# Check device names first: ls /dev/video* /dev/ttyUSB* /dev/ttyACM*
+services:
+  backend:
+    environment:
+      PCB_CAMERA_SIMULATION: "0"
+    devices:
+      - ${PCB_CAMERA_DEVICE:-/dev/video0}:/dev/video0
+      - ${PCB_SERIAL_DEVICE:-/dev/ttyUSB0}:${PCB_SERIAL_DEVICE:-/dev/ttyUSB0}
+    group_add: [dialout, video]

@@ -1,5 +1,9 @@
 # PCB Defect Inspection Station (YOLO + PyQt6)
 
+> **Web station (recommended):** one-command install on macOS, Linux and NVIDIA Jetson, or run it in Docker —
+> see [main_program_for_webapp/INSTALL.md](main_program_for_webapp/INSTALL.md):
+> `cd main_program_for_webapp && ./install.sh && ./run_web.sh`
+
 **AOI Scan:** connect the Nano XY stage (protocol v2, 9600 baud), home/jog,
 scan a serpentine grid, and capture/inspect each position. Simulation, per-point
 golden-board references, STOP and saved run reports are included. See [AOI setup](AOI.md).

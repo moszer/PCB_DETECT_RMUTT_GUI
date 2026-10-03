@@ -1,0 +1,37 @@
+# RMUTT PCB AOI Station in Docker.
+#   docker compose up --build          → http://localhost:3001
+#   docker compose run --rm backend python -m pytest -q     (backend tests)
+# Without camera/stage hardware the backend uses its test camera and the stage in
+# simulation mode. Real devices on Linux / Jetson: add -f docker-compose.hardware.yml
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        TORCH_INDEX: ${TORCH_INDEX:-https://download.pytorch.org/whl/cpu}
+    image: rmutt-aoi-backend
+    ports: ["${PCB_BACKEND_PORT:-8000}:8000"]
+    env_file:
+      - path: backend/.env
+        required: false
+    environment:
+      PCB_CAMERA_SIMULATION: ${PCB_CAMERA_SIMULATION:-1}
+    volumes:
+      - aoi-data:/app/backend/data   # database, scan images, settings, datasets
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: frontend
+      args:
+        BACKEND_URL: http://backend:8000
+    image: rmutt-aoi-frontend
+    ports: ["${PCB_FRONTEND_PORT:-3001}:3001"]
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  aoi-data:
