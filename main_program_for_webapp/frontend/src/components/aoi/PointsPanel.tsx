@@ -29,6 +29,8 @@ interface PointsPanelProps {
   frames: number | null;
   /** Point currently being scanned (pulses in the list). */
   scanningIndex?: number | null;
+  /** Open board; marking is only allowed once a board is created/opened. */
+  boardName: string | null;
 }
 
 const ZOOMS = [1, 1.5, 2, 3, 4];
@@ -40,10 +42,22 @@ export function PointsPanel(p: PointsPanelProps) {
       <div className="flex flex-col gap-2">
         <SectionLabel>ซูมสำหรับจุดใหม่</SectionLabel>
         <Segmented className="w-full" value={p.zoom} onChange={p.onZoom} options={ZOOMS.map((z) => ({ value: z, label: `${z}×` }))} />
-        <Button variant="success" size="lg" icon={p.marking ? undefined : Plus} loading={p.marking} disabled={!p.canMove || p.scanning} onClick={p.onMark}>
+        <Button
+          variant="success"
+          size="lg"
+          icon={p.marking ? undefined : Plus}
+          loading={p.marking}
+          disabled={!p.boardName || !p.canMove || p.scanning}
+          title={p.boardName ? undefined : "สร้างหรือเปิดบอร์ดก่อน"}
+          onClick={p.onMark}
+        >
           {p.marking ? "กำลังถ่ายต้นแบบ…" : "มาร์คตำแหน่งปัจจุบัน"}
         </Button>
-        <p className="text-[11px] text-subtle leading-snug">จ๊อกสเตจไปยังบริเวณที่ต้องการตรวจแล้วกดมาร์ค ระบบจะบันทึกพิกัดและถ่ายภาพต้นแบบให้อัตโนมัติ</p>
+        <p className={cx("text-[11px] leading-snug", p.boardName ? "text-subtle" : "text-review")}>
+          {p.boardName
+            ? `จ๊อกสเตจไปยังบริเวณที่ต้องการตรวจแล้วกดมาร์ค ระบบจะบันทึกพิกัดและถ่ายภาพต้นแบบลงบอร์ด “${p.boardName}” ให้อัตโนมัติ`
+            : "สร้างหรือเปิดบอร์ดด้านบนก่อน จึงจะมาร์คจุดตรวจได้"}
+        </p>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -60,7 +74,7 @@ export function PointsPanel(p: PointsPanelProps) {
 
         {p.points.length === 0 ? (
           <EmptyState icon={MapPin} title="ยังไม่มีจุดตรวจ" className="rounded-lg border border-dashed border-line py-8">
-            เชื่อมต่อและ HOME สเตจ จ๊อกไปยังจุดที่ต้องการ แล้วกด “มาร์คตำแหน่งปัจจุบัน”
+            ขั้นที่ 2 · เชื่อมต่อและ HOME สเตจ จ๊อกไปยังจุดที่ต้องการ แล้วกด “มาร์คตำแหน่งปัจจุบัน”
           </EmptyState>
         ) : (
           <ul className="rounded-lg border border-line divide-y divide-line overflow-hidden">

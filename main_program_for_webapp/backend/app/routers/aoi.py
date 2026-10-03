@@ -190,11 +190,10 @@ def create_point_set(
     x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token"),
     x_operator_id: Optional[str] = Header(None, alias="X-Operator-Id"),
 ):
+    """Create a board (named set of points); it may start empty and fill up as points are marked."""
     _require_operator_lease(x_operator_token, x_operator_id)
-    if not req.points:
-        raise HTTPException(status_code=400, detail="ไม่มีจุดตรวจให้บันทึก")
     try:
-        return point_set_store.create_set(req.name or "", _dump(req.points))
+        return point_set_store.create_set(req.name or "", _dump(req.points or []))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -208,8 +207,6 @@ def update_point_set(
 ):
     """Rename and/or replace the points of a saved set (fields left out stay as they are)."""
     _require_operator_lease(x_operator_token, x_operator_id)
-    if req.points is not None and not req.points:
-        raise HTTPException(status_code=400, detail="ไม่มีจุดตรวจให้บันทึก")
     try:
         updated = point_set_store.update_set(set_id, req.name, _dump(req.points) if req.points is not None else None)
     except ValueError as exc:

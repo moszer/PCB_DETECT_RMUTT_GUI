@@ -66,6 +66,15 @@ class PointSetTests(unittest.TestCase):
         self.assertEqual(self.client.get(f"/api/aoi/point-sets/{set_id}").status_code, 404)
         self.assertEqual(self.client.delete(f"/api/aoi/point-sets/{set_id}", headers=self.headers).status_code, 404)
 
+    def test_board_can_start_empty_and_be_emptied(self):
+        res = self._create("บอร์ดเปล่า", points=[])
+        self.assertEqual((res.status_code, res.json()["point_count"]), (200, 0))
+        set_id = res.json()["id"]
+        filled = self.client.put(f"/api/aoi/point-sets/{set_id}", json={"points": POINTS}, headers=self.headers).json()
+        self.assertEqual(filled["point_count"], 2)
+        emptied = self.client.put(f"/api/aoi/point-sets/{set_id}", json={"points": []}, headers=self.headers).json()
+        self.assertEqual(emptied["point_count"], 0)
+
     def test_invalid_points_and_missing_token_are_rejected(self):
         bad = [{"name": "x", "x_mm": 1, "y_mm": 1, "expected_components": [{"id": "P1", "name": "ic"}, {"id": "P1", "name": "ic"}]}]
         self.assertEqual(self.client.post("/api/aoi/point-sets", json={"name": "bad", "points": bad}, headers=self.headers).status_code, 422)

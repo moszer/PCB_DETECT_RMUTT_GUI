@@ -17,7 +17,7 @@ import { Button, Segmented } from "../ui";
 import { useToast } from "../Toast";
 import { StageBar } from "./StageBar";
 import { PointsPanel } from "./PointsPanel";
-import { PointSets } from "./PointSets";
+import { PointSets, type ActiveBoard } from "./PointSets";
 import { DEFAULT_GRID, DEFAULT_MOTION, GridPanel, JogPanel, ParamsPanel, type GridPlan, type MotionSettings } from "./panels";
 import { Filmstrip, OutputView, ScanStatusStrip, type OutputItem, type PendingFrame } from "./ScanResults";
 
@@ -77,6 +77,8 @@ export function AOIScanView({ status, report, progress, pointFrames, references,
       }
     },
   });
+  // Board whose points are being edited (autosaved to the station); required before marking.
+  const [board, setBoard] = usePersistentState<ActiveBoard>("pcb_aoi_board", null);
   const [grid, setGridState] = usePersistentState<GridPlan>("pcb_aoi_grid", DEFAULT_GRID, { merge: true });
   const [motion, setMotionState] = usePersistentState<MotionSettings>("pcb_aoi_motion", DEFAULT_MOTION, { merge: true });
   const setGrid = (g: Partial<GridPlan>) => setGridState((s) => ({ ...s, ...g }));
@@ -407,6 +409,8 @@ export function AOIScanView({ status, report, progress, pointFrames, references,
               <div className="flex flex-col gap-5">
                 <PointSets
                   points={points}
+                  board={board}
+                  onBoardChange={setBoard}
                   disabled={scanning || marking || teachProgress !== null}
                   onLoad={(loadedPoints) => {
                     setPoints(loadedPoints);
@@ -442,6 +446,7 @@ export function AOIScanView({ status, report, progress, pointFrames, references,
                   scanning={scanning}
                   frames={params.multiframeEnabled ? params.targetFrames : null}
                   scanningIndex={scanningIndex}
+                  boardName={board?.name ?? null}
                 />
               </div>
             )}
