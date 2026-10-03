@@ -7,6 +7,7 @@ from ..core.schemas import BaseModel, AOIRunReport, MachineState, ScanPlanReques
 from ..core.security import lease_manager
 from ..services.aoi_scan_service import aoi_scan_service
 from ..services.dataset_service import dataset_service
+from ..services.depth_service import depth_service
 from ..services.machine_service import machine_service
 
 router = APIRouter(prefix="/api/aoi", tags=["aoi"])
@@ -31,6 +32,15 @@ class MoveRequest(BaseModel):
     y_mm: Optional[float] = None
     speed: int = Field(800, ge=20, le=1500)
 
+
+
+class DepthRequest(BaseModel):
+    x_mm: float
+    y_mm: float
+    zoom: float = Field(1.0, ge=1, le=5)
+    # The part's box, normalized to the (zoomed) inspection image.
+    bbox: List[float] = Field(..., min_length=4, max_length=4)
+    recapture: bool = False
 
 
 class StartScanRequest(BaseModel):
@@ -149,6 +159,25 @@ def move_stage(
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+@router.post("/depth")
+def measure_depth(
+    req: DepthRequest,
+    x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token"),
+    x_operator_id: Optional[str] = Header(None, alias="X-Operator-Id"),
+):
+    """Height map of one part: moves to the point, shoots two frames a few mm apart (cached)."""
+    _require_operator_lease(x_operator_token, x_operator_id)
+    if aoi_scan_service.is_running or dataset_service.is_running:
+        raise HTTPException(status_code=409, detail="Stop the scan before measuring in 3D")
+    x1, y1, x2, y2 = req.bbox
+    if not (0 <= x1 < x2 <= 1 and 0 <= y1 < y2 <= 1):
+        raise HTTPException(status_code=400, detail="bbox must be normalized [x1, y1, x2, y2]")
+    try:
+        return depth_service.measure(req.x_mm, req.y_mm, req.zoom, req.bbox, req.recapture)
+    except (ValueError, RuntimeError, TimeoutError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @router.post("/stop")
 def stop_stage():
     """Emergency STOP: Accessible to anyone at all times for safety."""
@@ -188,6 +217,7 @@ def start_scan(
     try:
         if dataset_service.is_running:
             raise RuntimeError("Stop the dataset capture before starting an AOI scan")
+        depth_service.clear()  # a new scan usually means a new board: drop old stereo pairs
         report = aoi_scan_service.start_scan(
             plan=req.plan,
             is_golden_scan=req.is_golden_scan,

@@ -73,6 +73,10 @@ class Settings(BaseModel):
     model_search_dirs: list[str] = Field(default_factory=list)
     default_operator: str = "Operator"
 
+    # 3D (motion stereo): lens-to-board distance and how far the stage moves between the two shots.
+    depth_camera_distance_mm: float = Field(200.0, ge=20, le=2000)
+    depth_baseline_mm: float = Field(6.0, ge=0.5, le=30)
+
 
 SETTINGS_FILE = STORAGE_DIR / "settings.json"
 

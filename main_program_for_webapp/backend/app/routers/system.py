@@ -32,6 +32,8 @@ class SettingsUpdateRequest(BaseModel):
     soft_limit_y_mm: Optional[float] = Field(None, gt=0, le=1000)
     model_path: Optional[str] = None
     model_search_dirs: Optional[List[str]] = Field(None, max_length=20)
+    depth_camera_distance_mm: Optional[float] = Field(None, ge=20, le=2000)
+    depth_baseline_mm: Optional[float] = Field(None, ge=0.5, le=30)
 
 
 class DeviceChangeRequest(BaseModel):

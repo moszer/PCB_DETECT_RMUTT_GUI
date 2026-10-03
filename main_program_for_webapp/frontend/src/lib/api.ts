@@ -6,6 +6,7 @@ import type {
   Dataset,
   DatasetImage,
   DatasetSummary,
+  DepthResult,
   InspectionResult,
   LabelBox,
   ModelFile,
@@ -161,6 +162,9 @@ export const api = {
   homeMachine: () => post("/api/aoi/home"),
   jogMachine: (dx_mm: number, dy_mm: number, speed: number) => post("/api/aoi/jog", { dx_mm, dy_mm, speed }),
   moveToPosition: (x_mm: number, y_mm: number, speed: number) => post("/api/aoi/move", { x_mm, y_mm, speed }),
+  /** Height map of one part (moves the stage aside and back; the photo pair is cached per point). */
+  measureDepth: (req: { x_mm: number; y_mm: number; zoom: number; bbox: number[]; recapture?: boolean }) =>
+    post<DepthResult>("/api/aoi/depth", req),
   stopEmergency: () => post("/api/aoi/stop"),
   motorsOff: () => post("/api/aoi/motors-off"),
   planScan: (plan: ScanPlanRequest) => post<ScanPoint[]>("/api/aoi/plan", plan),

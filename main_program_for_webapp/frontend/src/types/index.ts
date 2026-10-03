@@ -364,6 +364,33 @@ export interface SerialPort {
   is_usb: boolean;
 }
 
+/** Height map of one part from /api/aoi/depth (motion stereo). */
+export interface DepthResult {
+  grid_w: number;
+  grid_h: number;
+  /** Row-major heights in mm above the surrounding board (frame orientation). */
+  heights: number[];
+  /** Cells measured directly (others are filled in from their neighbours). */
+  valid: boolean[];
+  /** The part's box inside the map (0..1). */
+  box_in_roi: [number, number, number, number];
+  roi: [number, number, number, number];
+  roi_size_px: [number, number];
+  texture: string | null;
+  mm_per_px: number;
+  camera_distance_mm: number;
+  baseline_mm: number;
+  captured_ago_sec: number;
+  stats: {
+    max_mm: number | null;
+    median_mm: number | null;
+    valid_ratio: number;
+    box_valid_ratio: number;
+    board_shift_px: number;
+    board_residual_px: number;
+  };
+}
+
 export interface StationSettings {
   station_name: string;
   default_operator: string;
@@ -375,6 +402,8 @@ export interface StationSettings {
   default_model: string;
   device_preference: string;
   model_search_dirs: string[];
+  depth_camera_distance_mm: number;
+  depth_baseline_mm: number;
   has_passcode: boolean;
 }
 
