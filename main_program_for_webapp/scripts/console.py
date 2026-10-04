@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Console helpers for run_web.sh: RMUTT logo banner, library check and a "what is running" summary.
 
-    console.py banner  < lines      logo (drawn from frontend/public/rmutt-logo.png) beside the text lines
+    console.py banner  < lines      RMUTT ASCII logo (scripts/rmutt-ascii.txt) beside the text lines
     console.py deps    [--updates]  are the installed libraries what requirements.txt asks for?
                                     --updates also looks for newer releases (cached for a day)
     console.py status  --backend-port N --frontend-port N --mode dev|prod [--backend-pid N --frontend-pid N]
 
 Colours are used only on a terminal (NO_COLOR disables; PCB_FORCE_COLOR=1 forces them).
-Standard library plus Pillow (already a backend dependency); Pillow is optional.
+Standard library only.
 """
 from __future__ import annotations
 
@@ -27,7 +27,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / "backend"
 FRONTEND = ROOT / "frontend"
-LOGO = FRONTEND / "public" / "rmutt-logo.png"
 CACHE = ROOT / ".cache" / "library-updates.json"
 CACHE_TTL = 24 * 3600
 
@@ -50,10 +49,10 @@ OK, WARN, BAD = green("✓"), yellow("!"), red("✗")
 
 # ── logo ──────────────────────────────────────────────────────────────────────
 
+ASCII_LOGO = Path(__file__).with_name("rmutt-ascii.txt")
+
+
 def _ansi256(r: int, g: int, b: int) -> int:
-    if abs(r - g) < 10 and abs(g - b) < 10:  # grays
-        gray = round((r + g + b) / 3)
-        return 16 if gray < 8 else 231 if gray > 248 else 232 + round((gray - 8) / 247 * 23)
     return 16 + 36 * round(r / 255 * 5) + 6 * round(g / 255 * 5) + round(b / 255 * 5)
 
 
@@ -61,54 +60,49 @@ def _fg(rgb) -> str:
     return f"\033[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m" if TRUECOLOR else f"\033[38;5;{_ansi256(*rgb)}m"
 
 
-def _bg(rgb) -> str:
-    return f"\033[48;2;{rgb[0]};{rgb[1]};{rgb[2]}m" if TRUECOLOR else f"\033[48;5;{_ansi256(*rgb)}m"
-
-
-def logo_rows(text_rows: int = 18) -> list[str]:
-    """The university seal as text rows (two pixels per character using half blocks)."""
-    if not COLOR or not LOGO.is_file():
+def logo_rows() -> list[str]:
+    """The seal as ASCII art, trimmed, tinted gold at the spire to orange at the base."""
+    if not ASCII_LOGO.is_file():
         return []
-    try:
-        from PIL import Image
-    except ImportError:
-        return []
-    img = Image.open(LOGO).convert("RGBA")
-    img = img.crop(img.getbbox())
-    height = text_rows * 2
-    width = max(1, round(height * img.width / img.height))
-    img = img.resize((width, height), Image.LANCZOS)
-    px = img.load()
-    rows = []
-    for y in range(0, height, 2):
-        line = []
-        for x in range(width):
-            top, bottom = px[x, y], px[x, y + 1]
-            t, b = top[3] >= 110, bottom[3] >= 110
-            if t and b:
-                line.append(f"{_fg(top[:3])}{_bg(bottom[:3])}▀\033[0m")
-            elif t:
-                line.append(f"{_fg(top[:3])}▀\033[0m")
-            elif b:
-                line.append(f"{_fg(bottom[:3])}▄\033[0m")
-            else:
-                line.append(" ")
-        rows.append("".join(line))
-    return rows
+    lines = [ln.rstrip() for ln in ASCII_LOGO.read_text(encoding="utf-8").splitlines()]
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    indent = min((len(ln) - len(ln.lstrip()) for ln in lines if ln.strip()), default=0)
+    lines = [ln[indent:] for ln in lines]
+    width = max((len(ln) for ln in lines), default=0)
+    out = []
+    for i, ln in enumerate(lines):
+        if COLOR:
+            t = i / max(1, len(lines) - 1)
+            rgb = (round(255 - 25 * t), round(190 - 100 * t), round(20 + 10 * t))  # gold -> orange
+            ln = f"{_fg(rgb)}{ln}\033[0m"
+        out.append((ln, width))
+    return out
 
 
 def cmd_banner(_args) -> int:
     lines = [ln.rstrip("\n") for ln in sys.stdin]
-    logo = logo_rows()
+    # The art is for people at a terminal; a log file only gets the text.
+    logo = logo_rows() if (sys.stdout.isatty() or COLOR) else []
     if not logo:
         print("\n".join(lines))
         return 0
-    width = len(re.sub(r"\033\[[0-9;]*m", "", logo[0]))
+    width = logo[0][1]
+    text_width = max((len(re.sub(r"\033\[[0-9;]*m", "", ln)) for ln in lines), default=0)
+    cols = shutil.get_terminal_size((100, 24)).columns
+    if cols < 2 + width + 3 + text_width:  # narrow terminal: the text goes below the art
+        print("\n".join(f"  {ln}" for ln, _ in logo))
+        print()
+        print("\n".join(f"  {ln}" for ln in lines))
+        return 0
     top = max(0, (len(logo) - len(lines)) // 2)
     for i in range(max(len(logo), top + len(lines))):
-        left = logo[i] if i < len(logo) else " " * width
+        left = logo[i][0] if i < len(logo) else ""
+        pad = " " * (width - (len(re.sub(r"\033\[[0-9;]*m", "", left))))
         right = lines[i - top] if 0 <= i - top < len(lines) else ""
-        print(f"  {left}   {right}")
+        print(f"  {left}{pad}   {right}")
     return 0
 
 
