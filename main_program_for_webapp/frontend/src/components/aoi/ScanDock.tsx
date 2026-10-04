@@ -71,9 +71,15 @@ export function ScanDock({
   const total = report ? report.total_points || report.points.length || 1 : 1;
   const done = results.length;
 
-  // Stable callback ref: keeps the newest result / the point being scanned in view.
+  // Stable callback ref: keeps the newest result / the point being scanned in view. Only the
+  // strip scrolls sideways; scrollIntoView would also scroll the page (it jumped on phones).
   const reveal = useCallback((el: HTMLButtonElement | null) => {
-    el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    const strip = el?.parentElement;
+    if (!el || !strip) return;
+    const left = el.offsetLeft - strip.offsetLeft;
+    if (left < strip.scrollLeft || left + el.offsetWidth > strip.scrollLeft + strip.clientWidth) {
+      strip.scrollTo({ left: left - (strip.clientWidth - el.offsetWidth) / 2, behavior: "smooth" });
+    }
   }, []);
   const focusIndex = running ? scanningIndex : showRun ? (results[results.length - 1]?.point_index ?? null) : null;
 

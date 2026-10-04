@@ -3,11 +3,12 @@ import asyncio
 import json
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from ..services import chat_service, chat_store
+from ..core.security import lease_manager
+from ..services import ai_settings, chat_service, chat_store
 from .inspection import _storage_image
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -31,12 +32,60 @@ def chat_status():
     return {"configured": chat_service.configured(), "provider": chat_service.provider(), "model": chat_service.model_name()}
 
 
+class AIConfigUpdate(BaseModel):
+    provider: Optional[Literal["gemini", "openrouter"]] = None
+    # "" removes a key; omitted/None keeps the saved one.
+    gemini_api_key: Optional[str] = Field(None, max_length=300)
+    openrouter_api_key: Optional[str] = Field(None, max_length=300)
+    gemini_models: Optional[str] = Field(None, max_length=500)
+    openrouter_model: Optional[str] = Field(None, max_length=500)
+
+
+class AIKeyTest(BaseModel):
+    provider: Literal["gemini", "openrouter"]
+    api_key: Optional[str] = Field(None, max_length=300)  # omit to test the saved key
+
+
+def _require_control(token: Optional[str]) -> None:
+    """Secrets need the operator lease (passcode), even when nobody else holds the station."""
+    if not lease_manager.is_operator(token):
+        raise HTTPException(403, "ต้องขอสิทธิ์ควบคุมสถานี (รหัสผ่าน) ก่อนแก้ไข AI key")
+
+
+@router.get("/config")
+def ai_config():
+    """Provider, models and whether each key is set (masked; the key itself is never sent)."""
+    return ai_settings.current()
+
+
+@router.put("/config")
+def update_ai_config(req: AIConfigUpdate, x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token")):
+    _require_control(x_operator_token)
+    try:
+        return ai_settings.update(
+            provider=req.provider,
+            keys={"gemini": req.gemini_api_key, "openrouter": req.openrouter_api_key},
+            models={"gemini": req.gemini_models, "openrouter": req.openrouter_model},
+        )
+    except ai_settings.SettingsError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@router.post("/config/test")
+async def test_ai_key(req: AIKeyTest, x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token")):
+    _require_control(x_operator_token)
+    try:
+        return await ai_settings.test_key(req.provider, req.api_key)
+    except ai_settings.SettingsError as exc:
+        raise HTTPException(400, str(exc))
+
+
 @router.post("")
 async def chat(req: ChatRequest):
     """Streams the reply as plain text chunks."""
     if not chat_service.configured():
         key = "GEMINI_API_KEY" if chat_service.provider() == "gemini" else "OPENROUTER_API_KEY"
-        raise HTTPException(503, f"ยังไม่ได้ตั้งค่า {key} ใน backend/.env")
+        raise HTTPException(503, f"ยังไม่ได้ตั้งค่า {key} — ใส่ได้ที่ ตั้งค่าสถานี → ผู้ช่วย AI")
     image = chat_service.image_data_url(_storage_image(req.image_url)) if req.image_url else None
     messages = chat_service.build_messages([m.model_dump() for m in req.messages], req.context, image)
     stream = chat_service.stream_reply(messages)

@@ -80,11 +80,13 @@ export function InspectionView({ references, params, setParams, status }: Inspec
 
   const canInspect = source === "camera" || !!file;
   const modelMissing = status && !status.model_loaded;
+  const cam = status?.camera_resolution;
+  const frameRatio = cam && cam[0] > 0 && cam[1] > 0 ? cam[0] / cam[1] : 4 / 3;
 
   return (
-    <div className="h-full grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)_340px] overflow-y-auto lg:overflow-hidden">
+    <div className="h-full grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_340px] overflow-y-auto xl:overflow-hidden">
       {/* ── Controls ── */}
-      <aside className="border-b lg:border-b-0 lg:border-r border-line bg-surface p-4 flex flex-col gap-5 lg:overflow-y-auto">
+      <aside className="border-b lg:border-b-0 lg:border-r border-line bg-surface p-4 flex flex-col gap-5 xl:overflow-y-auto">
         <div className="flex flex-col gap-2">
           <SectionLabel>แหล่งภาพ</SectionLabel>
           <Segmented
@@ -177,7 +179,7 @@ export function InspectionView({ references, params, setParams, status }: Inspec
       </aside>
 
       {/* ── Viewport ── */}
-      <section className="min-h-[420px] lg:min-h-0 p-3 flex flex-col gap-3">
+      <section className="p-3 flex flex-col gap-3 xl:min-h-0">
         {result && (
           <div className="flex items-center gap-2 flex-wrap">
             <VerdictBadge verdict={result.verdict} />
@@ -200,9 +202,13 @@ export function InspectionView({ references, params, setParams, status }: Inspec
             </div>
           </div>
         )}
-        <div className="flex-1 min-h-0">
+        {/* Below xl the image area takes the camera's shape (no tall letterboxed column); at xl it fills the column. */}
+        <div
+          className="w-full mx-auto aspect-(--frame) max-w-[calc(72dvh*var(--frame))] xl:aspect-auto xl:max-w-none xl:flex-1 xl:min-h-0"
+          style={{ "--frame": frameRatio } as React.CSSProperties}
+        >
           {source === "camera" && !result ? (
-            <LiveCameraFeed className="size-full min-h-[380px]" />
+            <LiveCameraFeed className="size-full" />
           ) : (
             <Viewport
               imageUrl={result?.image_url || preview}
@@ -217,7 +223,7 @@ export function InspectionView({ references, params, setParams, status }: Inspec
       </section>
 
       {/* ── Results ── */}
-      <aside className="border-t lg:border-t-0 lg:border-l border-line bg-surface lg:overflow-y-auto">
+      <aside className="border-t xl:border-t-0 xl:border-l border-line bg-surface lg:col-span-2 xl:col-span-1 xl:overflow-y-auto">
         {!result ? (
           <EmptyState icon={ScanSearch} title="ยังไม่มีผลตรวจ" className="h-full">
             {source === "camera" ? "จัดบอร์ดให้อยู่ในกรอบแล้วกด “ถ่ายภาพและตรวจ”" : "เลือกภาพแล้วกด “ตรวจภาพนี้”"}

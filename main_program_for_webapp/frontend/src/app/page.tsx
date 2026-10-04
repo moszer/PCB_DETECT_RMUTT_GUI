@@ -190,7 +190,7 @@ function Station() {
           {tab === "dataset" && <DatasetView status={liveStatus} progress={datasetProgress} params={params} onRefreshStatus={refreshStatus} />}
           {tab === "references" && <ReferencesView references={references} onRefresh={refreshReferences} />}
           {tab === "history" && <HistoryView />}
-          {tab === "settings" && <SettingsView onRefreshStatus={refreshStatus} />}
+          {tab === "settings" && <SettingsView onRefreshStatus={refreshStatus} isOperator={lease.isMine} />}
         </div>
       </AppShell>
       <AgentWidget page={tab} onNavigate={setTab} />

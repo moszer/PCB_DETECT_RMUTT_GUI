@@ -755,7 +755,7 @@ export function AOIScanView({ status, report, progress, pointFrames, references,
               )}
               <Button size="sm" icon={Camera} loading={snapping} disabled={scanning} onClick={testSnap} title="ถ่ายภาพและตรวจทันที (Space)">
                 ถ่ายทดสอบ
-                <kbd className="hidden sm:inline px-1 rounded border border-line text-[10px] font-mono text-muted">Space</kbd>
+                <kbd className="hidden sm:inline pointer-coarse:hidden px-1 rounded border border-line text-[10px] font-mono text-muted">Space</kbd>
               </Button>
             </div>
           </div>

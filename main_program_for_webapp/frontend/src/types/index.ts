@@ -330,6 +330,15 @@ export interface Statistics {
   single_inspections_count: number;
 }
 
+export type AIProvider = "gemini" | "openrouter";
+
+export interface AIConfig {
+  provider: AIProvider;
+  configured: boolean;
+  model: string;
+  providers: Record<AIProvider, { key_set: boolean; key_hint: string | null; models: string }>;
+}
+
 export interface HubModel {
   path: string;
   run: string | null;

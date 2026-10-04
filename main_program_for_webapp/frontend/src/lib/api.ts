@@ -1,4 +1,6 @@
 import type {
+  AIConfig,
+  AIProvider,
   HubModel,
   AOIRunReport,
   CameraDevice,
@@ -118,6 +120,12 @@ export const api = {
   setModel: (model_path: string) => post<{ model_path: string; device: string }>("/api/system/model", { model_path }),
   listModels: () =>
     request<{ current_model: string; models: ModelFile[]; custom_dirs: string[]; search_dirs: string[] }>("/api/system/models"),
+  aiConfig: {
+    get: () => request<AIConfig>("/api/chat/config"),
+    update: (data: Partial<Record<"provider" | "gemini_api_key" | "openrouter_api_key" | "gemini_models" | "openrouter_model", string>>) =>
+      request<AIConfig>("/api/chat/config", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
+    test: (provider: AIProvider, api_key?: string) => post<{ ok: boolean; message: string }>("/api/chat/config/test", { provider, api_key }),
+  },
   listHubModels: () => request<{ repo: string; url: string; models: HubModel[] }>("/api/system/models/hub"),
   downloadHubModel: (file: string) => post<{ path: string; size_mb: number }>("/api/system/models/hub/download", { file }),
   uploadModel: (file: File) =>

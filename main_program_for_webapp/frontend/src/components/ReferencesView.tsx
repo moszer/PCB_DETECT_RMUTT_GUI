@@ -107,7 +107,7 @@ export function ReferencesView({ references, onRefresh }: ReferencesViewProps) {
         </ul>
       </aside>
 
-      <section className="p-4 md:p-6 md:overflow-y-auto">
+      <section className={cx("p-4 md:p-6 md:overflow-y-auto", !profile && !loading && "hidden md:block")}>
         {loading ? (
           <div className="h-full grid place-items-center">
             <Spinner className="size-6" />
@@ -115,7 +115,7 @@ export function ReferencesView({ references, onRefresh }: ReferencesViewProps) {
         ) : profile ? (
           <ProfileDetail profile={profile} onDelete={() => remove(profile.id)} />
         ) : (
-          <EmptyState icon={BookMarked} title="เลือกโปรไฟล์ทางซ้าย" className="h-full" />
+          <EmptyState icon={BookMarked} title="เลือกโปรไฟล์ทางซ้าย" className="h-full hidden md:flex" />
         )}
       </section>
     </div>
@@ -194,7 +194,7 @@ function ProfileDetail({ profile, onDelete }: { profile: ReferenceProfile; onDel
       <Card className="overflow-hidden">
         <CardHeader title="รายการจุดอ้างอิง" />
         <div className="overflow-x-auto max-h-[480px]">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[480px] text-sm">
             <thead className="sticky top-0 bg-surface-2 text-[11px] uppercase tracking-wide text-muted">
               <tr>
                 <th className="text-left font-medium px-4 py-2">#</th>

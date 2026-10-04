@@ -136,7 +136,7 @@ function IdleSummary({ refreshKey, onOpenPoint }: { refreshKey: string; onOpenPo
         <span className="text-red-400 tabular">ไม่ผ่าน {data?.fail ?? "–"}</span>
         {data && data.review > 0 && <span className="text-amber-300 tabular">ตรวจซ้ำ {data.review}</span>}
         {yieldPct !== null && <span className="tabular">Yield {yieldPct}%</span>}
-        <span className="ml-auto flex items-center gap-1 text-white/50">
+        <span className="ml-auto flex items-center gap-1 text-white/50 pointer-coarse:hidden">
           <Keyboard className="size-3.5" /> Space = ถ่ายทดสอบ
         </span>
       </div>

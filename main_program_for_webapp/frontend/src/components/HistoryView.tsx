@@ -126,8 +126,30 @@ function RunsTable({ refreshKey }: { refreshKey: number }) {
         </Select>
         <Pager offset={offset} total={total} count={runs.length} onOffset={setOffset} />
       </div>
+      <ul className="sm:hidden divide-y divide-line">
+        {runs.map((r) => (
+          <li key={r.id}>
+            <button type="button" onClick={() => open(r.id)} className="w-full text-left px-4 py-3 flex flex-col gap-1.5 hover:bg-surface-2 cursor-pointer">
+              <span className="flex items-center gap-2">
+                <VerdictBadge verdict={r.overall_verdict} />
+                <span className="text-xs text-muted">{formatDateTime(r.created_at)}</span>
+                <span className="ml-auto text-xs font-mono tabular text-muted">{r.total_points} จุด</span>
+              </span>
+              <span className="flex items-center gap-1.5 flex-wrap text-xs">
+                {r.is_golden_scan ? <Badge tone="info">ต้นแบบ</Badge> : <Badge>ผลิต</Badge>}
+                {r.is_simulation ? <Badge tone="review">จำลอง</Badge> : null}
+                {r.status !== "complete" && <Badge tone={r.status === "error" ? "fail" : "neutral"}>{r.status}</Badge>}
+                <span className="ml-auto font-mono tabular">
+                  <span className="text-pass">ผ่าน {r.pass_count}</span> · <span className="text-fail">ไม่ผ่าน {r.fail_count}</span> ·{" "}
+                  <span className="text-review">ซ้ำ {r.review_count}</span>
+                </span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="hidden sm:table w-full min-w-[640px] text-sm">
           <thead className="bg-surface-2 text-[11px] uppercase tracking-wide text-muted">
             <tr>
               <th className="text-left font-medium px-4 py-2">เวลา</th>

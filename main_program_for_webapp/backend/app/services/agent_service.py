@@ -442,7 +442,7 @@ async def run_agent(history: List[Dict[str, str]], page: Optional[str]) -> Async
     model stays overloaded the whole turn restarts on the next one - the tools are read-only.
     """
     if chat_service.provider() != "gemini" or not os.environ.get("GEMINI_API_KEY"):
-        yield _event("error", message="AI agent ใช้ Gemini — ตั้งค่า GEMINI_API_KEY และ AI_PROVIDER=gemini ใน backend/.env")
+        yield _event("error", message="AI agent ใช้ Gemini — ใส่ Gemini API key และเลือกผู้ให้บริการ Gemini ที่ ตั้งค่าสถานี → ผู้ช่วย AI")
         return
     system = SYSTEM_PROMPT + (f"\nผู้ใช้กำลังอยู่ที่หน้า: {page} ({PAGES.get(page, '')})" if page else "")
     base = [{"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}

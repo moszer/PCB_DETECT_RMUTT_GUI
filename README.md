@@ -107,6 +107,11 @@ The UI is in Thai. The sidebar has six pages.
 
 ### Configuration — `main_program_for_webapp/backend/.env`
 
+The AI key can also be set in the browser under **Settings → ผู้ช่วย AI** (test, save,
+remove). It applies at once, is written to `backend/.env`, and is never sent back to the
+browser (only a masked hint). It requires the operator lease (station passcode).
+
+
 Created from `.env.example` by `install.sh`. The file is git-ignored; never commit keys.
 
 ```bash

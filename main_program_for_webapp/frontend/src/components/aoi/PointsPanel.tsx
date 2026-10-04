@@ -48,7 +48,7 @@ export function PointsPanel(p: PointsPanelProps) {
           data-tour="mark"
         >
           {p.marking ? "กำลังถ่ายต้นแบบ…" : (p.markReason ?? "มาร์คตำแหน่งปัจจุบัน")}
-          {!p.marking && p.markReason === null && <kbd className="ml-1 px-1.5 rounded bg-white/20 text-[11px] font-mono font-normal">M</kbd>}
+          {!p.marking && p.markReason === null && <kbd className="ml-1 pointer-coarse:hidden px-1.5 rounded bg-white/20 text-[11px] font-mono font-normal">M</kbd>}
         </Button>
         <p className="text-xs leading-snug text-muted">
           จ๊อกสเตจบนภาพสดไปยังบริเวณที่ต้องการตรวจแล้วกดมาร์ค ระบบบันทึกพิกัดและถ่ายภาพต้นแบบ (ซูม {p.zoom}×) ลงบอร์ด “{p.boardName}” ให้อัตโนมัติ

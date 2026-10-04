@@ -82,7 +82,10 @@ Settings come from `backend/.env`, which `install.sh` copies from `.env.example`
 | `PCB_STORAGE_DIR` | Data folder (default `backend/data`) |
 | `PCB_MODEL_REPO`, `PCB_MODEL_FILE`, `HF_TOKEN` | Hugging Face repo with the YOLO weights, the file `install.sh` fetches (default `best.pt`), and a read token for private repos |
 
-AI keys stay on the server and are never sent to the browser.
+AI keys stay on the server and are never sent to the browser. They can be edited from
+**Settings → ผู้ช่วย AI** (`GET/PUT /api/chat/config`, `POST /api/chat/config/test`).
+Writing requires the operator lease even when nobody else holds the station; values are
+validated so they cannot inject other lines into `.env`.
 
 ---
 

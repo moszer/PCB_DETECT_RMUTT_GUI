@@ -6,11 +6,12 @@ import type { ComputeDevice } from "@/types";
 import { api } from "@/lib/api";
 import { Button, Card, CardHeader, Field, NumberInput, Slider, Spinner, TextInput, Toggle, cx } from "./ui";
 import { ModelPicker } from "./ModelPicker";
+import { AIKeyPanel } from "./AIKeyPanel";
 import { useSoundPrefs } from "@/hooks/useSound";
 import { sfx } from "@/lib/sound";
 import { useToast } from "./Toast";
 
-export function SettingsView({ onRefreshStatus }: { onRefreshStatus: () => void }) {
+export function SettingsView({ onRefreshStatus, isOperator }: { onRefreshStatus: () => void; isOperator: boolean }) {
   const toast = useToast();
   const [loaded, setLoaded] = useState(false);
 
@@ -100,6 +101,8 @@ export function SettingsView({ onRefreshStatus }: { onRefreshStatus: () => void 
       <div className="max-w-4xl mx-auto p-4 md:p-6 flex flex-col gap-5">
         <ModelPicker onRefreshStatus={onRefreshStatus} />
 
+        <AIKeyPanel isOperator={isOperator} />
+
         <Card>
           <CardHeader icon={Cpu} title="ฮาร์ดแวร์ประมวลผล" subtitle={`กำลังใช้: ${activeDevice}`} />
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2 p-4">
@@ -170,7 +173,7 @@ export function SettingsView({ onRefreshStatus }: { onRefreshStatus: () => void 
           </div>
         </Card>
 
-        <div className="flex justify-end sticky bottom-0 py-3 bg-bg/90 backdrop-blur">
+        <div className="flex justify-end sticky bottom-0 py-3 pr-16 bg-bg/90 backdrop-blur">
           <Button variant="primary" size="lg" icon={Save} loading={saving} onClick={save}>
             บันทึกการตั้งค่า
           </Button>

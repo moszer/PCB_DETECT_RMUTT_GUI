@@ -229,6 +229,16 @@ input[type="range"]::-moz-range-thumb {
   background: var(--accent);
   border: 2px solid var(--surface);
 }
+@media (pointer: coarse) {
+  input[type="range"] {
+    height: 32px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    width: 24px;
+    height: 24px;
+    margin-top: -10px;
+  }
+}
 input[type="range"]:disabled {
   opacity: 0.5;
   cursor: not-allowed;
