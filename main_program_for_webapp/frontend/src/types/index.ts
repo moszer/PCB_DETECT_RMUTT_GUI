@@ -345,6 +345,7 @@ export interface HardwareSnapshot {
   clocks_max?: boolean;
   over_current?: Record<string, number> | null;
   control_available?: boolean;
+  helper_outdated?: boolean;
 }
 
 export type AIProvider = "gemini" | "openrouter";

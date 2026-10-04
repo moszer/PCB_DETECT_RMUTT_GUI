@@ -21,10 +21,12 @@ import psutil
 logger = logging.getLogger(__name__)
 
 HELPER = "/usr/local/sbin/aoi-jetson-power"
+# The version in this checkout; when it differs from the installed one, the setup must be re-run.
+HELPER_SOURCE = Path(__file__).resolve().parents[3] / "scripts" / "jetson" / "aoi-jetson-power"
 STATE_DIR = Path("/var/lib/rmutt-aoi")
 NVPMODEL_CONF = Path("/etc/nvpmodel.conf")
 FAN_CONF = Path("/etc/nvfancontrol.conf")
-# With a fixed (manual) fan speed, give control back to the automatic curve above this.
+# With the fan fixed below 100 %, run it at 100 % (still fixed) above this temperature.
 FAN_SAFETY_C = 85.0
 
 
@@ -92,6 +94,7 @@ class HardwareService:
                 clocks_max=self._clocks_max(),
                 over_current=self._over_current(),
                 control_available=self.control_available(),
+                helper_outdated=self.helper_outdated(),
             )
         return data
 
@@ -191,7 +194,8 @@ class HardwareService:
         return {
             "percent": round(pwm * 100 / 255) if pwm is not None else None,
             "rpm": _num(tach / "rpm") if tach else None,
-            "mode": "manual" if manual and not active else "auto",
+            "mode": "manual" if manual else "auto",
+            "auto_service": active,
             "manual_percent": int(manual) if manual and manual.isdigit() else None,
             "profile": profile,
             "profiles": profiles,
@@ -243,6 +247,11 @@ class HardwareService:
         self._control_cache = (now, ok)
         return ok
 
+    @staticmethod
+    def helper_outdated() -> bool:
+        installed, source = _read(HELPER), _read(HELPER_SOURCE)
+        return bool(installed and source and installed != source)
+
     def _helper(self, *args: str) -> str:
         if not is_jetson():
             raise HardwareError("ใช้ได้เฉพาะบน NVIDIA Jetson")
@@ -280,20 +289,19 @@ class HardwareService:
         return self._helper("fan", "profile", mode)
 
     def _start_watchdog(self) -> None:
-        """While the fan is fixed, hand it back to the automatic curve if the chip gets hot."""
+        """While the fan is fixed below 100 %, run it at 100 % if the chip gets hot (it stays fixed)."""
         if self._watchdog and self._watchdog.is_alive():
             return
 
         def watch() -> None:
-            while (STATE_DIR / "fan-manual").exists():
+            while (pct := _read(STATE_DIR / "fan-manual")) is not None:
                 hottest = max((t["c"] for t in self._temperatures()), default=0.0)
-                if hottest >= FAN_SAFETY_C:
-                    logger.warning("Jetson at %.1f°C with a fixed fan speed: switching the fan to automatic (cool)", hottest)
+                if hottest >= FAN_SAFETY_C and pct != "100":
+                    logger.warning("Jetson at %.1f°C with the fan fixed at %s%%: raising it to 100%%", hottest, pct)
                     try:
-                        self._helper("fan", "profile", "cool")
+                        self._helper("fan", "manual", "100")
                     except HardwareError as exc:
-                        logger.error("Could not restore automatic fan: %s", exc)
-                    return
+                        logger.error("Could not raise the fan speed: %s", exc)
                 time.sleep(5)
 
         self._watchdog = threading.Thread(target=watch, daemon=True, name="FanSafetyWatchdog")

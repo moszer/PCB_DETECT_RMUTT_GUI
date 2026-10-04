@@ -6,7 +6,8 @@
 #   aoi-jetson-power mode <id>            nvpmodel -m <id> (id must exist in /etc/nvpmodel.conf)
 #   aoi-jetson-power clocks on|off        jetson_clocks (lock CPU/GPU/EMC at max) / restore
 #   aoi-jetson-power fan profile quiet|cool   automatic fan curve (nvfancontrol)
-#   aoi-jetson-power fan manual <20-100>  fixed fan speed in percent (stops nvfancontrol)
+#   aoi-jetson-power fan manual <20-100>  fixed fan speed in percent (kept across reboots)
+#   aoi-jetson-power fan restore          at boot: re-apply a fixed speed (rmutt-aoi-fan.service)
 #   aoi-jetson-power check                exits 0 (lets the station test that sudo works)
 set -euo pipefail
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -22,6 +23,44 @@ pwm_file() {
         [[ "$(cat "$h/name" 2>/dev/null)" == "pwmfan" && -w "$h/pwm1" ]] && { echo "$h/pwm1"; return 0; }
     done
     fail "no PWM fan found"
+}
+
+# Thermal zones whose kernel governor drives the fan (on Orin: tj-thermal -> pwm-fan). While the
+# speed is fixed they are switched to "user_space", or the kernel overwrites our PWM value.
+# CPU/GPU throttling and the critical shutdown trip are bound elsewhere and keep working.
+fan_zones() {
+    local z cd
+    for z in /sys/class/thermal/thermal_zone*; do
+        for cd in "$z"/cdev[0-9]*; do
+            [[ -e "$cd/type" && "$(cat "$cd/type")" == "pwm-fan" ]] && { echo "$z"; break; }
+        done
+    done
+    return 0
+}
+
+fan_fixed() {   # pct
+    local pct="$1" z
+    mkdir -p "$STATE_DIR"
+    systemctl stop nvfancontrol 2>/dev/null || true
+    systemctl disable nvfancontrol >/dev/null 2>&1 || true   # stays fixed after a reboot
+    for z in $(fan_zones); do
+        [[ -f "$STATE_DIR/policy-$(basename "$z")" ]] || cat "$z/policy" > "$STATE_DIR/policy-$(basename "$z")"
+        echo user_space > "$z/policy"
+    done
+    echo $(( pct * 255 / 100 )) > "$(pwm_file)"
+    echo "$pct" > "$STATE_DIR/fan-manual"
+}
+
+fan_auto() {
+    local z saved
+    for z in $(fan_zones); do
+        saved="$STATE_DIR/policy-$(basename "$z")"
+        if [[ -f "$saved" ]]; then cat "$saved" > "$z/policy"; else echo step_wise > "$z/policy"; fi
+        rm -f "$saved"
+    done
+    rm -f "$STATE_DIR/fan-manual"
+    systemctl enable nvfancontrol >/dev/null 2>&1 || true
+    systemctl restart nvfancontrol
 }
 
 case "${1:-}" in
@@ -46,8 +85,9 @@ case "${1:-}" in
             off)
                 if [[ -f "$STATE_DIR/l4t_dfs.conf" ]]; then jetson_clocks --restore "$STATE_DIR/l4t_dfs.conf"; fi
                 rm -f "$STATE_DIR/clocks-max"
-                # jetson_clocks also forces the fan to full; hand it back to the automatic curve.
-                systemctl restart nvfancontrol 2>/dev/null || true
+                # jetson_clocks also forces the fan to full: put back the fixed speed or the automatic curve.
+                if [[ -f "$STATE_DIR/fan-manual" ]]; then fan_fixed "$(cat "$STATE_DIR/fan-manual")"
+                else systemctl restart nvfancontrol 2>/dev/null || true; fi
                 ;;
             *) fail "clocks on|off" ;;
         esac
@@ -62,17 +102,19 @@ case "${1:-}" in
                 sed -E "s/^([[:space:]]*FAN_DEFAULT_PROFILE[[:space:]]+).*/\1${prof}/" "$FAN_CONF" > "$tmp"
                 cat "$tmp" > "$FAN_CONF" && rm -f "$tmp"   # cat keeps the file's owner and mode
                 rm -f /var/lib/nvfancontrol/status   # otherwise nvfancontrol keeps the last profile
-                systemctl restart nvfancontrol
-                rm -f "$STATE_DIR/fan-manual"
+                fan_auto
                 ;;
             manual)
                 pct="${3:-}"
                 [[ "$pct" =~ ^[0-9]{1,3}$ ]] && (( pct >= 20 && pct <= 100 )) || fail "manual speed must be 20-100 (%)"
-                systemctl stop nvfancontrol 2>/dev/null || true
-                echo $(( pct * 255 / 100 )) > "$(pwm_file)"
-                mkdir -p "$STATE_DIR" && echo "$pct" > "$STATE_DIR/fan-manual"
+                fan_fixed "$pct"
                 ;;
-            *) fail "fan profile quiet|cool, or fan manual <20-100>" ;;
+            restore)
+                pct="$(cat "$STATE_DIR/fan-manual" 2>/dev/null || true)"
+                if [[ "$pct" =~ ^[0-9]{1,3}$ ]] && (( pct >= 20 && pct <= 100 )); then fan_fixed "$pct"; fi
+                exit 0
+                ;;
+            *) fail "fan profile quiet|cool, fan manual <20-100>, or fan restore" ;;
         esac
         ;;
     *)

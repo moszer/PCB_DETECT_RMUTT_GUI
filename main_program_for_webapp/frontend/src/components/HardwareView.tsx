@@ -227,10 +227,10 @@ function JetsonControls({
     <Card>
       <CardHeader icon={Rocket} title="ตั้งค่าพลังงานและพัดลม (Jetson)" subtitle="มีผลทันที · ต้องมีสิทธิ์ควบคุมสถานี" />
       <div className="p-4 flex flex-col gap-6">
-        {!hw.control_available && (
+        {(!hw.control_available || hw.helper_outdated) && (
           <div className="rounded-lg border border-review/50 bg-review-soft p-3 text-sm flex flex-col gap-1.5">
             <span className="font-semibold text-review flex items-center gap-1.5">
-              <Lock className="size-4" /> เปิดสิทธิ์ครั้งเดียว (ต้องใช้ sudo บน Jetson)
+              <Lock className="size-4" /> {hw.helper_outdated ? "ตัวช่วยควบคุมพลังงานต้องอัปเดต (ต้องใช้ sudo บน Jetson)" : "เปิดสิทธิ์ครั้งเดียว (ต้องใช้ sudo บน Jetson)"}
             </span>
             <code className="font-mono text-xs bg-surface rounded px-2 py-1 select-all break-all">cd ~/Desktop/PCB_DETECT_RMUTT_GUI/main_program_for_webapp && sudo ./scripts/jetson/install-power-control.sh</code>
             <span className="text-xs text-muted">ติดตั้งตัวช่วยที่รับเฉพาะคำสั่งเปลี่ยนโหมดพลังงาน ความถี่ และพัดลมเท่านั้น จากนั้นรีเฟรชหน้านี้</span>
@@ -303,7 +303,7 @@ function JetsonControls({
             </div>
           )}
           <p className="text-xs text-muted">
-            ขั้นต่ำ 20% เพื่อความปลอดภัย และถ้าอุณหภูมิถึง 85°C ระหว่างกำหนดเอง ระบบจะสลับกลับเป็น “อัตโนมัติ · เย็น” ให้ทันที
+            ความเร็วที่กำหนดเองคงอยู่จนกว่าจะเลือกโหมดอัตโนมัติ (รวมถึงหลังรีบูต) · ขั้นต่ำ 20% และถ้าอุณหภูมิถึง 85°C ระบบเร่งเป็น 100% ให้เพื่อความปลอดภัย (ยังอยู่ในโหมดกำหนดเอง ปรับลดเองได้ภายหลัง)
           </p>
         </section>
       </div>

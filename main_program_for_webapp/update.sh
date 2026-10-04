@@ -63,6 +63,11 @@ if grep -qE '^(main_program_for_webapp/)?(backend/requirements[^/]*\.txt|fronten
 elif [[ "$BEFORE" != "$AFTER" ]]; then
     ok "Libraries unchanged (no install needed)"
 fi
+# Jetson power control: the installed root helper must match this version (asks for sudo).
+if [[ -f /etc/sudoers.d/rmutt-aoi-power ]] && ! cmp -s scripts/jetson/aoi-jetson-power /usr/local/sbin/aoi-jetson-power; then
+    step "Updating the Jetson power-control helper (sudo password)"
+    sudo ./scripts/jetson/install-power-control.sh || warn "Not updated; later: sudo ./scripts/jetson/install-power-control.sh"
+fi
 
 # ── restart ───────────────────────────────────────────────────────────────────
 station_pids() {  # run_web.sh processes of this folder
