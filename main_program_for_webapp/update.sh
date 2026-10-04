@@ -80,7 +80,7 @@ station_pids() {  # run_web.sh processes of this folder
         [[ "$pid" == "$$" ]] && continue
         ps -o args= -p "$pid" 2>/dev/null | grep -q "bash .*run_web.sh" || continue
         local cwd=""
-        if [[ -e "/proc/$pid/cwd" ]]; then cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
+        if [[ -d "/proc/$pid" ]]; then cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"  # Linux; empty if hidden
         else cwd="$(lsof -a -d cwd -p "$pid" -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)"; fi
         if [[ "$cwd" == "$PROJECT_DIR" ]]; then found+="$pid "
         elif [[ -z "$cwd" ]]; then hidden+="$pid "; fi
