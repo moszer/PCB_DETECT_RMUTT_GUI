@@ -19,7 +19,7 @@ from app.services.storage_service import storage_service
 
 class FakeVideoCapture:
     """Mock OpenCV VideoCapture to safely test without touching hardware cameras."""
-    def __init__(self, index):
+    def __init__(self, index, *_backend):
         self.index = index
     def isOpened(self):
         return False
@@ -36,7 +36,7 @@ class FakeVideoCapture:
 class AuditFindingsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.cv_patcher = patch("cv2.VideoCapture", side_effect=lambda idx: FakeVideoCapture(idx))
+        cls.cv_patcher = patch("cv2.VideoCapture", side_effect=lambda idx, *backend: FakeVideoCapture(idx))
         cls.cv_patcher.start()
         cls.client = TestClient(app)
         settings.operator_passcode = "rmutt-aoi"

@@ -197,7 +197,7 @@ class CameraService:
             logger.info("Opening camera index %d (%dx%d@%dfps)...", device_index, width, height, fps)
 
             # Try opening real camera via OpenCV
-            cap = None if os.environ.get("PCB_CAMERA_SIMULATION") == "1" else cv2.VideoCapture(device_index)
+            cap = None if os.environ.get("PCB_CAMERA_SIMULATION") == "1" else self._open_capture(device_index)
             if cap is not None and cap.isOpened():
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
@@ -224,6 +224,21 @@ class CameraService:
             self._thread = threading.Thread(target=self._capture_loop, args=(self._generation, self._cap, self._is_mock), daemon=True, name="CameraCaptureWorker")
             self._thread.start()
             return True
+
+    @staticmethod
+    def _open_capture(device_index: int) -> "cv2.VideoCapture":
+        """Open the camera. On Linux/Jetson use V4L2 and ask for MJPG before the size.
+
+        Most USB webcams only offer 640x480 in raw YUYV (what OpenCV picks by default) and
+        list their HD/4K modes as MJPG, so without this the camera answers 640x480
+        whatever size is requested. macOS (AVFoundation) needs neither.
+        """
+        if not sys.platform.startswith("linux"):
+            return cv2.VideoCapture(device_index)
+        cap = cv2.VideoCapture(device_index, cv2.CAP_V4L2)
+        if cap.isOpened():
+            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        return cap
 
     def stop(self):
         with self._lifecycle_lock:

@@ -44,3 +44,27 @@ class CameraDefaultTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OpenCaptureTests(unittest.TestCase):
+    """Linux must ask for V4L2 + MJPG, otherwise USB webcams answer 640x480."""
+
+    def test_linux_requests_mjpg_before_size(self):
+        import cv2
+        from unittest.mock import MagicMock, patch
+        from app.services.camera_service import camera_service
+
+        cap = MagicMock()
+        cap.isOpened.return_value = True
+        with patch("sys.platform", "linux"), patch("cv2.VideoCapture", return_value=cap) as vc:
+            camera_service._open_capture(0)
+        vc.assert_called_once_with(0, cv2.CAP_V4L2)
+        cap.set.assert_called_once_with(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+
+    def test_other_platforms_open_plainly(self):
+        from unittest.mock import MagicMock, patch
+        from app.services.camera_service import camera_service
+
+        with patch("sys.platform", "darwin"), patch("cv2.VideoCapture", return_value=MagicMock()) as vc:
+            camera_service._open_capture(1)
+        vc.assert_called_once_with(1)
