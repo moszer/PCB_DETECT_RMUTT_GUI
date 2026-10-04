@@ -10,7 +10,19 @@ import { useToast } from "../Toast";
 import { sfx } from "@/lib/sound";
 
 /** Stage connection, homing and position readout across the top of the AOI screen. */
-export function StageBar({ machine, scanning, onChange }: { machine: MachineState | null; scanning: boolean; onChange: () => void }) {
+export function StageBar({
+  machine,
+  scanning,
+  onChange,
+  lockReason = null,
+}: {
+  machine: MachineState | null;
+  scanning: boolean;
+  onChange: () => void;
+  /** Set while another operator holds the station: every control is locked with this reason. */
+  lockReason?: string | null;
+}) {
+  const locked = lockReason !== null;
   const [ports, setPorts] = useState<SerialPort[]>([]);
   const [port, setPort] = useState("");
   const [busy, setBusy] = useState<"connect" | "home" | null>(null);
@@ -64,7 +76,7 @@ export function StageBar({ machine, scanning, onChange }: { machine: MachineStat
   };
 
   return (
-    <div className="flex items-center gap-2 flex-wrap px-4 py-2.5 border-b border-line bg-surface">
+    <div className="flex items-center gap-2 flex-wrap px-4 py-2.5 border-b border-line bg-surface" data-tour="stage">
       <div className="flex items-center gap-2 mr-1">
         <StatusDot tone={!connected ? "neutral" : machine?.homed ? "pass" : "review"} pulse={machine?.is_moving} />
         <span className="text-sm font-medium">สเตจ XY</span>
@@ -88,7 +100,8 @@ export function StageBar({ machine, scanning, onChange }: { machine: MachineStat
             variant="primary"
             icon={Plug}
             loading={busy === "connect"}
-            disabled={!port}
+            disabled={!port || locked}
+            reason={lockReason}
             onClick={() => run("connect", () => api.connectMachine("serial", port), "เชื่อมต่อสเตจไม่สำเร็จ")}
           >
             เชื่อมต่อ
@@ -98,6 +111,7 @@ export function StageBar({ machine, scanning, onChange }: { machine: MachineStat
             variant="ghost"
             icon={PlugZap}
             loading={busy === "connect"}
+            disabled={locked}
             onClick={() => run("connect", () => api.connectMachine("simulation"), "เปิดสเตจจำลองไม่สำเร็จ")}
             title="ทดลองใช้งานโดยไม่ต่อฮาร์ดแวร์"
           >
@@ -111,7 +125,8 @@ export function StageBar({ machine, scanning, onChange }: { machine: MachineStat
             variant={machine?.homed ? "secondary" : "primary"}
             icon={Home}
             loading={busy === "home"}
-            disabled={scanning || machine?.is_moving}
+            disabled={scanning || machine?.is_moving || locked}
+            reason={lockReason}
             onClick={() => run("home", api.homeMachine, "HOME ไม่สำเร็จ")}
           >
             HOME
@@ -125,12 +140,12 @@ export function StageBar({ machine, scanning, onChange }: { machine: MachineStat
             </span>
             <span className="text-subtle">mm</span>
           </div>
-          {!machine?.homed && <span className="text-xs text-review">ต้อง HOME ก่อนเคลื่อนที่</span>}
+          {!machine?.homed && <span className="text-xs text-review font-medium">← กด HOME ก่อนเคลื่อนที่</span>}
           <div className="ml-auto flex items-center gap-1">
-            <Button size="sm" variant="ghost" icon={Power} disabled={scanning} onClick={motorsOff}>
+            <Button size="sm" variant="ghost" icon={Power} disabled={scanning || locked} onClick={motorsOff}>
               ปิดมอเตอร์
             </Button>
-            <Button size="sm" variant="ghost" icon={Unplug} onClick={disconnect}>
+            <Button size="sm" variant="ghost" icon={Unplug} disabled={locked} onClick={disconnect}>
               ตัดการเชื่อมต่อ
             </Button>
           </div>

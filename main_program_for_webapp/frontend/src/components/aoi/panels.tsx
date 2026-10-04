@@ -5,6 +5,7 @@ import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Home, LocateFixed, Navigatio
 import type { MachineState, ReferenceSummary } from "@/types";
 import { IMGSZ_OPTIONS, percent } from "@/lib/format";
 import type { InspectionParams, SetParams } from "@/lib/params";
+import { useHoldRepeat } from "@/hooks/useHoldRepeat";
 import { Button, Field, NumberInput, SectionLabel, Segmented, Select, Slider, Toggle, cx } from "../ui";
 
 export interface GridPlan {
@@ -40,14 +41,16 @@ export function JogPanel({
   motion: MotionSettings;
   setMotion: (m: Partial<MotionSettings>) => void;
   disabled: boolean;
-  onJog: (dx: number, dy: number) => void;
+  /** Resolves false when the move failed (stops a held button). */
+  onJog: (dx: number, dy: number) => Promise<boolean>;
   onHome: () => void;
   onMoveTo: (x: number, y: number) => void;
 }) {
   const [target, setTarget] = useState({ x: 0, y: 0 });
+  const hold = useHoldRepeat();
   const canMove = !disabled && Boolean(machine?.homed);
   const s = motion.jogStep;
-  const pad = "size-14 rounded-xl border border-line bg-surface-2 grid place-items-center text-text hover:bg-surface-3 active:scale-95 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed";
+  const pad = "size-14 pointer-coarse:size-18 rounded-xl border border-line bg-surface-2 grid place-items-center text-text hover:bg-surface-3 active:scale-95 transition cursor-pointer touch-none disabled:opacity-40 disabled:cursor-not-allowed";
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-2">
@@ -62,26 +65,30 @@ export function JogPanel({
 
       <div className="grid grid-cols-3 gap-2 w-fit mx-auto" aria-label="ปุ่มจ๊อกสเตจ">
         <span />
-        <button type="button" className={pad} disabled={!canMove} onClick={() => onJog(0, s)} aria-label={`Y+ ${s} mm`}>
+        <button type="button" className={pad} disabled={!canMove} {...hold(() => onJog(0, s))} aria-label={`Y+ ${s} mm`}>
           <ArrowUp className="size-5" />
         </button>
         <span />
-        <button type="button" className={pad} disabled={!canMove} onClick={() => onJog(-s, 0)} aria-label={`X- ${s} mm`}>
+        <button type="button" className={pad} disabled={!canMove} {...hold(() => onJog(-s, 0))} aria-label={`X- ${s} mm`}>
           <ArrowLeft className="size-5" />
         </button>
         <button type="button" className={cx(pad, "bg-accent-soft text-accent")} disabled={disabled || !machine?.connected} onClick={onHome} aria-label="HOME">
           <Home className="size-5" />
         </button>
-        <button type="button" className={pad} disabled={!canMove} onClick={() => onJog(s, 0)} aria-label={`X+ ${s} mm`}>
+        <button type="button" className={pad} disabled={!canMove} {...hold(() => onJog(s, 0))} aria-label={`X+ ${s} mm`}>
           <ArrowRight className="size-5" />
         </button>
         <span />
-        <button type="button" className={pad} disabled={!canMove} onClick={() => onJog(0, -s)} aria-label={`Y- ${s} mm`}>
+        <button type="button" className={pad} disabled={!canMove} {...hold(() => onJog(0, -s))} aria-label={`Y- ${s} mm`}>
           <ArrowDown className="size-5" />
         </button>
         <span />
       </div>
-      {!machine?.homed && <p className="text-xs text-center text-review">เชื่อมต่อและ HOME สเตจก่อนจ๊อก</p>}
+      {!machine?.homed ? (
+        <p className="text-xs text-center text-review">เชื่อมต่อและ HOME สเตจก่อนจ๊อก</p>
+      ) : (
+        <p className="text-xs text-center text-muted">กดค้างเพื่อเคลื่อนต่อเนื่อง · ใช้ปุ่มลูกศรบนคีย์บอร์ด หรือปุ่มจ๊อกบนภาพสดได้เช่นกัน</p>
+      )}
 
       <div className="flex flex-col gap-2">
         <SectionLabel>ไปยังตำแหน่ง</SectionLabel>
@@ -152,7 +159,7 @@ export function GridPanel({
           aside={
             <button
               type="button"
-              className="text-[11px] text-accent hover:underline cursor-pointer disabled:opacity-40"
+              className="text-xs text-accent hover:underline cursor-pointer disabled:opacity-40"
               disabled={!machine?.connected}
               onClick={() => machine && setGrid({ originX: machine.position_mm[0], originY: machine.position_mm[1] })}
             >
@@ -183,7 +190,7 @@ export function GridPanel({
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <SectionLabel>เส้นทางสแกน · {total} จุด</SectionLabel>
-          <span className="text-[11px] text-subtle font-mono">
+          <span className="text-xs text-subtle font-mono">
             พื้นที่ {limits[0]}×{limits[1]} mm
           </span>
         </div>

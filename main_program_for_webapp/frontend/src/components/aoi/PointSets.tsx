@@ -23,12 +23,15 @@ export function PointSets({
   onBoardChange,
   onLoad,
   disabled,
+  operator,
 }: {
   points: CustomPointRequest[];
   board: ActiveBoard;
   onBoardChange: (board: ActiveBoard) => void;
   onLoad: (points: CustomPointRequest[]) => void;
   disabled?: boolean;
+  /** Operator mode: open/switch boards only (no create, rename or delete). */
+  operator?: boolean;
 }) {
   const toast = useToast();
   const [sets, setSets] = useState<PointSetMeta[] | null>(null);
@@ -153,7 +156,7 @@ export function PointSets({
   /* ── A board is open ── */
   if (board) {
     return (
-      <div className="flex flex-col gap-2 rounded-lg border border-accent/40 bg-accent-soft/40 p-3">
+      <div className="flex flex-col gap-2 rounded-lg border border-accent/40 bg-accent-soft/40 p-3" data-tour="board">
         <div className="flex items-center gap-2">
           <CircuitBoard className="size-4 text-accent shrink-0" />
           {renaming ? (
@@ -174,7 +177,7 @@ export function PointSets({
                 <div className="text-sm font-semibold truncate" title={board.name}>
                   {board.name}
                 </div>
-                <div className={cx("text-[11px] flex items-center gap-1", save === "error" ? "text-fail" : "text-muted")}>
+                <div className={cx("text-xs flex items-center gap-1", save === "error" ? "text-fail" : "text-muted")}>
                   {save === "saving" ? (
                     <>
                       <Loader2 className="size-3 animate-spin" /> กำลังบันทึก…
@@ -189,33 +192,37 @@ export function PointSets({
                   )}
                 </div>
               </div>
-              <button
-                type="button"
-                title="เปลี่ยนชื่อบอร์ด"
-                disabled={disabled}
-                onClick={() => {
-                  setName(board.name);
-                  setRenaming(true);
-                }}
-                className="size-7 grid place-items-center rounded-md text-subtle hover:text-text hover:bg-surface-2 cursor-pointer disabled:opacity-40"
-              >
-                <Pencil className="size-3.5" />
-              </button>
-              <button
-                type="button"
-                title="ลบบอร์ดนี้"
-                disabled={disabled || busy}
-                onClick={() => remove(current)}
-                className="size-7 grid place-items-center rounded-md text-subtle hover:text-fail hover:bg-fail-soft cursor-pointer disabled:opacity-40"
-              >
-                <Trash2 className="size-3.5" />
-              </button>
+              {!operator && (
+                <>
+                  <button
+                    type="button"
+                    title="เปลี่ยนชื่อบอร์ด"
+                    disabled={disabled}
+                    onClick={() => {
+                      setName(board.name);
+                      setRenaming(true);
+                    }}
+                    className="size-7 grid place-items-center rounded-md text-subtle hover:text-text hover:bg-surface-2 cursor-pointer disabled:opacity-40"
+                  >
+                    <Pencil className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    title="ลบบอร์ดนี้"
+                    disabled={disabled || busy}
+                    onClick={() => remove(current)}
+                    className="size-7 grid place-items-center rounded-md text-subtle hover:text-fail hover:bg-fail-soft cursor-pointer disabled:opacity-40"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </>
+              )}
             </>
           )}
         </div>
         {!renaming && (
           <Button size="sm" variant="ghost" icon={LogOut} disabled={disabled} onClick={close} className="self-start">
-            ปิดบอร์ด / เปลี่ยนบอร์ด
+            {operator ? "เปลี่ยนบอร์ด" : "ปิดบอร์ด / เปลี่ยนบอร์ด"}
           </Button>
         )}
       </div>
@@ -226,32 +233,34 @@ export function PointSets({
   const selectedId = pick && sets?.some((s) => s.id === pick) ? pick : (sets?.[0]?.id ?? "");
   const selected = sets?.find((s) => s.id === selectedId);
   return (
-    <div className="flex flex-col gap-3 rounded-lg border-2 border-dashed border-accent/50 p-3">
+    <div className="flex flex-col gap-3 rounded-lg border-2 border-dashed border-accent/50 p-3" data-tour="board">
       <div className="flex items-center gap-2">
         <CircuitBoard className="size-4 text-accent" />
-        <span className="text-sm font-semibold">ขั้นที่ 1 · เลือกบอร์ดก่อนมาร์คจุด</span>
+        <span className="text-sm font-semibold">{operator ? "เลือกบอร์ดที่จะตรวจ" : "บอร์ด"}</span>
       </div>
 
-      <form
-        className="flex flex-col gap-1.5"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (name.trim()) create();
-        }}
-      >
-        <SectionLabel>สร้างบอร์ดใหม่</SectionLabel>
-        <div className="flex gap-2">
-          <TextInput value={name} maxLength={80} disabled={disabled} onChange={(e) => setName(e.target.value)} placeholder="ชื่อบอร์ด เช่น Astron CPLD รุ่น A" aria-label="ชื่อบอร์ดใหม่" className="flex-1" />
-          <Button type="submit" variant="primary" icon={Plus} loading={busy} disabled={disabled || !name.trim()}>
-            สร้าง
-          </Button>
-        </div>
-        {points.length > 0 && <p className="text-[11px] text-review">จุดที่มาร์คไว้ตอนนี้ {points.length} จุด จะถูกเก็บเข้าบอร์ดใหม่ด้วย</p>}
-      </form>
+      {!operator && (
+        <form
+          className="flex flex-col gap-1.5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (name.trim()) create();
+          }}
+        >
+          <SectionLabel>สร้างบอร์ดใหม่</SectionLabel>
+          <div className="flex gap-2">
+            <TextInput value={name} maxLength={80} disabled={disabled} onChange={(e) => setName(e.target.value)} placeholder="ชื่อบอร์ด เช่น Astron CPLD รุ่น A" aria-label="ชื่อบอร์ดใหม่" className="flex-1" />
+            <Button type="submit" variant="primary" icon={Plus} loading={busy} disabled={disabled || !name.trim()}>
+              สร้าง
+            </Button>
+          </div>
+          {points.length > 0 && <p className="text-xs text-review">จุดที่มาร์คไว้ตอนนี้ {points.length} จุด จะถูกเก็บเข้าบอร์ดใหม่ด้วย</p>}
+        </form>
+      )}
 
       {sets && sets.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <SectionLabel>หรือเปิดบอร์ดที่บันทึกไว้</SectionLabel>
+          {!operator && <SectionLabel>หรือเปิดบอร์ดที่บันทึกไว้</SectionLabel>}
           <div className="flex gap-2">
             <Select value={selectedId} onChange={(e) => setPick(e.target.value)} disabled={disabled || busy} aria-label="บอร์ดที่บันทึกไว้" className="flex-1 h-9 text-sm">
               {sets.map((s) => (
@@ -266,17 +275,20 @@ export function PointSets({
           </div>
           {selected && (
             <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] text-subtle">
+              <span className="text-xs text-subtle">
                 ต้นแบบ {selected.component_count} ชิ้น · แก้ล่าสุด {new Date(selected.updated_at * 1000).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })}
               </span>
-              <button type="button" onClick={() => remove(selected)} disabled={disabled || busy} className="text-[11px] text-fail hover:underline cursor-pointer disabled:opacity-40">
-                ลบ
-              </button>
+              {!operator && (
+                <button type="button" onClick={() => remove(selected)} disabled={disabled || busy} className="text-xs text-fail hover:underline cursor-pointer disabled:opacity-40">
+                  ลบ
+                </button>
+              )}
             </div>
           )}
         </div>
       )}
       {sets === null && <p className="text-xs text-muted">กำลังโหลดรายการบอร์ด…</p>}
+      {operator && sets?.length === 0 && <p className="text-xs text-muted">ยังไม่มีบอร์ดที่บันทึกไว้ — ให้วิศวกรสร้างบอร์ดในโหมดวิศวกรก่อน</p>}
     </div>
   );
 }

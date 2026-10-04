@@ -1,81 +1,12 @@
 "use client";
 
-import React, { useCallback } from "react";
-import { Expand, ImageOff, Square } from "lucide-react";
-import type { AOIPointResult, AOIRunReport, CapturedFrame, InspectionResult } from "@/types";
+import React, { useEffect, useState } from "react";
+import { Expand, ImageOff, Keyboard } from "lucide-react";
+import type { AOIPointResult, CapturedFrame, InspectionResult, RunRecord } from "@/types";
+import { api } from "@/lib/api";
 import { VERDICT_TONE } from "@/lib/format";
-import { Badge, Button, VerdictBadge, cx } from "../ui";
+import { VerdictBadge, cx } from "../ui";
 import { AnimatedResult, CaptureProgress, revealDelay } from "./ResultOverlay";
-
-const RUN_STATUS: Record<AOIRunReport["status"], { label: string; tone: "accent" | "pass" | "review" | "fail" | "neutral" }> = {
-  idle: { label: "ว่าง", tone: "neutral" },
-  running: { label: "กำลังสแกน", tone: "accent" },
-  complete: { label: "เสร็จสิ้น", tone: "pass" },
-  aborted: { label: "ยกเลิก", tone: "review" },
-  error: { label: "ผิดพลาด", tone: "fail" },
-};
-
-/** Progress + tally of the current (or most recent) scan run. */
-export function ScanStatusStrip({ report, onStop }: { report: AOIRunReport; onStop: () => void }) {
-  const total = report.total_points || report.points.length || 1;
-  const done = report.results.length;
-  const running = report.status === "running";
-  const status = RUN_STATUS[report.status];
-  return (
-    <div className="rounded-xl border border-line bg-surface px-3.5 py-2.5 flex flex-col gap-2">
-      <div className="flex items-center gap-2 flex-wrap text-sm">
-        <Badge tone={status.tone}>{status.label}</Badge>
-        {report.is_golden_scan && <Badge tone="info">สแกนต้นแบบ</Badge>}
-        {report.is_simulation && <Badge tone="review">จำลอง</Badge>}
-        <span className="font-mono tabular text-xs text-muted">
-          {done}/{total} จุด
-        </span>
-        <span className="flex items-center gap-2 text-xs">
-          <span className="text-pass">
-            ผ่าน <Count value={report.pass_count} />
-          </span>
-          <span className="text-fail">
-            ไม่ผ่าน <Count value={report.fail_count} />
-          </span>
-          <span className="text-review">
-            ตรวจซ้ำ <Count value={report.review_count} />
-          </span>
-          {report.error_count > 0 && <span className="text-muted">ผิดพลาด {report.error_count}</span>}
-        </span>
-        <span className="ml-auto flex items-center gap-2">
-          {!running && report.status === "complete" && !report.is_golden_scan && <VerdictBadge verdict={report.overall_verdict} />}
-          {running && (
-            <Button size="sm" variant="danger" icon={Square} onClick={onStop}>
-              หยุดสแกน
-            </Button>
-          )}
-        </span>
-      </div>
-      <div className="h-1.5 rounded-full bg-surface-3 overflow-hidden">
-        <div
-          className={cx(
-            "h-full transition-all duration-500 ease-out",
-            running ? "bg-accent bg-stripes animate-stripes" : VERDICT_TONE[report.overall_verdict].solid
-          )}
-          style={{ width: `${(done / total) * 100}%` }}
-        />
-      </div>
-      {report.error_message && <p className="text-xs text-fail">{report.error_message}</p>}
-      {report.status === "complete" && report.is_golden_scan && (
-        <p className="text-xs text-pass">สร้างโปรไฟล์ต้นแบบแล้ว — เลือกใช้ได้ในแท็บ “ตาราง”</p>
-      )}
-    </div>
-  );
-}
-
-/** A number that pops each time it changes. */
-function Count({ value }: { value: number }) {
-  return (
-    <span key={value} className="inline-block font-semibold tabular animate-pop">
-      {value}
-    </span>
-  );
-}
 
 export type OutputItem = { kind: "point"; point: AOIPointResult } | { kind: "snap"; result: InspectionResult };
 
@@ -83,7 +14,20 @@ export type OutputItem = { kind: "point"; point: AOIPointResult } | { kind: "sna
 export type PendingFrame = { key: string; image: string | null; label: string; frames?: CapturedFrame[]; target?: number; waiting?: string };
 
 /** The latest inspected image with its verdict, click to open the full detail. */
-export function OutputView({ item, pending, onOpen }: { item: OutputItem | null; pending?: PendingFrame | null; onOpen: () => void }) {
+export function OutputView({
+  item,
+  pending,
+  onOpen,
+  summaryKey,
+  onOpenPoint,
+}: {
+  item: OutputItem | null;
+  pending?: PendingFrame | null;
+  onOpen: () => void;
+  /** Changes when a scan finishes, to refresh the idle summary. */
+  summaryKey?: string;
+  onOpenPoint?: (point: AOIPointResult) => void;
+}) {
   if (pending) {
     return (
       <div className="relative size-full rounded-xl overflow-hidden bg-viewport border border-line">
@@ -91,17 +35,7 @@ export function OutputView({ item, pending, onOpen }: { item: OutputItem | null;
       </div>
     );
   }
-  if (!item) {
-    return (
-      <div className="size-full rounded-xl bg-viewport border border-line grid place-items-center text-center text-white/50 text-sm p-6">
-        <div className="flex flex-col items-center gap-2">
-          <ImageOff className="size-8" />
-          ยังไม่มีผลตรวจ
-          <span className="text-xs text-white/40">กด “ถ่ายทดสอบ” หรือเริ่มสแกน ผลของแต่ละจุดจะแสดงที่นี่</span>
-        </div>
-      </div>
-    );
-  }
+  if (!item) return <IdleSummary refreshKey={summaryKey ?? ""} onOpenPoint={onOpenPoint} />;
   const verdict = item.kind === "point" ? item.point.verdict : item.result.verdict;
   const url = item.kind === "point" ? item.point.annotated_url : item.result.annotated_url || item.result.image_url || "";
   const caption =
@@ -129,41 +63,83 @@ export function OutputView({ item, pending, onOpen }: { item: OutputItem | null;
   );
 }
 
-export function Filmstrip({
-  results,
-  activeIndex,
-  onPick,
-}: {
-  results: AOIPointResult[];
-  activeIndex: number | null;
-  onPick: (point: AOIPointResult) => void;
-}) {
-  // Stable callback ref: runs only when a new last item mounts, then brings it into view.
-  const revealNewest = useCallback((el: HTMLButtonElement | null) => {
-    el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "end" });
-  }, []);
-  if (!results.length) return null;
+type Summary = { runs: number; pass: number; fail: number; review: number; last: RunRecord | null };
+
+/** Before anything is inspected here: the station's last scan and today's tally instead of a black box. */
+function IdleSummary({ refreshKey, onOpenPoint }: { refreshKey: string; onOpenPoint?: (point: AOIPointResult) => void }) {
+  const [data, setData] = useState<Summary | null>(null);
+  useEffect(() => {
+    let live = true;
+    api
+      .listRuns(undefined, 300, 0)
+      .then(async ({ runs }) => {
+        const real = runs.filter((r) => !r.is_golden_scan && r.status === "complete");
+        const midnight = new Date().setHours(0, 0, 0, 0) / 1000;
+        const today = real.filter((r) => r.created_at >= midnight);
+        const count = (v: string) => today.filter((r) => r.overall_verdict === v).length;
+        const last = real[0] ? await api.getRun(real[0].id).catch(() => real[0]) : null;
+        if (live) setData({ runs: today.length, pass: count("PASS"), fail: count("FAIL"), review: count("REVIEW"), last });
+      })
+      .catch(() => live && setData({ runs: 0, pass: 0, fail: 0, review: 0, last: null }));
+    return () => {
+      live = false;
+    };
+  }, [refreshKey]);
+
+  const last = data?.last;
+  const thumbs = (last?.results ?? []).slice(0, 4);
+  const yieldPct = data && data.runs ? Math.round((data.pass / data.runs) * 100) : null;
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1 shrink-0">
-      {results.map((pt, i) => (
-        <button
-          key={pt.point_index}
-          ref={i === results.length - 1 ? revealNewest : undefined}
-          type="button"
-          onClick={() => onPick(pt)}
-          className={cx(
-            "relative h-20 aspect-video shrink-0 rounded-lg overflow-hidden border-2 bg-viewport cursor-pointer transition animate-rise",
-            activeIndex === pt.point_index ? "border-accent" : "border-transparent hover:border-line-strong"
+    <div className="size-full rounded-xl bg-viewport border border-line text-white flex flex-col p-4 gap-3 overflow-hidden">
+      {last ? (
+        <>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-white/60">ผลสแกนล่าสุด</span>
+            <VerdictBadge verdict={last.overall_verdict} />
+            <span className="text-xs text-white/60">
+              {new Date(last.created_at * 1000).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })} · {last.total_points} จุด
+            </span>
+          </div>
+          {thumbs.length > 0 && (
+            <div className={cx("flex-1 min-h-0 grid gap-2", thumbs.length > 1 ? "grid-cols-2" : "grid-cols-1")}>
+              {thumbs.map((pt) => (
+                <button
+                  key={pt.point_index}
+                  type="button"
+                  onClick={() => onOpenPoint?.(pt)}
+                  className="relative min-h-0 rounded-lg overflow-hidden bg-black/40 cursor-zoom-in"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={pt.annotated_url} alt={pt.name ?? ""} className="size-full object-contain opacity-85" loading="lazy" />
+                  <span className={cx("absolute top-1.5 right-1.5 h-4 px-1 rounded text-[9px] font-bold", VERDICT_TONE[pt.verdict].solid)}>{pt.verdict}</span>
+                  <span className="absolute bottom-0 inset-x-0 bg-black/60 text-[10px] px-1.5 py-0.5 text-left truncate">
+                    {pt.point_index + 1}. {pt.name || `จุด ${pt.point_index + 1}`}
+                  </span>
+                </button>
+              ))}
+            </div>
           )}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={pt.annotated_url} alt={pt.name || `จุด ${pt.point_index + 1}`} className="size-full object-cover" loading="lazy" />
-          <span className={cx("absolute top-1 right-1 h-4 px-1 rounded text-[9px] font-bold text-white", VERDICT_TONE[pt.verdict].solid)}>{pt.verdict}</span>
-          <span className="absolute bottom-0 inset-x-0 bg-black/60 text-[10px] text-white px-1.5 py-0.5 text-left truncate">
-            {pt.point_index + 1}. {pt.name || `จุด ${pt.point_index + 1}`}
-          </span>
-        </button>
-      ))}
+        </>
+      ) : (
+        <div className="flex-1 grid place-items-center text-center text-white/60 text-sm">
+          <div className="flex flex-col items-center gap-2">
+            <ImageOff className="size-8" />
+            {data ? "ยังไม่มีผลตรวจ" : "กำลังโหลด…"}
+            <span className="text-xs text-white/50">กด “ถ่ายทดสอบ” หรือเริ่มสแกน ผลของแต่ละจุดจะแสดงที่นี่</span>
+          </div>
+        </div>
+      )}
+      <div className="mt-auto flex items-center gap-x-3 gap-y-1 flex-wrap text-xs border-t border-white/10 pt-2.5">
+        <span className="text-white/60">วันนี้</span>
+        <span className="font-semibold tabular">{data?.runs ?? "–"} รอบ</span>
+        <span className="text-emerald-400 tabular">ผ่าน {data?.pass ?? "–"}</span>
+        <span className="text-red-400 tabular">ไม่ผ่าน {data?.fail ?? "–"}</span>
+        {data && data.review > 0 && <span className="text-amber-300 tabular">ตรวจซ้ำ {data.review}</span>}
+        {yieldPct !== null && <span className="tabular">Yield {yieldPct}%</span>}
+        <span className="ml-auto flex items-center gap-1 text-white/50">
+          <Keyboard className="size-3.5" /> Space = ถ่ายทดสอบ
+        </span>
+      </div>
     </div>
   );
 }

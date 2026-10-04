@@ -55,3 +55,5 @@ export function useOperatorLease(lease: ControlLease | undefined, onChange: () =
 
   return { isMine, controlled, acquire, release };
 }
+
+export type OperatorLease = ReturnType<typeof useOperatorLease>;

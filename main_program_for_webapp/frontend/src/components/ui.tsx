@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useId } from "react";
-import { Loader2, X, type LucideIcon } from "lucide-react";
+import { Loader2, Lock, X, type LucideIcon } from "lucide-react";
 import type { Verdict } from "@/types";
 import { VERDICT_LABEL, VERDICT_TONE } from "@/lib/format";
 
@@ -21,17 +21,20 @@ const BUTTON_VARIANT: Record<ButtonVariant, string> = {
   success: "bg-pass text-white border-transparent hover:brightness-110",
 };
 
+// Touch screens (iPad at the machine) get bigger targets.
 const BUTTON_SIZE: Record<ButtonSize, string> = {
-  sm: "h-8 px-2.5 text-xs gap-1.5 rounded-md",
-  md: "h-9 px-3.5 text-sm gap-2 rounded-lg",
-  lg: "h-11 px-5 text-sm gap-2 rounded-lg font-semibold",
+  sm: "h-8 pointer-coarse:h-10 px-2.5 text-xs gap-1.5 rounded-md",
+  md: "h-9 pointer-coarse:h-11 px-3.5 text-sm gap-2 rounded-lg",
+  lg: "h-11 pointer-coarse:h-13 px-5 text-sm gap-2 rounded-lg font-semibold",
 };
 
-export function buttonClasses(variant: ButtonVariant = "secondary", size: ButtonSize = "md", block?: boolean) {
+/** Unavailable buttons go neutral grey (a faded green still looks pressable). */
+const BUTTON_LOCKED = "bg-surface-2 text-subtle border-line border-dashed cursor-not-allowed";
+
+export function buttonClasses(variant: ButtonVariant = "secondary", size: ButtonSize = "md", block?: boolean, locked?: boolean) {
   return cx(
     "inline-flex items-center justify-center border font-medium whitespace-nowrap transition-colors select-none",
-    "disabled:opacity-45 disabled:cursor-not-allowed cursor-pointer",
-    BUTTON_VARIANT[variant],
+    locked ? BUTTON_LOCKED : cx("disabled:opacity-45 disabled:cursor-not-allowed cursor-pointer", BUTTON_VARIANT[variant]),
     BUTTON_SIZE[size],
     block && "w-full"
   );
@@ -43,6 +46,8 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   icon?: LucideIcon;
   loading?: boolean;
   block?: boolean;
+  /** Why the button is disabled: shown as its tooltip, with a lock icon. */
+  reason?: string | null;
 }
 
 export function Button({
@@ -51,20 +56,32 @@ export function Button({
   icon: Icon,
   loading,
   block,
+  reason,
   className,
   children,
   disabled,
+  title,
   type = "button",
   ...rest
 }: ButtonProps) {
+  // Colored buttons turn grey when unavailable; a loading button keeps its color.
+  const locked = Boolean(disabled && !loading && variant !== "secondary" && variant !== "ghost");
+  const showLock = Boolean(disabled && !loading && reason);
   return (
     <button
       type={type}
       disabled={disabled || loading}
-      className={cx(buttonClasses(variant, size, block), className)}
+      title={showLock ? (reason ?? undefined) : title}
+      className={cx(buttonClasses(variant, size, block, locked), className)}
       {...rest}
     >
-      {loading ? <Loader2 className="size-4 animate-spin" /> : Icon ? <Icon className="size-4 shrink-0" /> : null}
+      {loading ? (
+        <Loader2 className="size-4 animate-spin" />
+      ) : showLock ? (
+        <Lock className="size-4 shrink-0" />
+      ) : Icon ? (
+        <Icon className="size-4 shrink-0" />
+      ) : null}
       {children}
     </button>
   );
@@ -94,7 +111,7 @@ export function IconButton({ icon: Icon, label, active, size = "md", overlay, cl
       title={label}
       className={cx(
         "inline-flex items-center justify-center rounded-md transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed",
-        size === "sm" ? "size-7" : "size-9",
+        size === "sm" ? "size-7 pointer-coarse:size-9" : "size-9 pointer-coarse:size-11",
         tone,
         className
       )}
@@ -143,7 +160,7 @@ export function CardHeader({
 }
 
 export function SectionLabel({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cx("text-[11px] font-semibold uppercase tracking-wider text-subtle", className)}>{children}</div>;
+  return <div className={cx("text-xs font-semibold uppercase tracking-wide text-muted", className)}>{children}</div>;
 }
 
 /* ── Status ──────────────────────────────────────────────── */
@@ -443,7 +460,7 @@ export function Segmented<T extends string | number>({
             onClick={() => onChange(o.value)}
             className={cx(
               "flex-1 inline-flex items-center justify-center gap-1.5 rounded-md font-medium transition-colors cursor-pointer whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50",
-              size === "sm" ? "h-7 px-2 text-xs" : "h-8 px-3 text-sm",
+              size === "sm" ? "h-7 pointer-coarse:h-9 px-2 text-xs" : "h-8 pointer-coarse:h-10 px-3 text-sm",
               active ? "bg-surface text-text shadow-card" : "text-muted hover:text-text"
             )}
           >

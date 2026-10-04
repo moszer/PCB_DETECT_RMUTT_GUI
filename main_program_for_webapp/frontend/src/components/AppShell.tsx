@@ -7,6 +7,7 @@ import {
   Database,
   Cpu,
   Crosshair,
+  Eye,
   Image as ImageIcon,
   KeyRound,
   LogOut,
@@ -26,7 +27,7 @@ import {
 import type { SystemStatus } from "@/types";
 import { api, errorMessage } from "@/lib/api";
 import { fileName, formatMm } from "@/lib/format";
-import { useOperatorLease } from "@/hooks/useOperatorLease";
+import type { OperatorLease } from "@/hooks/useOperatorLease";
 import { useSoundPrefs } from "@/hooks/useSound";
 import { sfx } from "@/lib/sound";
 import { Button, Checkbox, Field, Modal, StatusDot, TextInput, cx } from "./ui";
@@ -51,11 +52,13 @@ interface AppShellProps {
   onRefreshStatus: () => void;
   theme: "light" | "dark";
   onToggleTheme: () => void;
+  lease: OperatorLease;
   children: React.ReactNode;
 }
 
-export function AppShell({ tab, onTab, status, socketConnected, onRefreshStatus, theme, onToggleTheme, children }: AppShellProps) {
+export function AppShell({ tab, onTab, status, socketConnected, onRefreshStatus, theme, onToggleTheme, lease, children }: AppShellProps) {
   const current = NAV.find((n) => n.id === tab)!;
+  const [askControl, setAskControl] = useState(false);
   return (
     <div className="h-dvh flex bg-bg text-text">
       {/* Sidebar (md+) */}
@@ -101,7 +104,7 @@ export function AppShell({ tab, onTab, status, socketConnected, onRefreshStatus,
             <p className="hidden sm:block text-[11px] text-muted leading-tight truncate">{current.description}</p>
           </div>
           <StatusChips status={status} />
-          <OperatorControl status={status} onChange={onRefreshStatus} />
+          <OperatorControl status={status} lease={lease} open={askControl} setOpen={setAskControl} />
           <SoundToggle />
           <button
             type="button"
@@ -115,6 +118,9 @@ export function AppShell({ tab, onTab, status, socketConnected, onRefreshStatus,
           <EmergencyStop onDone={onRefreshStatus} />
         </header>
 
+        {lease.controlled && !lease.isMine && (
+          <ViewOnlyBanner name={status?.control_lease.operator_name} ip={status?.control_lease.client_ip} onRequest={() => setAskControl(true)} />
+        )}
         <main className="flex-1 min-h-0 overflow-hidden pb-16 md:pb-0">{children}</main>
       </div>
 
@@ -179,8 +185,8 @@ function StatusChips({ status }: { status: SystemStatus | null }) {
     {
       icon: Crosshair,
       tone: !m.connected ? "neutral" : m.homed ? "pass" : "review",
-      label: !m.connected ? "สเตจไม่เชื่อมต่อ" : m.homed ? `${formatMm(m.position_mm[0])}, ${formatMm(m.position_mm[1])}` : "ยังไม่ HOME",
-      title: m.connected ? `สเตจ ${m.mode === "serial" ? m.port : "จำลอง"}` : "สเตจ XY",
+      label: !m.connected ? "สเตจไม่เชื่อมต่อ" : !m.homed ? "ยังไม่ HOME" : m.is_moving ? "กำลังเคลื่อนที่" : m.mode === "serial" ? "สเตจพร้อม" : "สเตจจำลอง",
+      title: m.connected ? `สเตจ ${m.mode === "serial" ? m.port : "จำลอง"} · ${formatMm(m.position_mm[0])}, ${formatMm(m.position_mm[1])} mm` : "สเตจ XY",
     },
   ] as const;
   return (
@@ -216,10 +222,34 @@ function SystemHealth({ status, socketConnected }: { status: SystemStatus | null
   );
 }
 
-function OperatorControl({ status, onChange }: { status: SystemStatus | null; onChange: () => void }) {
+/** Someone else holds the station: say so, instead of leaving buttons silently refused. */
+function ViewOnlyBanner({ name, ip, onRequest }: { name?: string | null; ip?: string | null; onRequest: () => void }) {
+  return (
+    <div className="shrink-0 flex items-center gap-2 px-4 py-1.5 border-b border-review/40 bg-review-soft text-review text-xs animate-rise">
+      <Eye className="size-4 shrink-0" />
+      <span className="min-w-0 truncate">
+        <strong className="font-semibold">โหมดดูอย่างเดียว</strong> · สถานีถูกควบคุมโดย <strong className="font-semibold">{name || "ผู้อื่น"}</strong>
+        {ip ? ` (${ip})` : ""} — คำสั่งเคลื่อนที่ สแกน และแก้ไขจะใช้ไม่ได้ (ปุ่ม STOP ใช้ได้เสมอ)
+      </span>
+      <button type="button" onClick={onRequest} className="ml-auto shrink-0 font-semibold underline underline-offset-2 hover:no-underline cursor-pointer">
+        ขอสิทธิ์ควบคุม
+      </button>
+    </div>
+  );
+}
+
+function OperatorControl({
+  status,
+  lease: { isMine, controlled, acquire, release },
+  open,
+  setOpen,
+}: {
+  status: SystemStatus | null;
+  lease: OperatorLease;
+  open: boolean;
+  setOpen: (open: boolean) => void;
+}) {
   const lease = status?.control_lease;
-  const { isMine, controlled, acquire, release } = useOperatorLease(lease, onChange);
-  const [open, setOpen] = useState(false);
   const [name, setName] = useState("Operator");
   const [passcode, setPasscode] = useState("");
   const [force, setForce] = useState(false);

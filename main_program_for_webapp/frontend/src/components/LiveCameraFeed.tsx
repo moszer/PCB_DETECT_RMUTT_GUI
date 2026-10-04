@@ -25,6 +25,8 @@ interface LiveCameraFeedProps {
   locked?: boolean;
   /** Sweep a scan line over the image while a scan is capturing. */
   scanning?: boolean;
+  /** Extra controls drawn over the image (e.g. the AOI jog pad). */
+  children?: React.ReactNode;
 }
 
 const ZOOM_STEPS = [1, 1.5, 2, 3, 4];
@@ -77,7 +79,7 @@ function MjpegImage({ src, onFail, ...rest }: { src: string; onFail: () => void 
  * The single live camera view used across the app: MJPEG stream with an automatic
  * snapshot fallback, alignment reticle, zoom preview and the one camera-settings menu.
  */
-export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePosition, hud, locked, scanning }: LiveCameraFeedProps) {
+export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePosition, hud, locked, scanning, children }: LiveCameraFeedProps) {
   const [mode, setMode] = useState<"stream" | "snapshot">("stream");
   const [streamKey, setStreamKey] = useState(() => Date.now());
   const [snapshotUrl, setSnapshotUrl] = useState<string | null>(null);
@@ -235,6 +237,8 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
         </div>
       )}
 
+      {children}
+
       {/* Bottom: stage position + zoom */}
       <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-2 pointer-events-none">
         {stagePosition !== undefined ? (
@@ -252,7 +256,7 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
                 type="button"
                 onClick={() => onZoomChange(z)}
                 className={cx(
-                  "h-7 px-2 rounded-md text-[11px] font-mono cursor-pointer",
+                  "h-7 pointer-coarse:h-10 px-2 pointer-coarse:px-3 rounded-md text-[11px] font-mono cursor-pointer",
                   Math.abs(zoom - z) < 0.05 ? "bg-white text-black font-bold" : "text-white/75 hover:text-white"
                 )}
               >

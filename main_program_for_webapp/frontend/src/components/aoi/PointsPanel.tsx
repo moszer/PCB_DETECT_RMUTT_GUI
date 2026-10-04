@@ -1,17 +1,17 @@
 "use client";
 
 import React from "react";
-import { Crosshair, Layers, Loader2, MapPin, Navigation, Play, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Crosshair, MapPin, Navigation, Plus, Trash2 } from "lucide-react";
 import type { CustomPointRequest } from "@/types";
 import { formatMm } from "@/lib/format";
-import { Badge, Button, EmptyState, SectionLabel, Segmented, cx } from "../ui";
+import { Badge, Button, EmptyState, SectionLabel, cx } from "../ui";
 
 interface PointsPanelProps {
   points: CustomPointRequest[];
   selected: number;
   onSelect: (index: number) => void;
+  /** Zoom new points are marked with (set on the live view). */
   zoom: number;
-  onZoom: (zoom: number) => void;
   onRename: (index: number, name: string) => void;
   onSetPointZoom: (index: number, zoom: number) => void;
   onMark: () => void;
@@ -19,18 +19,15 @@ interface PointsPanelProps {
   onEditReference: (index: number) => void;
   onDelete: (index: number) => void;
   onClear: () => void;
-  onTeachAll: () => void;
-  onStart: () => void;
   marking: boolean;
   movingIndex: number | null;
-  teachProgress: { current: number; total: number } | null;
-  canMove: boolean;
-  scanning: boolean;
-  frames: number | null;
-  /** Point currently being scanned (pulses in the list). */
+  /** Why the stage can't be moved/marked right now (null when it can). */
+  markReason: string | null;
+  /** Editing points is off (scanning, or someone else controls the station). */
+  locked: boolean;
+  /** Point currently being scanned (highlighted in the list). */
   scanningIndex?: number | null;
-  /** Open board; marking is only allowed once a board is created/opened. */
-  boardName: string | null;
+  boardName: string;
 }
 
 const ZOOMS = [1, 1.5, 2, 3, 4];
@@ -40,23 +37,21 @@ export function PointsPanel(p: PointsPanelProps) {
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-2">
-        <SectionLabel>ซูมสำหรับจุดใหม่</SectionLabel>
-        <Segmented className="w-full" value={p.zoom} onChange={p.onZoom} options={ZOOMS.map((z) => ({ value: z, label: `${z}×` }))} />
         <Button
           variant="success"
           size="lg"
           icon={p.marking ? undefined : Plus}
           loading={p.marking}
-          disabled={!p.boardName || !p.canMove || p.scanning}
-          title={p.boardName ? undefined : "สร้างหรือเปิดบอร์ดก่อน"}
+          disabled={p.markReason !== null}
+          reason={p.markReason}
           onClick={p.onMark}
+          data-tour="mark"
         >
-          {p.marking ? "กำลังถ่ายต้นแบบ…" : "มาร์คตำแหน่งปัจจุบัน"}
+          {p.marking ? "กำลังถ่ายต้นแบบ…" : (p.markReason ?? "มาร์คตำแหน่งปัจจุบัน")}
+          {!p.marking && p.markReason === null && <kbd className="ml-1 px-1.5 rounded bg-white/20 text-[11px] font-mono font-normal">M</kbd>}
         </Button>
-        <p className={cx("text-[11px] leading-snug", p.boardName ? "text-subtle" : "text-review")}>
-          {p.boardName
-            ? `จ๊อกสเตจไปยังบริเวณที่ต้องการตรวจแล้วกดมาร์ค ระบบจะบันทึกพิกัดและถ่ายภาพต้นแบบลงบอร์ด “${p.boardName}” ให้อัตโนมัติ`
-            : "สร้างหรือเปิดบอร์ดด้านบนก่อน จึงจะมาร์คจุดตรวจได้"}
+        <p className="text-xs leading-snug text-muted">
+          จ๊อกสเตจบนภาพสดไปยังบริเวณที่ต้องการตรวจแล้วกดมาร์ค ระบบบันทึกพิกัดและถ่ายภาพต้นแบบ (ซูม {p.zoom}×) ลงบอร์ด “{p.boardName}” ให้อัตโนมัติ
         </p>
       </div>
 
@@ -66,7 +61,7 @@ export function PointsPanel(p: PointsPanelProps) {
             จุดตรวจ ({p.points.length}) · มีต้นแบบ {taught}
           </SectionLabel>
           {p.points.length > 0 && (
-            <button type="button" onClick={p.onClear} disabled={p.scanning} className="text-[11px] text-fail hover:underline cursor-pointer disabled:opacity-40">
+            <button type="button" onClick={p.onClear} disabled={p.locked} className="text-xs text-fail hover:underline cursor-pointer disabled:opacity-40">
               ลบทั้งหมด
             </button>
           )}
@@ -74,7 +69,7 @@ export function PointsPanel(p: PointsPanelProps) {
 
         {p.points.length === 0 ? (
           <EmptyState icon={MapPin} title="ยังไม่มีจุดตรวจ" className="rounded-lg border border-dashed border-line py-8">
-            ขั้นที่ 2 · เชื่อมต่อและ HOME สเตจ จ๊อกไปยังจุดที่ต้องการ แล้วกด “มาร์คตำแหน่งปัจจุบัน”
+            จ๊อกไปยังจุดที่ต้องการ แล้วกด “มาร์คตำแหน่งปัจจุบัน” (หรือกด M)
           </EmptyState>
         ) : (
           <ul className="rounded-lg border border-line divide-y divide-line overflow-hidden">
@@ -100,6 +95,7 @@ export function PointsPanel(p: PointsPanelProps) {
                         <input
                           aria-label="ชื่อจุด"
                           value={pt.name ?? ""}
+                          disabled={p.locked}
                           onChange={(e) => p.onRename(i, e.target.value)}
                           onClick={(e) => e.stopPropagation()}
                           className="w-full bg-transparent text-sm font-medium focus:outline-none border-b border-transparent focus:border-accent"
@@ -115,16 +111,16 @@ export function PointsPanel(p: PointsPanelProps) {
                   </div>
                   {active && (
                     <div className="flex items-center gap-1 px-2.5 pb-2 flex-wrap">
-                      <Button size="sm" icon={moving ? undefined : Navigation} loading={moving} disabled={!p.canMove || p.scanning} onClick={() => p.onMove(i)}>
+                      <Button size="sm" icon={moving ? undefined : Navigation} loading={moving} disabled={p.markReason !== null} onClick={() => p.onMove(i)}>
                         ไปที่จุด
                       </Button>
-                      <Button size="sm" icon={Crosshair} disabled={p.scanning} onClick={() => p.onEditReference(i)}>
+                      <Button size="sm" icon={Crosshair} disabled={p.locked} onClick={() => p.onEditReference(i)}>
                         {parts ? "แก้ต้นแบบ" : "สอนต้นแบบ"}
                       </Button>
                       <select
                         aria-label="ซูมของจุด"
                         value={pt.zoom || 1}
-                        disabled={p.scanning}
+                        disabled={p.locked}
                         onChange={(e) => p.onSetPointZoom(i, Number(e.target.value))}
                         className="h-8 rounded-md border border-line bg-surface px-1.5 text-xs cursor-pointer"
                       >
@@ -137,7 +133,7 @@ export function PointsPanel(p: PointsPanelProps) {
                       <button
                         type="button"
                         aria-label="ลบจุดนี้"
-                        disabled={p.scanning}
+                        disabled={p.locked}
                         onClick={() => p.onDelete(i)}
                         className="ml-auto size-8 grid place-items-center rounded-md text-subtle hover:text-fail hover:bg-fail-soft cursor-pointer disabled:opacity-40"
                       >
@@ -151,32 +147,6 @@ export function PointsPanel(p: PointsPanelProps) {
           </ul>
         )}
       </div>
-
-      {p.points.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <Button variant="primary" size="lg" icon={Play} disabled={!p.canMove || p.scanning} onClick={p.onStart}>
-            เริ่มตรวจ {p.points.length} จุด
-            {p.frames ? (
-              <span className="inline-flex items-center gap-1 opacity-80 font-normal">
-                · <Layers className="size-3.5" /> {p.frames}F
-              </span>
-            ) : null}
-          </Button>
-          <Button icon={p.teachProgress ? undefined : Sparkles} disabled={!p.canMove || p.scanning || !!p.teachProgress} onClick={p.onTeachAll}>
-            {p.teachProgress ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                สอนต้นแบบ {p.teachProgress.current}/{p.teachProgress.total}
-              </>
-            ) : (
-              "สอนต้นแบบทุกจุดอัตโนมัติ"
-            )}
-          </Button>
-          {taught < p.points.length && (
-            <p className="text-[11px] text-review">จุดที่ไม่มีต้นแบบจะได้ผลเป็น REVIEW (ตรวจจับอย่างเดียว)</p>
-          )}
-        </div>
-      )}
     </div>
   );
 }

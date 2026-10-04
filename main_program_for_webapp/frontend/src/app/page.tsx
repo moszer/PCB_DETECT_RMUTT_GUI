@@ -13,6 +13,7 @@ import { SettingsView } from "@/components/SettingsView";
 import { DatasetView } from "@/components/dataset/DatasetView";
 import { useStationSocket } from "@/hooks/useStationSocket";
 import { useIsClient, usePersistentState } from "@/hooks/usePersistentState";
+import { useOperatorLease } from "@/hooks/useOperatorLease";
 import { api } from "@/lib/api";
 import { DEFAULT_PARAMS, type InspectionParams } from "@/lib/params";
 import { sfx } from "@/lib/sound";
@@ -153,6 +154,9 @@ function Station() {
   };
 
   const liveStatus: SystemStatus | null = status ? { ...status, machine: machineState ?? status.machine } : null;
+  // One lease tracker for the whole page (header button, view-only banner, AOI controls).
+  const lease = useOperatorLease(status?.control_lease, refreshStatus);
+  const viewOnly = lease.controlled && !lease.isMine;
   const activeReport = scanProgress?.report ?? polledScan;
 
   return (
@@ -165,6 +169,7 @@ function Station() {
         onRefreshStatus={refreshStatus}
         theme={theme}
         onToggleTheme={toggleTheme}
+        lease={lease}
       >
         <div key={tab} className="h-full animate-fade">
           {tab === "aoi" && (
@@ -177,6 +182,8 @@ function Station() {
               params={params}
               setParams={setParams}
               onRefreshStatus={refreshStatus}
+              viewOnly={viewOnly}
+              introReady={!splash}
             />
           )}
           {tab === "inspect" && <InspectionView references={references} params={params} setParams={setParams} status={liveStatus} />}
