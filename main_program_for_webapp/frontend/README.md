@@ -1,63 +1,115 @@
-# PCB AOI & Defect Detection System - Next.js Frontend
+# RMUTT PCB AOI Station — Frontend (Next.js)
 
-Web interface for the PCB Inspection Station built with Next.js App Router, TypeScript, Tailwind CSS, and HTML5/SVG interactive overlays.
+The browser UI of the web station: Next.js 16 (App Router), React 19, TypeScript and
+Tailwind CSS 4. The UI is in Thai, works in light and dark themes, and fits desktop, tablet
+(iPad at the machine) and phone screens.
 
----
-
-## 1. Views & Features
-
-1. **Single Inspection (`/`)**:
-   - Live camera MJPEG preview with interactive pan/zoom.
-   - Upload PCB image drag-and-drop.
-   - One-click "Capture & Inspect".
-   - SVG interactive overlay with class-colored bounding boxes and golden reference target markers.
-   - Click-to-inspect component side panel with OK, WRONG, MISSING, and EXTRA statuses.
-2. **AOI Automated Scan**:
-   - XY Stage connection toggle (Simulation vs Serial Nano).
-   - Real-time coordinates display (mm and steps).
-   - HOME, Jog keypad (0.1, 1, 5, 10 mm step size), and Motors OFF.
-   - Raster scan planner with serpentine path calculation.
-   - Teach mode ("Scan Golden Board") and Inspection mode.
-   - Live progress monitor with thumbnail results grid and full-detail modal.
-3. **Golden References**:
-   - Profile management with single-image and AOI grid profiles.
-   - One-click "Import Desktop Refs.json" without modifying original files.
-   - Component expectation table.
-4. **History & Yield**:
-   - Board-level and point-level yield rate KPI cards.
-   - Filterable runs table with PASS/FAIL/REVIEW/ERROR status.
-   - CSV export download.
-5. **System Settings**:
-   - Hardware processor switcher (Apple MPS, NVIDIA CUDA, CPU).
-   - Model weights path configuration.
-   - Machine soft limit bounds (mm).
-   - Station and operator metadata.
+Start the whole station from the parent folder with `./run_web.sh` (see
+[../INSTALL.md](../INSTALL.md)). This file covers the frontend itself.
 
 ---
 
-## 2. Running Locally
+## 1. Pages
+
+The page lives in a single route (`src/app/page.tsx`). The sidebar switches between six
+views, and the bottom bar does the same on small screens.
+
+| View | Component | What it does |
+| --- | --- | --- |
+| สแกน AOI | `components/aoi/AOIScanView.tsx` | Boards, stage control, marking and teaching points, point/grid scans |
+| ตรวจภาพเดี่ยว | `InspectionView.tsx`, `BoardInspection.tsx` | Inspect a live frame or an uploaded image against a reference |
+| ชุดข้อมูลเทรน | `dataset/DatasetView.tsx`, `dataset/LabelEditor.tsx` | Whole-board capture, label editing (marquee select, bulk delete), dataset download |
+| โปรไฟล์อ้างอิง | `ReferencesView.tsx` | Golden reference profiles, import the desktop `Refs.json` |
+| ประวัติ & Yield | `HistoryView.tsx` | Runs and single inspections, yield, CSV export |
+| ตั้งค่าสถานี | `SettingsView.tsx`, `ModelPicker.tsx` | Model, compute device, stage limits, station info |
+
+Shared across all pages:
+- `AppShell.tsx`: sidebar, header status chips, operator control, view-only banner, STOP button.
+- `AgentWidget.tsx`: the station-wide AI assistant.
+- `SplashScreen.tsx`
+- `Toast.tsx`
+
+---
+
+## 2. AOI scan page (`components/aoi/`)
+
+| File | Role |
+| --- | --- |
+| `AOIScanView.tsx` | Page state and wiring: workflow steps, keyboard shortcuts, operator/engineer mode, guided tour, camera/result layout sized to the camera aspect ratio |
+| `WorkflowSteps.tsx` | ① board → ② stage ready → ③ mark points → ④ scan, with the next action |
+| `PointSets.tsx` | Create / open / rename / delete boards; autosaves the points (operator variant: open only) |
+| `PointsPanel.tsx` | Mark button and the point list (go to, teach reference, zoom, delete) |
+| `StageBar.tsx` | Serial / simulation connect, HOME, position, motors off |
+| `JogOverlay.tsx` | Jog pad over the live camera (press-and-hold, step cycling) |
+| `ScanDock.tsx` | Start/stop, progress, and one thumbnail per point under the camera |
+| `ScanResults.tsx` | Result pane; when empty, shows the last scan and today's tally |
+| `ResultOverlay.tsx` | Box-by-box result reveal and the per-frame capture progress |
+| `OperatorPanel.tsx` | Operator mode: one big start button and a big PASS/FAIL |
+| `ShortcutHelp.tsx` | Shortcut sheet (`?`) |
+| `panels.tsx` | Grid scan, jog, and inspection-parameter tabs |
+
+Keyboard shortcuts on this page:
+
+| Key | Action |
+| --- | --- |
+| Arrows | Jog the stage |
+| Shift + arrows | Jog ×10 |
+| `M` | Mark the current position |
+| `Space` | Test snap |
+| `H` | HOME |
+| `1`–`5` | Zoom |
+| `?` | Help |
+
+Shortcuts use `KeyboardEvent.code`, so they also work with the Thai keyboard layout.
+
+Other components:
+- `LiveCameraFeed.tsx`: MJPEG with a snapshot fallback; it closes leaked streams.
+- `PointResultModal.tsx` (point detail), `DepthModal.tsx`, `Depth3DView.tsx`, `DepthMap2D.tsx` (3D height map).
+- `ChatPanel.tsx`: board chat.
+- `Tour.tsx`: guided tour.
+
+---
+
+## 3. Shared code
+
+- `components/ui.tsx`: design primitives.
+  - `Button`: when disabled it turns grey and can show a `reason` with a lock.
+  - Also `Segmented`, `Modal`, `Badge`, `Field`, inputs, and more.
+  - Touch screens get larger targets through `pointer-coarse:` variants.
+- `app/globals.css`: color tokens for light and dark themes (`bg-surface`, `text-muted`, `text-pass`, …) and animations.
+- `lib/api.ts`: typed client for every backend endpoint. It sends the operator token with each request.
+- `lib/sound.ts`: sound effects synthesized with Web Audio (no audio files).
+- `hooks/`:
+  - `useStationSocket`: WebSocket `/ws/status` for live stage state, scan progress and frames.
+  - `useOperatorLease`
+  - `usePersistentState`: localStorage-backed state.
+  - `useHoldRepeat`
+  - `useElementSize`
+  - `useSound`
+
+The React Compiler lint rules are on. Don't call `setState` synchronously inside an effect
+body; do it in async callbacks or event handlers.
+
+---
+
+## 4. Development
 
 ```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Run development server (default port 3000 or 3001)
-npm run dev -- -p 3001
-
-# Or build and run production server
-npm run build
-npx next start -p 3001
+npm ci
+npm run dev        # http://localhost:3001 (next dev -p 3001)
+npm run lint
+npx tsc --noEmit
+npm run build && npm start    # production (run_web.sh --prod does this)
 ```
 
----
+`/api/*` and `/ws/*` are proxied to the backend by `next.config.ts`. The proxy targets
+`http://127.0.0.1:8000` by default; override it with `BACKEND_URL`:
 
-## 3. Environment Configuration
-
-If the FastAPI backend runs on a custom address:
 ```bash
-# In frontend/.env.local:
-NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8000
+BACKEND_URL=http://127.0.0.1:8001 npm run dev
 ```
-Next.js automatically proxies `/api/*` requests to the backend.
+
+In Docker, `BACKEND_URL` is baked in at build time (see `Dockerfile`).
+
+> This Next.js version has breaking changes from older releases. Check
+> `node_modules/next/dist/docs/` before using unfamiliar APIs (see `AGENTS.md`).
