@@ -27,3 +27,6 @@ main_program/aoi_runs/
 .vscode/
 *.swp
 runs/
+
+# Local caches
+main_program_for_webapp/.cache/
