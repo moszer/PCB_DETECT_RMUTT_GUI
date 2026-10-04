@@ -256,7 +256,7 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
             <Button icon={SlidersHorizontal} disabled={!!busy} onClick={() => setFormatOpen((v) => !v)} title="ขนาดภาพที่ถ่าย">
               {formatText || "ขนาดภาพ"}
             </Button>
-            {formatOpen && <CameraFormatPanel className="absolute top-11 left-0 z-20" onClose={() => setFormatOpen(false)} onApplied={onFormatApplied} />}
+            {formatOpen && <CameraFormatPanel className="absolute top-11 left-0 z-20 max-h-[70dvh]" onClose={() => setFormatOpen(false)} onApplied={onFormatApplied} />}
           </div>
           <Button variant={reference ? "secondary" : "primary"} icon={Camera} loading={busy === "capture"} disabled={running} onClick={capture}>
             {reference ? "ถ่ายต้นแบบใหม่" : "ถ่ายต้นแบบจากบอร์ดที่ครบ"}

@@ -24,11 +24,13 @@ export function CameraFormatPanel({
   onApplied,
   locked,
   className,
+  style,
 }: {
   onClose: () => void;
   onApplied?: (fmt: CameraFormat) => void;
   locked?: boolean;
   className?: string;
+  style?: React.CSSProperties;
 }) {
   const toast = useToast();
   const panel = useRef<HTMLDivElement>(null);
@@ -85,7 +87,11 @@ export function CameraFormatPanel({
   const sizeValue = !fmt?.output ? "native" : custom ? "custom" : String(fmt.output[0]);
 
   return (
-    <div ref={panel} className={cx("w-80 rounded-xl border border-line bg-surface p-4 shadow-pop flex flex-col gap-3 animate-rise", className)}>
+    <div ref={panel} style={style} className={cx(
+        // Scrolls inside its own box: it floats over a camera view that clips anything taller.
+        "w-80 max-w-full rounded-xl border border-line bg-surface p-4 shadow-pop flex flex-col gap-3 overflow-y-auto overscroll-contain animate-rise",
+        className
+      )}>
       <div className="text-sm font-semibold text-text">ตั้งค่ากล้องและขนาดภาพ</div>
       {!fmt || !devices ? (
         <div className="py-6 grid place-items-center">

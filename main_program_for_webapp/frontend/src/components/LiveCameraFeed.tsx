@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { Crosshair, RefreshCw, SlidersHorizontal, VideoOff } from "lucide-react";
 import { API_BASE, api } from "@/lib/api";
 import { formatMm } from "@/lib/format";
@@ -86,6 +87,25 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
   const [failed, setFailed] = useState(false);
   const [reticle, setReticle] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // The settings panel floats above the page (a small camera view used to clip it).
+  const tools = useRef<HTMLDivElement>(null);
+  const [anchor, setAnchor] = useState<{ top: number; right: number; maxH: number } | null>(null);
+  const placePanel = () => {
+    const r = tools.current?.getBoundingClientRect();
+    if (!r) return;
+    const top = Math.min(r.bottom + 8, window.innerHeight - 220);
+    setAnchor({ top, right: Math.max(8, window.innerWidth - r.right), maxH: window.innerHeight - top - 12 });
+  };
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const follow = () => placePanel();
+    window.addEventListener("resize", follow);
+    window.addEventListener("scroll", follow, true);
+    return () => {
+      window.removeEventListener("resize", follow);
+      window.removeEventListener("scroll", follow, true);
+    };
+  }, [settingsOpen]);
   const [info, setInfo] = useState<(CameraShape & { fps: number; mock: boolean }) | null>(null);
   // No stream while the tab is in the background: it would hold one of the browser's
   // 6 connections to this host for nothing.
@@ -200,7 +220,9 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
       </div>
 
       {/* Top-right: tools */}
-      <div className="absolute top-3 right-3 flex items-center gap-1 rounded-lg bg-black/55 backdrop-blur p-1 text-white">
+      {/* The panel closes on any mousedown outside it (a document listener, like React's own),
+          so swallow the mousedown here or the gear would close and immediately reopen it. */}
+      <div ref={tools} onMouseDown={(e) => e.nativeEvent.stopImmediatePropagation()} className="absolute top-3 right-3 flex items-center gap-1 rounded-lg bg-black/55 backdrop-blur p-1 text-white">
         <IconButton
           size="sm"
           icon={Crosshair}
@@ -215,14 +237,26 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
           label="ตั้งค่ากล้อง"
           overlay
           active={settingsOpen}
-          onClick={() => setSettingsOpen((v) => !v)}
+          onClick={() => {
+            if (!settingsOpen) placePanel();
+            setSettingsOpen((v) => !v);
+          }}
         />
         <IconButton size="sm" icon={RefreshCw} label="รีโหลดภาพ" overlay onClick={reload} />
       </div>
 
-      {settingsOpen && (
-        <CameraFormatPanel className="absolute top-12 right-3 z-10" locked={locked} onClose={() => setSettingsOpen(false)} onApplied={reload} />
-      )}
+      {settingsOpen &&
+        anchor &&
+        createPortal(
+          <CameraFormatPanel
+            className="fixed z-50 max-w-[calc(100vw-1rem)]"
+            style={{ top: anchor.top, right: anchor.right, maxHeight: anchor.maxH }}
+            locked={locked}
+            onClose={() => setSettingsOpen(false)}
+            onApplied={reload}
+          />,
+          document.body
+        )}
 
       {hud && (
         <div
