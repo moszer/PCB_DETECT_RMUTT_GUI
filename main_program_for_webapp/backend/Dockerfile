@@ -19,7 +19,8 @@ COPY backend/app ./app
 COPY backend/tests ./tests
 COPY backend/pytest.ini ./
 # The default model and reference sit one level above backend/ (config.REPO_ROOT).
-COPY best.pt Refs.json /app/
+# best.pt is optional: without it, pick/download a model from Hugging Face in Settings.
+COPY best.pt* Refs.json /app/
 
 EXPOSE 8000
 HEALTHCHECK --interval=10s --timeout=5s --start-period=60s --retries=6 \

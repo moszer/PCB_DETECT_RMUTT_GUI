@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Check, FolderPlus, FolderSearch, HardDriveUpload, Layers, RefreshCw, Search, Trophy, X } from "lucide-react";
-import type { ModelFile } from "@/types";
+import { Check, CloudDownload, ExternalLink, FolderPlus, FolderSearch, HardDriveUpload, Layers, RefreshCw, Search, Trophy, X } from "lucide-react";
+import type { HubModel, ModelFile } from "@/types";
 import { api } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import { Badge, Button, Card, CardHeader, IconButton, SectionLabel, Spinner, TextInput, Toggle, cx } from "./ui";
@@ -27,6 +27,11 @@ export function ModelPicker({ onRefreshStatus }: { onRefreshStatus: () => void }
   const [newDir, setNewDir] = useState("");
   const [savingDirs, setSavingDirs] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  // Hugging Face repo: only contacted when the operator asks (the station may be offline).
+  const [hub, setHub] = useState<{ repo: string; url: string; models: HubModel[] } | null>(null);
+  const [hubLoading, setHubLoading] = useState(false);
+  const [hubBusy, setHubBusy] = useState<string | null>(null);
+  const [hubLast, setHubLast] = useState(false);
 
   useEffect(() => {
     api
@@ -56,6 +61,31 @@ export function ModelPicker({ onRefreshStatus }: { onRefreshStatus: () => void }
       toast.error("โหลดโมเดลไม่สำเร็จ — ยังใช้โมเดลเดิม", err);
     } finally {
       setLoadingModel(null);
+    }
+  };
+
+  const openHub = async () => {
+    setHubLoading(true);
+    try {
+      setHub(await api.listHubModels());
+    } catch (err) {
+      toast.error("เชื่อมต่อ Hugging Face ไม่สำเร็จ", err);
+    } finally {
+      setHubLoading(false);
+    }
+  };
+
+  const downloadHub = async (m: HubModel) => {
+    setHubBusy(m.path);
+    try {
+      const res = await api.downloadHubModel(m.path);
+      setHub((h) => (h ? { ...h, models: h.models.map((x) => (x.path === m.path ? { ...x, downloaded: true, local_path: res.path } : x)) } : h));
+      setReload((r) => r + 1);
+      toast.success("ดาวน์โหลดโมเดลแล้ว", `${m.path} · ${res.size_mb} MB — กด “ใช้” เพื่อโหลด`);
+    } catch (err) {
+      toast.error("ดาวน์โหลดโมเดลไม่สำเร็จ", err);
+    } finally {
+      setHubBusy(null);
     }
   };
 
@@ -180,6 +210,56 @@ export function ModelPicker({ onRefreshStatus }: { onRefreshStatus: () => void }
           <ul className="divide-y divide-line">{others.map(row)}</ul>
         </div>
       )}
+
+      <div className="border-t border-line">
+        <div className="flex items-center gap-2 px-4 py-3 flex-wrap">
+          <CloudDownload className="size-4 text-muted" />
+          <div className="min-w-0 flex-1">
+            <SectionLabel>ดาวน์โหลดจาก Hugging Face</SectionLabel>
+            {hub && (
+              <a href={hub.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-mono text-accent hover:underline">
+                {hub.repo} <ExternalLink className="size-3" />
+              </a>
+            )}
+          </div>
+          {hub && (
+            <div className="w-40">
+              <Toggle label="แสดง last.pt" checked={hubLast} onChange={setHubLast} />
+            </div>
+          )}
+          <Button size="sm" icon={hub ? RefreshCw : CloudDownload} loading={hubLoading} onClick={openHub}>
+            {hub ? "รีเฟรช" : "ดูรายการโมเดล"}
+          </Button>
+        </div>
+        {hub && (
+          <ul className="max-h-72 overflow-y-auto divide-y divide-line border-t border-line">
+            {hub.models
+              .filter((m) => hubLast || m.kind !== "last")
+              .map((m) => (
+                <li key={m.path} className="flex items-center gap-3 px-4 py-2">
+                  <span className="min-w-0 flex-1 text-sm truncate" title={m.path}>
+                    {m.path}
+                  </span>
+                  <span className="text-xs text-muted font-mono tabular shrink-0">{m.size_mb} MB</span>
+                  {m.downloaded ? (
+                    m.local_path === catalog?.current_model ? (
+                      <Badge tone="accent">ใช้งานอยู่</Badge>
+                    ) : (
+                      <Button size="sm" variant="success" icon={Check} loading={loadingModel === m.local_path} disabled={!!loadingModel} onClick={() => choose(m.local_path)}>
+                        ใช้
+                      </Button>
+                    )
+                  ) : (
+                    <Button size="sm" icon={CloudDownload} loading={hubBusy === m.path} disabled={!!hubBusy} onClick={() => downloadHub(m)}>
+                      ดาวน์โหลด
+                    </Button>
+                  )}
+                </li>
+              ))}
+            {!hub.models.length && <li className="px-4 py-3 text-xs text-muted">ไม่พบไฟล์ .pt ใน repo นี้</li>}
+          </ul>
+        )}
+      </div>
 
       <div className="border-t border-line p-4 flex flex-col gap-2">
         <SectionLabel>โฟลเดอร์ที่ใช้ค้นหาโมเดล</SectionLabel>

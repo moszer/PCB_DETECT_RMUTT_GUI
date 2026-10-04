@@ -10,6 +10,7 @@ import asyncio
 import torch
 
 from ..config import REPO_ROOT, STORAGE_DIR, save_settings_to_disk, settings
+from ..core import hub
 from ..core.device import select_device
 from ..core.model_catalog import discover_models
 from ..core.schemas import SystemStatus
@@ -283,3 +284,55 @@ async def upload_model_file(
     }
 
 
+def _hub_dir() -> Path:
+    return STORAGE_DIR / "models" / "hub" / hub.DEFAULT_REPO.replace("/", "__")
+
+
+class HubDownloadRequest(BaseModel):
+    file: str = Field(min_length=4, max_length=300)
+
+
+@router.get("/models/hub")
+async def list_hub_models():
+    """Weights available in the station's Hugging Face model repo (PCB_MODEL_REPO) and whether each is already downloaded."""
+    try:
+        files = await asyncio.to_thread(hub.list_models, hub.DEFAULT_REPO)
+    except hub.HubError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    models = []
+    for f in files:
+        local = _hub_dir() / hub.local_name(f["path"])
+        models.append(
+            {
+                **f,
+                "size_mb": round(f["size"] / (1024 * 1024), 1),
+                "downloaded": local.is_file() and local.stat().st_size == f["size"],
+                "local_path": str(local),
+            }
+        )
+    return {"repo": hub.DEFAULT_REPO, "url": f"{hub.HUB}/{hub.DEFAULT_REPO}", "models": models}
+
+
+@router.post("/models/hub/download")
+async def download_hub_model(
+    req: HubDownloadRequest,
+    x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token"),
+    x_operator_id: Optional[str] = Header(None, alias="X-Operator-Id"),
+):
+    """Download one weights file from the configured Hugging Face repo into backend/data/models/hub/.
+
+    Only the repo set in PCB_MODEL_REPO is allowed (a .pt file can run code when loaded, so
+    arbitrary repos are not accepted over the network). The file is not loaded; use /models to switch.
+    """
+    token = x_operator_token or x_operator_id
+    lease = lease_manager.get_lease_info()
+    if lease.is_controlled and not lease_manager.is_operator(token):
+        raise HTTPException(status_code=403, detail="Active operator token required to download models.")
+    if aoi_scan_service.is_running:
+        raise HTTPException(status_code=400, detail="Cannot download models during an active AOI scan.")
+    try:
+        hub.check_file(req.file)
+        path = await asyncio.to_thread(hub.download, req.file, _hub_dir() / hub.local_name(req.file), hub.DEFAULT_REPO)
+    except hub.HubError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {"success": True, "path": str(path), "size_mb": round(path.stat().st_size / (1024 * 1024), 1)}

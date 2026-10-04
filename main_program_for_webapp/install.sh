@@ -220,15 +220,22 @@ else
   ok "Keeping existing backend/.env"
 fi
 MODEL="$PROJECT_DIR/best.pt"
+model_ok() { [[ -f "$MODEL" ]] && ! head -c 40 "$MODEL" | grep -q "git-lfs"; }
+if ! model_ok && [[ "${PCB_SKIP_MODEL_DOWNLOAD:-0}" != "1" ]]; then
+  # No model in this checkout (*.pt is not tracked here): fetch it from Hugging Face.
+  [[ -f "$MODEL" ]] && rm -f "$MODEL"   # an LFS pointer, not a model
+  # PCB_MODEL_REPO / PCB_MODEL_FILE / HF_TOKEN come from the environment or backend/.env.
+  echo "  Downloading the YOLO model from Hugging Face ..."
+  ( cd "$BACKEND" && "$VENV/bin/python" -m app.core.hub --out "$MODEL" ) || warn "Could not download the model (see above)"
+fi
 if [[ -f "$MODEL" ]] && head -c 40 "$MODEL" | grep -q "git-lfs"; then
   warn "best.pt is a Git LFS pointer, not the model. Run: git lfs install && git lfs pull"
 elif [[ -f "$MODEL" ]]; then
   ok "YOLO model: best.pt ($(du -h "$MODEL" | cut -f1))"
 else
-  warn "No best.pt next to run_web.sh — pick a model later in Settings"
+  warn "No best.pt — pick or download a model later in Settings (Hugging Face list), or: cd backend && venv/bin/python -m app.core.hub --list"
 fi
 
-# ── Verify ────────────────────────────────────────────────────────────────────
 step "Check"
 "$VENV/bin/python" - <<'PY'
 import platform, shutil, torch, cv2, ultralytics

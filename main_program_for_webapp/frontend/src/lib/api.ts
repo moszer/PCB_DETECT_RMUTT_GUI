@@ -1,4 +1,5 @@
 import type {
+  HubModel,
   AOIRunReport,
   CameraDevice,
   ComputeDevice,
@@ -117,6 +118,8 @@ export const api = {
   setModel: (model_path: string) => post<{ model_path: string; device: string }>("/api/system/model", { model_path }),
   listModels: () =>
     request<{ current_model: string; models: ModelFile[]; custom_dirs: string[]; search_dirs: string[] }>("/api/system/models"),
+  listHubModels: () => request<{ repo: string; url: string; models: HubModel[] }>("/api/system/models/hub"),
+  downloadHubModel: (file: string) => post<{ path: string; size_mb: number }>("/api/system/models/hub/download", { file }),
   uploadModel: (file: File) =>
     postForm<{ filename: string; path: string; size_mb: number; message: string }>("/api/system/models/upload", { file }),
 

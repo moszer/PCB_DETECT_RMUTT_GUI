@@ -18,7 +18,8 @@ app/
   main.py               FastAPI app, CORS, router registration
   config.py             paths, .env loading, persisted station settings (data/settings.json)
   routers/
-    system.py           status, settings, compute device, model list/upload/select
+    system.py           status, settings, compute device, model list/upload/select,
+                        Hugging Face model list/download (/models/hub)
     auth.py             operator control lease (acquire / renew / release)
     camera.py           MJPEG stream, snapshot, camera devices and format
     inspection.py       inspect upload / live / multi-frame, OCR of part markings
@@ -41,7 +42,8 @@ app/
     storage_service     SQLite (data/inspection.db) and run images
     point_set_store     saved boards
     chat_store          saved chat history
-  core/                 inspection matching, motion protocol v2, device detection, OCR, depth, schemas
+  core/                 inspection matching, motion protocol v2, device detection, OCR, depth, schemas,
+                        hub.py (Hugging Face weight downloads: resume + SHA-256 check, stdlib only)
 tests/                  pytest suite (API, motion protocol, inspection, datasets, OCR, depth, chat, agent…)
 data/                   runtime data (git-ignored)
 ```
@@ -58,7 +60,11 @@ data/                   runtime data (git-ignored)
 cd backend
 venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
-# tests (91 tests)
+# YOLO weights from Hugging Face (install.sh does this when best.pt is missing)
+venv/bin/python -m app.core.hub --list
+venv/bin/python -m app.core.hub --file best.pt --out ../best.pt
+
+# tests
 venv/bin/python -m pytest -q
 ```
 
@@ -74,6 +80,7 @@ Settings come from `backend/.env`, which `install.sh` copies from `.env.example`
 | `PCB_DEVICE` | `auto` / `cuda:0` / `mps` / `cpu` |
 | `PCB_CAMERA_SIMULATION=1` | Software test camera (Docker, no webcam) |
 | `PCB_STORAGE_DIR` | Data folder (default `backend/data`) |
+| `PCB_MODEL_REPO`, `PCB_MODEL_FILE`, `HF_TOKEN` | Hugging Face repo with the YOLO weights, the file `install.sh` fetches (default `best.pt`), and a read token for private repos |
 
 AI keys stay on the server and are never sent to the browser.
 

@@ -51,7 +51,7 @@ cd PCB_DETECT_RMUTT_GUI/main_program_for_webapp
 ### สิ่งที่ต้องมีก่อน
 - **macOS:** ไม่ต้องมีอะไร (ถ้ายังไม่มี Homebrew สคริปต์จะถามว่าจะลงให้ไหม)
 - **Ubuntu / Debian / Jetson:** สิทธิ์ `sudo` และอินเทอร์เน็ต
-- **ไฟล์โมเดล:** `best.pt` เก็บด้วย Git LFS ถ้าสคริปต์เตือนว่าเป็น LFS pointer ให้รัน `git lfs install && git lfs pull`
+- **ไฟล์โมเดล:** ถ้าในโฟลเดอร์ยังไม่มี `best.pt` (หรือเป็นแค่ LFS pointer) `./install.sh` จะดาวน์โหลดจาก Hugging Face ให้เอง ดูหัวข้อ "โมเดลจาก Hugging Face" ด้านล่าง
 
 ---
 
@@ -109,7 +109,23 @@ docker compose -f docker-compose.yml -f docker-compose.hardware.yml -f docker-co
 
 ---
 
-## 4. ตั้งค่าหลังติดตั้ง (`backend/.env`)
+## 4. โมเดลจาก Hugging Face
+
+โมเดลและผลการเทรนทั้งหมดอยู่ที่ [Moszer777/pcb-aoi-yolo-rmutt](https://huggingface.co/Moszer777/pcb-aoi-yolo-rmutt) (repo public ไม่ต้องมีบัญชีก็โหลดได้)
+
+| ทำอะไร | วิธี |
+|---|---|
+| ติดตั้งแล้วได้โมเดลเลย | `./install.sh` โหลด `best.pt` ให้อัตโนมัติถ้ายังไม่มี (ข้ามด้วย `PCB_SKIP_MODEL_DOWNLOAD=1`) |
+| เลือกโหลดรุ่นอื่นจากหน้าเว็บ | ตั้งค่าสถานี → โมเดล YOLO → **ดาวน์โหลดจาก Hugging Face** → ดูรายการโมเดล → ดาวน์โหลด → ใช้ (ต้องมีสิทธิ์ควบคุม) |
+| โหลดด้วยคำสั่ง | `cd backend && venv/bin/python -m app.core.hub --list` แล้ว `... --file m_new_final_l/weights/best.pt --out ../best.pt` |
+
+ไฟล์ที่ดาวน์โหลดผ่านหน้าเว็บเก็บที่ `backend/data/models/hub/` ระบบตรวจ SHA-256 ทุกครั้ง และต่อจากที่ค้างได้ถ้าเน็ตหลุด
+
+ตั้งค่าใน `backend/.env`: `PCB_MODEL_REPO` (repo อื่น), `PCB_MODEL_FILE` (ไฟล์ที่ install โหลด ค่าเริ่มต้น `best.pt`), `HF_TOKEN` (เฉพาะ repo แบบ private ใช้สิทธิ์อ่าน) หน้าเว็บโหลดได้เฉพาะ repo ที่ตั้งไว้ใน `PCB_MODEL_REPO` เท่านั้น เพราะไฟล์ `.pt` รันโค้ดได้ตอนโหลด จึงไม่ควรโหลดจาก repo ที่ไม่รู้ที่มา
+
+---
+
+## 5. ตั้งค่าหลังติดตั้ง (`backend/.env`)
 
 ```bash
 PCB_OPERATOR_PASSCODE=รหัสของคุณ     # รหัสขอสิทธิ์ควบคุม (ค่าเริ่มต้น rmutt-aoi — ควรเปลี่ยน)
@@ -120,7 +136,7 @@ GEMINI_API_KEY=...                   # https://aistudio.google.com/apikey (ผ�
 
 ---
 
-## 5. แก้ปัญหาที่พบบ่อย
+## 6. แก้ปัญหาที่พบบ่อย
 
 | อาการ | วิธีแก้ |
 |---|---|
@@ -128,5 +144,6 @@ GEMINI_API_KEY=...                   # https://aistudio.google.com/apikey (ผ�
 | `Address already in use` | มีสถานีรันอยู่แล้ว ปิดตัวเก่า หรือเปลี่ยนพอร์ต `PCB_FRONTEND_PORT=3002 PCB_BACKEND_PORT=8002 ./run_web.sh` |
 | Linux: เปิดกล้อง/สเตจไม่ได้ (Permission denied) | logout แล้ว login ใหม่หลังติดตั้ง (สิทธิ์กลุ่ม `video`, `dialout`) |
 | Jetson: หน้าเว็บขึ้น CPU แทน CUDA | `backend/venv/bin/python -c "import torch; print(torch.cuda.is_available())"` ถ้าได้ False ให้ลง PyTorch ของ JetPack ตัวเองด้วย `PCB_TORCH_INDEX` |
-| `best.pt` เป็น LFS pointer | `git lfs install && git lfs pull` |
+| `best.pt` เป็น LFS pointer | รัน `./install.sh` ใหม่ (โหลดจาก Hugging Face แทน) หรือ `git lfs install && git lfs pull` |
+| โหลดโมเดลจาก Hugging Face ไม่ได้ | เช็คอินเทอร์เน็ต, ชื่อ `PCB_MODEL_REPO`/`PCB_MODEL_FILE` ถ้า repo เป็น private ต้องใส่ `HF_TOKEN` ใน `backend/.env` |
 | ผู้ช่วย AI ตอบ "ไม่ว่าง" บ่อย | Gemini รุ่นฟรีคิวเต็ม ระบบสลับรุ่นเอง หรือเปิด billing ใน Google AI Studio |

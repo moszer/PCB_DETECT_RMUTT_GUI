@@ -330,6 +330,15 @@ export interface Statistics {
   single_inspections_count: number;
 }
 
+export interface HubModel {
+  path: string;
+  run: string | null;
+  kind: "best" | "last" | "other";
+  size_mb: number;
+  downloaded: boolean;
+  local_path: string;
+}
+
 export interface ModelFile {
   filename: string;
   path: string;

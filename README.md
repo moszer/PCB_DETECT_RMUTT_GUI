@@ -36,8 +36,12 @@ machine) use the LAN address that `run_web.sh` prints.
 - Try it without any hardware: `./docker-test.sh` builds the stack, runs the backend tests
   and smoke-tests a real inspection. Alternatively, click **จำลอง** (simulation) in the stage
   bar of a normal install.
-- Model weights (`*.pt`) are stored with **Git LFS**. Run `git lfs install && git lfs pull`
-  if a `.pt` file is only ~130 bytes.
+- **Model weights are on Hugging Face:** [Moszer777/pcb-aoi-yolo-rmutt](https://huggingface.co/Moszer777/pcb-aoi-yolo-rmutt)
+  holds every training run. `./install.sh` downloads `best.pt` from there when the checkout
+  has none, and **Settings → YOLO model → Hugging Face** lists, downloads and switches to any
+  other run. CLI: `cd backend && venv/bin/python -m app.core.hub --list`.
+  The desktop station's `best.pt`/`exp.pt` at the repo root use **Git LFS**
+  (`git lfs install && git lfs pull` if a `.pt` file is only ~130 bytes).
 
 `run_web.sh` prints the RMUTT banner. It then checks Python/Node, the model, `.env`,
 library versions against the requirements and free ports, and starts both services. Finally
@@ -111,6 +115,9 @@ AI_PROVIDER=gemini                  # or openrouter
 GEMINI_API_KEY=...                  # https://aistudio.google.com/apikey
 PCB_DEVICE=auto                     # auto | cuda:0 | mps | cpu
 PCB_CAMERA_SIMULATION=1             # software test camera (Docker, no webcam)
+PCB_MODEL_REPO=Moszer777/pcb-aoi-yolo-rmutt   # Hugging Face repo with the weights
+PCB_MODEL_FILE=best.pt              # file install.sh downloads when best.pt is missing
+HF_TOKEN=...                        # only for a private repo (read access)
 ```
 
 Ports can be changed with `PCB_FRONTEND_PORT` / `PCB_BACKEND_PORT` (defaults 3001 / 8000).

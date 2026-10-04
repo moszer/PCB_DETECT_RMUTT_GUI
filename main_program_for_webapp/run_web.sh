@@ -71,7 +71,7 @@ fi
 ok "Python $("$PY" -c 'import platform; print(platform.python_version())') · Node $(node --version | sed 's/^v//') · npm $(npm --version)"
 if [[ -f "$PROJECT_DIR/best.pt" ]] && ! head -c 40 "$PROJECT_DIR/best.pt" | grep -q "git-lfs"; then
     ok "YOLO model best.pt ($(du -h "$PROJECT_DIR/best.pt" | cut -f1))"
-else warn "No usable best.pt next to run_web.sh — pick a model in Settings (Git LFS? run: git lfs pull)"; fi
+else warn "No usable best.pt next to run_web.sh — run ./install.sh to download it from Hugging Face, or pick a model in Settings"; fi
 if [[ -f "$PROJECT_DIR/backend/.env" ]]; then ok "backend/.env found"; else warn "backend/.env missing (copy backend/.env.example) — AI assistant and passcode use defaults"; fi
 
 if [[ $UPDATE -eq 1 ]]; then
