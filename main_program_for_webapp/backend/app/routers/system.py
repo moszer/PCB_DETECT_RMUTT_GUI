@@ -19,6 +19,7 @@ from ..services.aoi_scan_service import aoi_scan_service
 from ..services.camera_service import camera_service
 from ..services.inference_service import inference_service
 from ..services.machine_service import machine_service
+from ..services.hardware_service import HardwareError, hardware_service
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -336,3 +337,58 @@ async def download_hub_model(
     except hub.HubError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     return {"success": True, "path": str(path), "size_mb": round(path.stat().st_size / (1024 * 1024), 1)}
+
+
+# ── Performance & Jetson power ─────────────────────────────────────────────────
+
+def _require_lease(token: Optional[str]) -> None:
+    """Power, clocks and fan change the machine: the operator lease (passcode) is required."""
+    if not lease_manager.is_operator(token):
+        raise HTTPException(status_code=403, detail="ต้องขอสิทธิ์ควบคุมสถานี (รหัสผ่าน) ก่อนเปลี่ยนการตั้งค่าพลังงาน")
+
+
+def _apply(action):
+    try:
+        output = action()
+    except HardwareError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"success": True, "output": output[-2000:], "hardware": hardware_service.snapshot()}
+
+
+class PowerModeRequest(BaseModel):
+    mode_id: int = Field(ge=0, le=99)
+
+
+class ClocksRequest(BaseModel):
+    max: bool
+
+
+class FanRequest(BaseModel):
+    mode: Literal["quiet", "cool", "manual"]
+    percent: Optional[int] = Field(None, ge=20, le=100)
+
+
+@router.get("/hardware")
+async def hardware_snapshot():
+    """Live CPU cores, GPU, memory, temperatures, power rails, fan and power mode."""
+    return await asyncio.to_thread(hardware_service.snapshot)
+
+
+@router.post("/hardware/power-mode")
+async def set_power_mode(req: PowerModeRequest, x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token")):
+    _require_lease(x_operator_token)
+    if aoi_scan_service.is_running:
+        raise HTTPException(status_code=400, detail="เปลี่ยนโหมดพลังงานระหว่างสแกนไม่ได้")
+    return await asyncio.to_thread(_apply, lambda: hardware_service.set_power_mode(req.mode_id))
+
+
+@router.post("/hardware/clocks")
+async def set_clocks(req: ClocksRequest, x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token")):
+    _require_lease(x_operator_token)
+    return await asyncio.to_thread(_apply, lambda: hardware_service.set_clocks_max(req.max))
+
+
+@router.post("/hardware/fan")
+async def set_fan(req: FanRequest, x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token")):
+    _require_lease(x_operator_token)
+    return await asyncio.to_thread(_apply, lambda: hardware_service.set_fan(req.mode, req.percent))

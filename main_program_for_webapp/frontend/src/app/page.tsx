@@ -10,6 +10,7 @@ import { AOIScanView } from "@/components/aoi/AOIScanView";
 import { ReferencesView } from "@/components/ReferencesView";
 import { HistoryView } from "@/components/HistoryView";
 import { SettingsView } from "@/components/SettingsView";
+import { HardwareView } from "@/components/HardwareView";
 import { DatasetView } from "@/components/dataset/DatasetView";
 import { useStationSocket } from "@/hooks/useStationSocket";
 import { useIsClient, usePersistentState } from "@/hooks/usePersistentState";
@@ -190,6 +191,7 @@ function Station() {
           {tab === "dataset" && <DatasetView status={liveStatus} progress={datasetProgress} params={params} onRefreshStatus={refreshStatus} />}
           {tab === "references" && <ReferencesView references={references} onRefresh={refreshReferences} />}
           {tab === "history" && <HistoryView />}
+          {tab === "hardware" && <HardwareView isOperator={lease.isMine} />}
           {tab === "settings" && <SettingsView onRefreshStatus={refreshStatus} isOperator={lease.isMine} />}
         </div>
       </AppShell>

@@ -1,0 +1,80 @@
+#!/bin/bash
+# Root helper for the RMUTT AOI web station on NVIDIA Jetson: power mode, max clocks, fan.
+# Installed to /usr/local/sbin by scripts/jetson/install-power-control.sh, and allowed via sudoers
+# for the station user without a password. It accepts ONLY these commands; anything else fails.
+#
+#   aoi-jetson-power mode <id>            nvpmodel -m <id> (id must exist in /etc/nvpmodel.conf)
+#   aoi-jetson-power clocks on|off        jetson_clocks (lock CPU/GPU/EMC at max) / restore
+#   aoi-jetson-power fan profile quiet|cool   automatic fan curve (nvfancontrol)
+#   aoi-jetson-power fan manual <20-100>  fixed fan speed in percent (stops nvfancontrol)
+#   aoi-jetson-power check                exits 0 (lets the station test that sudo works)
+set -euo pipefail
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+STATE_DIR=/var/lib/rmutt-aoi
+FAN_CONF=/etc/nvfancontrol.conf
+
+fail() { echo "aoi-jetson-power: $*" >&2; exit 2; }
+[[ $EUID -eq 0 ]] || fail "must run as root (sudo)"
+
+pwm_file() {
+    local h
+    for h in /sys/class/hwmon/hwmon*; do
+        [[ "$(cat "$h/name" 2>/dev/null)" == "pwmfan" && -w "$h/pwm1" ]] && { echo "$h/pwm1"; return 0; }
+    done
+    fail "no PWM fan found"
+}
+
+case "${1:-}" in
+    check)
+        exit 0 ;;
+    mode)
+        id="${2:-}"
+        [[ "$id" =~ ^[0-9]{1,2}$ ]] || fail "mode id must be a number"
+        grep -qE "^< POWER_MODEL ID=${id} NAME=" /etc/nvpmodel.conf || fail "unknown power mode $id"
+        # Answer "no" if nvpmodel asks for a reboot; the station shows nvpmodel's message instead.
+        echo NO | nvpmodel -m "$id" 2>&1
+        ;;
+    clocks)
+        mkdir -p "$STATE_DIR"
+        case "${2:-}" in
+            on)
+                # Remember the normal (dynamic) clocks once, so "off" can restore them.
+                [[ -f "$STATE_DIR/l4t_dfs.conf" ]] || jetson_clocks --store "$STATE_DIR/l4t_dfs.conf" >/dev/null
+                jetson_clocks
+                touch "$STATE_DIR/clocks-max"
+                ;;
+            off)
+                if [[ -f "$STATE_DIR/l4t_dfs.conf" ]]; then jetson_clocks --restore "$STATE_DIR/l4t_dfs.conf"; fi
+                rm -f "$STATE_DIR/clocks-max"
+                # jetson_clocks also forces the fan to full; hand it back to the automatic curve.
+                systemctl restart nvfancontrol 2>/dev/null || true
+                ;;
+            *) fail "clocks on|off" ;;
+        esac
+        ;;
+    fan)
+        case "${2:-}" in
+            profile)
+                prof="${3:-}"
+                [[ "$prof" == "quiet" || "$prof" == "cool" ]] || fail "profile must be quiet or cool"
+                grep -q "FAN_PROFILE ${prof} {" "$FAN_CONF" || fail "profile $prof not in $FAN_CONF"
+                tmp="$(mktemp)"
+                sed -E "s/^([[:space:]]*FAN_DEFAULT_PROFILE[[:space:]]+).*/\1${prof}/" "$FAN_CONF" > "$tmp"
+                cat "$tmp" > "$FAN_CONF" && rm -f "$tmp"   # cat keeps the file's owner and mode
+                rm -f /var/lib/nvfancontrol/status   # otherwise nvfancontrol keeps the last profile
+                systemctl restart nvfancontrol
+                rm -f "$STATE_DIR/fan-manual"
+                ;;
+            manual)
+                pct="${3:-}"
+                [[ "$pct" =~ ^[0-9]{1,3}$ ]] && (( pct >= 20 && pct <= 100 )) || fail "manual speed must be 20-100 (%)"
+                systemctl stop nvfancontrol 2>/dev/null || true
+                echo $(( pct * 255 / 100 )) > "$(pwm_file)"
+                mkdir -p "$STATE_DIR" && echo "$pct" > "$STATE_DIR/fan-manual"
+                ;;
+            *) fail "fan profile quiet|cool, or fan manual <20-100>" ;;
+        esac
+        ;;
+    *)
+        fail "unknown command (see the header of this script)" ;;
+esac

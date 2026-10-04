@@ -63,7 +63,7 @@ edited locally; your data, `.env` and models are untouched.
 
 ## Web station features
 
-The UI is in Thai. The sidebar has six pages.
+The UI is in Thai. The sidebar has seven pages.
 
 | Page | What it does |
 | --- | --- |
@@ -72,6 +72,7 @@ The UI is in Thai. The sidebar has six pages.
 | **ชุดข้อมูลเทรน** (training data) | Mark the four corners of a board and the stage photographs the whole board automatically. Edit labels in the browser (marquee select, bulk delete), then download a YOLO dataset with a train/val split |
 | **โปรไฟล์อ้างอิง** (references) | Golden reference profiles (single image and AOI grid); import the desktop `Refs.json` |
 | **ประวัติ & Yield** (history) | Every scan and single inspection with board/point yield, filters and CSV export |
+| **ประสิทธิภาพเครื่อง** (performance) | Live CPU usage/clock per core, GPU, RAM/swap, temperatures, power rails, fan and over-current events. On Jetson it also sets the power mode (nvpmodel), max clocks (jetson_clocks) and fan (auto quiet/cool or fixed 20–100 %) after a one-time `sudo ./scripts/jetson/install-power-control.sh` |
 | **ตั้งค่าสถานี** (settings) | Choose the model (also finds Ultralytics `runs/*/weights`), choose the compute device (MPS / CUDA / CPU), set stage soft limits and station info |
 
 ### AOI scan page

@@ -330,6 +330,23 @@ export interface Statistics {
   single_inspections_count: number;
 }
 
+export interface HardwareSnapshot {
+  time: number;
+  platform: "jetson" | "linux" | "other";
+  model: string | null;
+  cpu: { cores: Array<{ id: number; usage: number; mhz: number | null; max_mhz: number | null; governor: string | null }>; usage: number; load: number[] };
+  memory: { total_mb: number; used_mb: number; swap_total_mb: number; swap_used_mb: number };
+  temperatures: Array<{ name: string; c: number }>;
+  gpu?: { mhz: number; max_mhz: number; min_mhz: number; usage: number | null } | null;
+  emc?: { mhz: number; max_mhz: number; min_mhz: number } | null;
+  power_rails?: Array<{ name: string; watts: number; volts: number; amps: number; crit_amps: number | null }>;
+  fan?: { percent: number | null; rpm: number | null; mode: "auto" | "manual"; manual_percent: number | null; profile: string | null; profiles: string[] };
+  power_mode?: { current: number | null; modes: Array<{ id: number; name: string }> } | null;
+  clocks_max?: boolean;
+  over_current?: Record<string, number> | null;
+  control_available?: boolean;
+}
+
 export type AIProvider = "gemini" | "openrouter";
 
 export interface AIConfig {

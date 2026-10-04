@@ -9,6 +9,7 @@ aiosqlite>=0.20.0
 pytest>=8.0.0
 httpx>=0.27.0
 pyserial>=3.5
+psutil>=5.9  # CPU/memory readings on the performance page
 
 # Computer Vision & Deep Learning (Standard / macOS Apple Silicon)
 # On macOS, native arm64 PyTorch uses MPS automatically

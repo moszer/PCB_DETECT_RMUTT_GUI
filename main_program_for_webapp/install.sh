@@ -125,6 +125,11 @@ install_system_linux() {
       $SUDO usermod -aG "$(IFS=,; echo "${missing[*]}")" "$user" && warn "Added $user to ${missing[*]} — log out and back in for camera/serial access."
     fi
   fi
+  # Jetson: let the web page change power mode / max clocks / fan (a root helper limited to those).
+  if [[ "$PLATFORM" == "jetson" && -n "$user" && "$user" != "root" && ! -f /etc/sudoers.d/rmutt-aoi-power ]]; then
+    $SUDO env SUDO_USER="$user" bash "$PROJECT_DIR/scripts/jetson/install-power-control.sh" \
+      || warn "Power control not enabled; later: sudo ./scripts/jetson/install-power-control.sh"
+  fi
   ok "System packages ready"
 }
 

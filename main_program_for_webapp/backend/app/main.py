@@ -50,6 +50,8 @@ async def lifespan(app: FastAPI):
 
     threading.Thread(target=warm_up, name="ocr-warmup", daemon=True).start()
 
+    from .services.hardware_service import hardware_service
+    hardware_service.resume_watchdog()
     yield
 
     logger.info("PCB Inspection Backend shutting down...")

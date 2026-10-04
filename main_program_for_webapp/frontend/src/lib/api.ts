@@ -1,5 +1,6 @@
 import type {
   AIConfig,
+  HardwareSnapshot,
   AIProvider,
   HubModel,
   AOIRunReport,
@@ -120,6 +121,12 @@ export const api = {
   setModel: (model_path: string) => post<{ model_path: string; device: string }>("/api/system/model", { model_path }),
   listModels: () =>
     request<{ current_model: string; models: ModelFile[]; custom_dirs: string[]; search_dirs: string[] }>("/api/system/models"),
+  hardware: {
+    get: () => request<HardwareSnapshot>("/api/system/hardware"),
+    powerMode: (mode_id: number) => post<{ hardware: HardwareSnapshot }>("/api/system/hardware/power-mode", { mode_id }),
+    clocks: (max: boolean) => post<{ hardware: HardwareSnapshot }>("/api/system/hardware/clocks", { max }),
+    fan: (mode: "quiet" | "cool" | "manual", percent?: number) => post<{ hardware: HardwareSnapshot }>("/api/system/hardware/fan", { mode, percent }),
+  },
   aiConfig: {
     get: () => request<AIConfig>("/api/chat/config"),
     update: (data: Partial<Record<"provider" | "gemini_api_key" | "openrouter_api_key" | "gemini_models" | "openrouter_model", string>>) =>

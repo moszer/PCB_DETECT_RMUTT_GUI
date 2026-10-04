@@ -19,7 +19,8 @@ app/
   config.py             paths, .env loading, persisted station settings (data/settings.json)
   routers/
     system.py           status, settings, compute device, model list/upload/select,
-                        Hugging Face model list/download (/models/hub)
+                        Hugging Face model list/download (/models/hub),
+                        live hardware readings and Jetson power/clock/fan control (/hardware)
     auth.py             operator control lease (acquire / renew / release)
     camera.py           MJPEG stream, snapshot, camera devices and format
     inspection.py       inspect upload / live / multi-frame, OCR of part markings
@@ -41,6 +42,8 @@ app/
     agent_service       tool-calling agent over read-only station data + page navigation
     storage_service     SQLite (data/inspection.db) and run images
     point_set_store     saved boards
+    hardware_service    CPU/GPU/RAM/thermal/power/fan readings; Jetson control through the
+                        root helper scripts/jetson/aoi-jetson-power (sudo -n, fixed commands only)
     chat_store          saved chat history
   core/                 inspection matching, motion protocol v2, device detection, OCR, depth, schemas,
                         hub.py (Hugging Face weight downloads: resume + SHA-256 check, stdlib only)

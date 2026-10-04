@@ -33,6 +33,7 @@ PAGES = {
     "references": "โปรไฟล์อ้างอิง",
     "history": "ประวัติ & Yield",
     "settings": "ตั้งค่าสถานี (โมเดล ฮาร์ดแวร์ กล้อง 3D เสียง)",
+    "hardware": "ประสิทธิภาพ (CPU/GPU แต่ละคอร์ อุณหภูมิ พลังงาน พัดลม โหมดพลังงาน Jetson)",
 }
 
 SYSTEM_PROMPT = f"""คุณคือผู้ช่วย AI ของสถานีตรวจ PCB (AOI) ของ RMUTT อยู่ในเว็บแอปนี้ทุกหน้า
@@ -326,6 +327,15 @@ def get_settings() -> Dict[str, Any]:
     return s
 
 
+def get_hardware() -> Dict[str, Any]:
+    from .hardware_service import hardware_service
+
+    d = hardware_service.snapshot()
+    d.pop("time", None)
+    d["cpu"]["cores"] = [{k: c[k] for k in ("id", "usage", "mhz")} for c in d["cpu"]["cores"]]
+    return d
+
+
 def navigate(page: str) -> Dict[str, Any]:
     if page not in PAGES:
         return {"ok": False, "error": f"unknown page; use one of {list(PAGES)}"}
@@ -347,6 +357,7 @@ TOOLS: Dict[str, Callable[..., Any]] = {
     "get_dataset": get_dataset,
     "list_models": list_models,
     "get_settings": get_settings,
+    "get_hardware": get_hardware,
     "navigate": navigate,
 }
 
@@ -379,6 +390,7 @@ DECLARATIONS = [
      "parameters": {"type": "object", "properties": {"dataset_id": _STR}, "required": ["dataset_id"]}},
     {"name": "list_models", "description": "โมเดล YOLO ที่มีให้เลือก (จาก runs การเทรน) และตัวที่ใช้อยู่"},
     {"name": "get_settings", "description": "การตั้งค่าสถานี: ชื่อสถานี ค่า default ของการตรวจ กล้อง ขอบเขตสเตจ 3D"},
+    {"name": "get_hardware", "description": "ประสิทธิภาพเครื่องสด: การใช้งาน/ความถี่ CPU แต่ละคอร์, GPU, RAM, อุณหภูมิ, พลังงาน (W), พัดลม (%/rpm), โหมดพลังงาน Jetson, over-current — ใช้เมื่อถามว่าเครื่องร้อน/ช้า/กินไฟ/พัดลม"},
     {"name": "navigate", "description": "พาผู้ใช้ไปหน้าในเว็บแอป",
      "parameters": {"type": "object", "properties": {"page": {"type": "string", "enum": list(PAGES)}}, "required": ["page"]}},
 ]
@@ -387,7 +399,7 @@ TOOL_LABELS = {
     "get_station_status": "ดูสถานะสถานี", "get_statistics": "ดูสถิติ Yield", "list_scan_runs": "ดูรายการรอบสแกน",
     "get_scan_run": "ดูผลรอบสแกน", "read_part_markings": "อ่านตัวอักษรบนชิ้น (OCR)", "list_single_inspections": "ดูการตรวจภาพเดี่ยว", "list_reference_profiles": "ดูโปรไฟล์อ้างอิง",
     "get_reference_profile": "ดูรายละเอียดโปรไฟล์", "list_datasets": "ดูชุดข้อมูล", "get_dataset": "ดูรายละเอียดชุดข้อมูล",
-    "list_models": "ดูรายการโมเดล", "list_boards": "ดูบอร์ดที่บันทึกไว้", "get_board": "ดูรายละเอียดบอร์ด", "get_settings": "ดูการตั้งค่า", "navigate": "เปิดหน้า",
+    "list_models": "ดูรายการโมเดล", "list_boards": "ดูบอร์ดที่บันทึกไว้", "get_board": "ดูรายละเอียดบอร์ด", "get_settings": "ดูการตั้งค่า", "get_hardware": "ดูประสิทธิภาพเครื่อง", "navigate": "เปิดหน้า",
 }
 
 

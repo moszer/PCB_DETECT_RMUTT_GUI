@@ -7,6 +7,7 @@ import {
   Database,
   Cpu,
   Crosshair,
+  Gauge,
   Eye,
   Image as ImageIcon,
   KeyRound,
@@ -33,7 +34,7 @@ import { sfx } from "@/lib/sound";
 import { Button, Checkbox, Field, Modal, StatusDot, TextInput, cx } from "./ui";
 import { useToast } from "./Toast";
 
-export type TabId = "aoi" | "inspect" | "dataset" | "references" | "history" | "settings";
+export type TabId = "aoi" | "inspect" | "dataset" | "references" | "history" | "hardware" | "settings";
 
 export const NAV: Array<{ id: TabId; label: string; short: string; icon: LucideIcon; description: string }> = [
   { id: "aoi", label: "สแกน AOI", short: "AOI", icon: ScanLine, description: "มาร์คจุด สอนต้นแบบ และสแกนบอร์ดอัตโนมัติด้วยสเตจ XY" },
@@ -41,6 +42,7 @@ export const NAV: Array<{ id: TabId; label: string; short: string; icon: LucideI
   { id: "dataset", label: "ชุดข้อมูลเทรน", short: "ข้อมูล", icon: Database, description: "มาร์ค 4 มุมบอร์ด ถ่ายทั้งบอร์ดอัตโนมัติ แก้ label และดาวน์โหลดไปเทรนโมเดล" },
   { id: "references", label: "โปรไฟล์อ้างอิง", short: "อ้างอิง", icon: BookMarked, description: "โปรไฟล์บอร์ดต้นแบบ (Golden reference)" },
   { id: "history", label: "ประวัติ & Yield", short: "ประวัติ", icon: BarChart3, description: "ผลการตรวจย้อนหลังและอัตราผ่านการผลิต" },
+  { id: "hardware", label: "ประสิทธิภาพเครื่อง", short: "เครื่อง", icon: Gauge, description: "CPU/GPU แต่ละคอร์ อุณหภูมิ พลังงาน พัดลม และโหมดพลังงาน Jetson แบบสด" },
   { id: "settings", label: "ตั้งค่าสถานี", short: "ตั้งค่า", icon: Settings, description: "โมเดล ฮาร์ดแวร์ประมวลผล ขอบเขตสเตจ และข้อมูลสถานี" },
 ];
 
@@ -125,7 +127,7 @@ export function AppShell({ tab, onTab, status, socketConnected, onRefreshStatus,
       </div>
 
       {/* Bottom nav (mobile / tablet portrait) */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 h-16 grid grid-cols-6 border-t border-line bg-surface">
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 h-16 grid grid-cols-7 border-t border-line bg-surface">
         {NAV.map((item) => {
           const active = item.id === tab;
           const Icon = item.icon;
@@ -134,7 +136,7 @@ export function AppShell({ tab, onTab, status, socketConnected, onRefreshStatus,
               key={item.id}
               type="button"
               onClick={() => onTab(item.id)}
-              className={cx("flex flex-col items-center justify-center gap-1 text-[11px] cursor-pointer", active ? "text-accent font-semibold" : "text-muted")}
+              className={cx("flex flex-col items-center justify-center gap-1 text-[10px] sm:text-[11px] cursor-pointer", active ? "text-accent font-semibold" : "text-muted")}
             >
               <Icon className="size-5" />
               {item.short}

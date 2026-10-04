@@ -11,7 +11,7 @@ Start the whole station from the parent folder with `./run_web.sh` (see
 
 ## 1. Pages
 
-The page lives in a single route (`src/app/page.tsx`). The sidebar switches between six
+The page lives in a single route (`src/app/page.tsx`). The sidebar switches between seven
 views, and the bottom bar does the same on small screens.
 
 | View | Component | What it does |
@@ -21,7 +21,8 @@ views, and the bottom bar does the same on small screens.
 | ชุดข้อมูลเทรน | `dataset/DatasetView.tsx`, `dataset/LabelEditor.tsx` | Whole-board capture, label editing (marquee select, bulk delete), dataset download |
 | โปรไฟล์อ้างอิง | `ReferencesView.tsx` | Golden reference profiles, import the desktop `Refs.json` |
 | ประวัติ & Yield | `HistoryView.tsx` | Runs and single inspections, yield, CSV export |
-| ตั้งค่าสถานี | `SettingsView.tsx`, `ModelPicker.tsx` | Model, compute device, stage limits, station info |
+| ประสิทธิภาพเครื่อง | `HardwareView.tsx` | Live CPU cores, GPU, RAM, temperatures, power, fan; Jetson power mode / max clocks / fan controls |
+| ตั้งค่าสถานี | `SettingsView.tsx`, `ModelPicker.tsx`, `AIKeyPanel.tsx` | Model, compute device, stage limits, station info |
 
 Shared across all pages:
 - `AppShell.tsx`: sidebar, header status chips, operator control, view-only banner, STOP button.
