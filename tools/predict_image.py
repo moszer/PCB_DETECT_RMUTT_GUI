@@ -1,16 +1,24 @@
+import os
+import sys
+
+# Run from anywhere: all paths are resolved from this file, and the repo root is importable.
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(HERE, ".."))
+sys.path.insert(0, REPO_ROOT)
+
 from ultralytics import YOLO
 from main_program.app.inference_runtime import select_device, validate_model_file
 import cv2
-import os
 
 # Load your trained model
 device = select_device()
 print(f"Inference device: {device.label} {device.detail}")
-validate_model_file("best.pt")
-model = YOLO("best.pt")
+MODEL_PATH = os.path.join(REPO_ROOT, "best.pt")  # same model the desktop app uses
+validate_model_file(MODEL_PATH)
+model = YOLO(MODEL_PATH)
 
 # Path to test image (change this to your image path)
-image_path = "image_dataset/Raspberry-Pi-Pico-with-RP2040-768x630.webp"
+image_path = os.path.join(REPO_ROOT, "training", "image_dataset", "Raspberry-Pi-Pico-with-RP2040-768x630.webp")
 
 # Run inference
 results = model.predict(

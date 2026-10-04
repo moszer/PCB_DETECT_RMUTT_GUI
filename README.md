@@ -6,11 +6,26 @@
 
 **AOI Scan:** connect the Nano XY stage (protocol v2, 9600 baud), home/jog,
 scan a serpentine grid, and capture/inspect each position. Simulation, per-point
-golden-board references, STOP and saved run reports are included. See [AOI setup](AOI.md).
+golden-board references, STOP and saved run reports are included. See [AOI setup](docs/AOI.md).
 
 A desktop **inspection station** for printed circuit boards. It runs a YOLO detector over a
 board image, matches what it found against a **reference profile** of expected components,
 and returns a **PASS / FAIL** verdict with the missing, wrong and extra parts listed.
+
+## Repository layout
+
+```
+main_program_for_webapp/   Web station (FastAPI + Next.js): install.sh, run_web.sh, Docker, INSTALL.md
+main_program/              Desktop station (PyQt6): gui_test.py, app/, qa/ tests
+best.pt  exp.pt  Refs.json  Model and reference the desktop app loads (kept at the root; the in-app
+                           updater treats top-level .pt/.json/.csv files as user data)
+training/                  Train your own model: train.py, prepare.py, data.yaml, main_label/ (labelled
+                           images), image_dataset/, base weights yolo26*.pt, trained/ (exported run), runs/
+tools/                     predict_image.py (one image) · webcam_detect.py (live webcam)
+assets/                    logo-rmutt.png · test_images/ (pass.jpg, fail.png) · samples/ · board_photos/
+docs/                      AOI.md · NVIDIA.md · WEB_AOI.md · web-audit/ · thesis/ (project report)
+scripts/archive/           One-off helper scripts kept for reference (not part of the app)
+```
 
 Companion desktop app to [PCB_DETECT_RMUTT](https://github.com/moszer/PCB_DETECT_RMUTT).
 Undergraduate project at **RMUTT** (Rajamangala University of Technology Thanyaburi).
@@ -171,7 +186,7 @@ Verify real GPU operations and then verify this project's model:
 
 ```bash
 python main_program/check_nvidia.py
-python main_program/check_nvidia.py --model best.pt --image test/pass.jpg
+python main_program/check_nvidia.py --model best.pt --image assets/test_images/pass.jpg
 ```
 
 Both commands must report `PASS`, and the model check must report
@@ -189,7 +204,7 @@ JetPack 5.x and 6.x use different Python, CUDA, PyTorch and torchvision builds.
 Do not install `requirements-nvidia-cu130.txt` on those releases. Select the
 matching packages from the [NVIDIA PyTorch compatibility table](https://docs.nvidia.com/deeplearning/frameworks/install-pytorch-jetson-platform-release-notes/pytorch-jetson-rel.html)
 and the [Ultralytics Jetson guide](https://docs.ultralytics.com/guides/nvidia-jetson/).
-Detailed notes for the tested CUDA 13 environment are in [NVIDIA.md](NVIDIA.md).
+Detailed notes for the tested CUDA 13 environment are in [docs/NVIDIA.md](docs/NVIDIA.md).
 
 ### Installation troubleshooting
 
@@ -210,10 +225,10 @@ Detailed notes for the tested CUDA 13 environment are in [NVIDIA.md](NVIDIA.md).
 Other scripts:
 
 ```bash
-python3 prepare.py    # split main_label/ into train/val (80/20, moves files in place)
-python3 train.py      # train (edit weights + hyperparams inside the script)
-python3 test.py       # single-image inference
-python3 camera.py     # standalone webcam detection
+python3 training/prepare.py    # split training/main_label/ into train/val (80/20, moves files in place)
+python3 training/train.py      # train (edit weights + hyperparams inside the script)
+python3 tools/predict_image.py   # single-image inference (best.pt)
+python3 tools/webcam_detect.py   # standalone webcam detection (best.pt)
 ```
 
 ## Requirements
@@ -296,7 +311,7 @@ connector_2  diode  hole  inductor  input  led  resistor  resistor_8  sdcard
 sot21  sot23  sot31  sot32  usb  xtal
 ```
 
-Labelled in Label Studio; `main_label/` holds the images and YOLO-format labels,
+Labelled in Label Studio; `training/main_label/` holds the images and YOLO-format labels,
 `prepare.py` produces the 80/20 split.
 
 ## Training
@@ -304,9 +319,9 @@ Labelled in Label Studio; `main_label/` holds the images and YOLO-format labels,
 ```python
 from ultralytics import YOLO
 
-model = YOLO("yolo26x.pt")
+model = YOLO("training/yolo26x.pt")
 model.train(
-    data="data.yaml", epochs=300, imgsz=640, batch=16, device=0,
+    data="training/data.yaml", epochs=300, imgsz=640, batch=16, device=0,
     optimizer="AdamW", lr0=0.001, lrf=0.01, cos_lr=True, patience=50,
     hsv_h=0.015, hsv_s=0.7, hsv_v=0.4, degrees=10, translate=0.1,
     scale=0.5, shear=2.0, flipud=0.5, fliplr=0.5, mosaic=1.0, mixup=0.1,
@@ -315,26 +330,26 @@ model.train(
 ```
 
 On Colab, mount Drive, `os.chdir` into the project, `pip install ultralytics`, and rewrite
-`data.yaml` with an absolute `path:` before training.
+`training/data.yaml` with an absolute `path:` before training.
 
-> **The run committed in `trained/` is a smoke test, not the real model** — `args.yaml`
+> **The run committed in `training/trained/` is a smoke test, not the real model** — `args.yaml`
 > shows 10 epochs on `device: cpu` with `yolo26n.pt`, and `results.csv` reports mAP 0.0
-> throughout. Retrain before trusting any numbers from it. `trained/best.pt` and
-> `trained/last.pt` are Git LFS pointers; `trained/best.onnx` is the real exported graph.
+> throughout. Retrain before trusting any numbers from it. `training/trained/best.pt` and
+> `training/trained/last.pt` are Git LFS pointers; `training/trained/best.onnx` is the real exported graph.
 
 | Weights | Size | Speed | Accuracy |
 | --- | --- | --- | --- |
-| `yolo26n.pt` | Nano | Fastest | Lowest |
+| `training/yolo26n.pt` | Nano | Fastest | Lowest |
 | `yolo26s.pt` | Small | Fast | Low |
 | `yolo26m.pt` | Medium | Medium | Medium |
 | `yolo26l.pt` | Large | Slow | High |
-| `yolo26x.pt` | XLarge | Slowest | Highest |
+| `training/yolo26x.pt` | XLarge | Slowest | Highest |
 
 ## Key files
 
 | File | Role |
 | --- | --- |
 | `Refs.json` | Reference profile — expected components as `{x, y, label}` |
-| `data.yaml` | Dataset config, 23 classes |
+| `training/data.yaml` | Dataset config, 23 classes |
 | `inspection_log.csv` | Generated inspection history |
-| `trained/best.onnx` | Exported model graph |
+| `training/trained/best.onnx` | Exported model graph |

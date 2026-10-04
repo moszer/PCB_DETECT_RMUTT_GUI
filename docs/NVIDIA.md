@@ -17,7 +17,7 @@ For the root command-line scripts, set `PCB_DEVICE=auto`, `cpu`, `mps`, or `cuda
 (other CUDA indices such as `cuda:1` are also accepted):
 
 ```bash
-PCB_DEVICE=cuda:0 main_program/.venv/bin/python test.py
+PCB_DEVICE=cuda:0 main_program/.venv/bin/python tools/predict_image.py
 ```
 
 ## Environment tested on 2026-09-11
@@ -25,7 +25,7 @@ PCB_DEVICE=cuda:0 main_program/.venv/bin/python test.py
 - Jetson Orin Nano Super, aarch64, L4T 39.2.1 (JetPack 7.2.1).
 - Python 3.12.3; PyTorch 2.13.0+cu130; torchvision 0.28.0+cu130.
 - CUDA convolution, torchvision CUDA NMS, and the real `best.pt` passed.
-- `test/pass.jpg`: 52 detections; approximately 167 ms on the measured warm
+- `assets/test_images/pass.jpg`: 52 detections; approximately 167 ms on the measured warm
   inference. Timing varies with power mode, clocks, image size, and model.
 - Model parameters and detection tensors were verified on `cuda:0`.
 - The real GUI worker also passed Auto/CUDA → CPU → explicit CUDA switching
@@ -48,7 +48,7 @@ From the project root, in a Python 3.12 environment:
 ```bash
 python -m pip install -r requirements.txt
 python -m pip install -r requirements-nvidia-cu130.txt
-python main_program/check_nvidia.py --model best.pt --image test/pass.jpg
+python main_program/check_nvidia.py --model best.pt --image assets/test_images/pass.jpg
 python main_program/gui_test.py
 ```
 
@@ -72,7 +72,7 @@ Use the same interpreter as the GUI, from a normal terminal with GPU access:
 ```bash
 cd main_program
 .venv/bin/python check_nvidia.py
-.venv/bin/python check_nvidia.py --model ../best.pt --image ../test/pass.jpg
+.venv/bin/python check_nvidia.py --model ../best.pt --image ../assets/test_images/pass.jpg
 ```
 
 The first command checks actual CUDA computation and NMS, not only

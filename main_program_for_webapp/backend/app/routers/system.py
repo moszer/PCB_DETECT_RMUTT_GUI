@@ -216,7 +216,7 @@ def load_model(
 
 
 def _model_roots() -> List[Path]:
-    project = REPO_ROOT.parent  # "defect detection yolo" (desktop app, web app, trained/, runs/)
+    project = REPO_ROOT.parent  # "defect detection yolo" (desktop app, web app, training/trained, training/runs)
     return [project, STORAGE_DIR / "models", project.parent / "PCB Electronic components"]
 
 

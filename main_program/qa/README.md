@@ -33,10 +33,10 @@ stale animation callback crash exposed by the suite on the Jetson environment.
 
 Real CUDA convolution, torchvision NMS, and `best.pt` inference were also tested
 on Orin Nano Super / L4T 39.2.1 / Python 3.12.3 / PyTorch 2.13.0+cu130.
-`test/pass.jpg` produced 52 detections in about 167 ms in the measured warm run.
+`assets/test_images/pass.jpg` produced 52 detections in about 167 ms in the measured warm run.
 An offscreen GUI smoke check exercised Auto/CUDA → CPU → explicit CUDA with the
 actual model, verifying the device and 52 detections in each mode. It wrote no
-production history or settings. See [NVIDIA.md](../../NVIDIA.md) for reproduction
+production history or settings. See [NVIDIA.md](../../docs/NVIDIA.md) for reproduction
 commands and the remaining PyTorch SM 8.7 warning.
 
 ## Visual and inference checks
@@ -45,7 +45,7 @@ Apple MPS support was checked on macOS 27.0 / arm64 / PyTorch 2.13.0 on
 2026-09-16. All 35 automated tests passed, including CUDA/MPS/CPU selection,
 unavailable MPS errors, explicit device requests without silent CPU retry, and
 MPS preference persistence. The actual GUI inference worker ran `best.pt` on
-`test/pass.jpg` through CPU → MPS → Auto → CPU; model parameters were verified
+`assets/test_images/pass.jpg` through CPU → MPS → Auto → CPU; model parameters were verified
 on the selected device and each pass produced 52 detections. The initial MPS
 pass took about 281 ms, the next MPS pass 37 ms, and the final CPU pass 166 ms.
 These are individual inference timings, not sustained FPS or accuracy benchmarks.
@@ -63,7 +63,7 @@ repositories. The Updates button was visually checked at 1100 × 760.
 Reviewed the native Qt output at 1440 × 900 and 1100 × 760, including expanded
 setup cards and selected-component details. Preview images are in `previews/`.
 
-Ran the real bundled `best.pt` on `test/pass.jpg`: 52 detections, approximately
+Ran the real bundled `best.pt` on `assets/test_images/pass.jpg`: 52 detections, approximately
 178 ms inference on CPU. The existing nine reference points are outside this
 sample image's bounds, so its recorded verdict is FAIL (9 missing, 52 extra).
 This confirms the inference/UI integration, not detection accuracy or a valid

@@ -13,21 +13,21 @@ A YOLOv8-based PCB (Printed Circuit Board) defect inspection station. The system
 # despite the "test" in the filename — there is no automated test suite)
 python3 main_program/gui_test.py
 
-# Split main_label/images+labels into train/val (80/20, random, moves files in place)
-python3 prepare.py
+# Split training/main_label/images+labels into train/val (80/20, random, moves files in place)
+python3 training/prepare.py
 
 # Train the model (edit the YOLO() weights arg / hyperparams directly in the script)
-python3 train.py
+python3 training/train.py
 
 # Test inference on a single image
-python3 test.py
+python3 tools/predict_image.py
 
 # Real-time webcam detection (standalone script; the GUI's Camera panel
 # covers the capture-and-inspect workflow without leaving the app)
-python3 camera.py
+python3 tools/webcam_detect.py
 ```
 
-There is no automated test suite (no pytest config, no `test_*.py` files) — verification is manual, via `test.py` / the GUI against `test/pass.jpg` and `test/fail.png`.
+There is no automated test suite (no pytest config, no `test_*.py` files) — verification is manual, via `tools/predict_image.py` / the GUI against `assets/test_images/pass.jpg` and `fail.png`.
 
 ## Installing Dependencies
 
@@ -75,8 +75,8 @@ The YOLO backend is imported lazily; if `ultralytics` is unavailable the UI stil
 
 - **`Refs.json`** — Reference profile: array of `{"x": int, "y": int, "label": str}` points defining expected components
 - **`inspection_log.csv`** — Auto-generated inspection history (time, station, operator, verdict, counts)
-- **`data.yaml`** — Dataset config: 23 component classes (button, capacitor, chip, connector, diode, led, resistor, usb, xtal, etc.)
-- **`best.pt`** / **`trained/best.pt`** — Trained YOLOv8 weights loaded at runtime
+- **`training/data.yaml`** — Dataset config: 23 component classes (button, capacitor, chip, connector, diode, led, resistor, usb, xtal, etc.)
+- **`best.pt`** / **`training/trained/best.pt`** — Trained YOLOv8 weights loaded at runtime
 
 ## Core Logic: `inspection_logic.py`
 

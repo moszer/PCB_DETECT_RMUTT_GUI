@@ -35,11 +35,11 @@ echo "==> Smoke tests"
 curl -fs "http://localhost:$PCB_BACKEND_PORT/api/health" | grep -q '"status":"ok"' && pass "backend health" || fail "backend health"
 [[ "$(curl -s -o /dev/null -w '%{http_code}' "$FRONT/")" == "200" ]] && pass "web page" || fail "web page"
 curl -fs "$FRONT/api/camera/status" >/dev/null && pass "frontend → backend proxy" || fail "proxy"
-IMG="../test/pass.jpg"
+IMG="../assets/test_images/pass.jpg"
 if [[ -f "$IMG" ]]; then
   out="$(curl -fs -m 180 -F "file=@$IMG" "$FRONT/api/inspection/inspect-upload")" || fail "inspection"
   n="$(echo "$out" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["detections"]))')"
-  [[ "$n" -gt 0 ]] && pass "YOLO inspection: $n parts on test/pass.jpg" || fail "YOLO found nothing"
+  [[ "$n" -gt 0 ]] && pass "YOLO inspection: $n parts on assets/test_images/pass.jpg" || fail "YOLO found nothing"
 fi
 bytes="$(curl -s -m 4 -o /dev/null -w '%{size_download}' "$FRONT/api/camera/stream" || true)"
 [[ "${bytes:-0}" -gt 10000 ]] && pass "live camera stream (test camera)" || fail "camera stream"

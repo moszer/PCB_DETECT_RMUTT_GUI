@@ -1,8 +1,15 @@
 import os
+import sys
+
+# Run from anywhere: all paths are resolved from this file, and the repo root is importable.
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(HERE, ".."))
+sys.path.insert(0, REPO_ROOT)
+
 import random
 import shutil
 
-ROOT = "main_label"
+ROOT = os.path.join(HERE, "main_label")
 
 images_dir = os.path.join(ROOT, "images")
 labels_dir = os.path.join(ROOT, "labels")

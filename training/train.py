@@ -1,18 +1,27 @@
+import os
+import sys
+
+# Run from anywhere: all paths are resolved from this file, and the repo root is importable.
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(HERE, ".."))
+sys.path.insert(0, REPO_ROOT)
+
 from ultralytics import YOLO
 from main_program.app.inference_runtime import select_device, validate_model_file
 import shutil
-import os
 import glob
 
 # Load a pretrained YOLO26 nano model
 device = select_device()
 print(f"Training device: {device.label} {device.detail}")
-validate_model_file("yolo26x.pt")
-model = YOLO("yolo26x.pt")
+BASE_WEIGHTS = os.path.join(HERE, "yolo26x.pt")
+validate_model_file(BASE_WEIGHTS)
+model = YOLO(BASE_WEIGHTS)
 
 # Train the model
 results = model.train(
-    data="data.yaml",
+    data=os.path.join(HERE, "data.yaml"),
+    project=os.path.join(HERE, "runs", "detect"),
     epochs=100,
     imgsz=640,
     batch=16,
@@ -20,7 +29,7 @@ results = model.train(
 )
 
 # Copy trained weights and data to 'trained' folder
-trained_dir = "trained"
+trained_dir = os.path.join(HERE, "trained")
 os.makedirs(trained_dir, exist_ok=True)
 
 # Get the save directory from training results

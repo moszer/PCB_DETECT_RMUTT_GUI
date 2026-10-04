@@ -1,7 +1,7 @@
 # PCB Defect Detection (YOLOv8 GUI) — Python dependencies
 # Compatibility copy of the root requirements file.
 # Generic pins tested with Python 3.12. For Jetson CUDA setup, install the root
-# requirements-nvidia-cu130.txt afterward and follow the root README/NVIDIA.md.
+# requirements-nvidia-cu130.txt afterward and follow the root README/docs/NVIDIA.md.
 # Install with:  pip install -r requirements.txt
 
 # --- Core: used directly by the app ---

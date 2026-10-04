@@ -1,3 +1,11 @@
+import os
+import sys
+
+# Run from anywhere: all paths are resolved from this file, and the repo root is importable.
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(HERE, ".."))
+sys.path.insert(0, REPO_ROOT)
+
 import cv2
 from ultralytics import YOLO
 from main_program.app.inference_runtime import select_device, validate_model_file
@@ -5,8 +13,9 @@ from main_program.app.inference_runtime import select_device, validate_model_fil
 # Load your trained model
 device = select_device()
 print(f"Inference device: {device.label} {device.detail}")
-validate_model_file("best.pt")
-model = YOLO("best.pt")
+MODEL_PATH = os.path.join(REPO_ROOT, "best.pt")  # same model the desktop app uses
+validate_model_file(MODEL_PATH)
+model = YOLO(MODEL_PATH)
 
 # Initialize webcam
 # '0' is usually the default camera. Change to 1, 2, etc. if you have multiple cameras.

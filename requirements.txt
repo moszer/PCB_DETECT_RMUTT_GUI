@@ -1,6 +1,6 @@
 # PCB Defect Detection (YOLOv8 GUI) — Python dependencies
 # Generic pins; tested locally with Python 3.12 and historically Python 3.14.
-# NVIDIA CUDA/Jetson setup: see NVIDIA.md and requirements-nvidia-cu130.txt.
+# NVIDIA CUDA/Jetson setup: see docs/NVIDIA.md and requirements-nvidia-cu130.txt.
 # Install with:  pip install -r requirements.txt
 
 # --- Core: used directly by the app ---

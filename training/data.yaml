@@ -1,7 +1,6 @@
-path: main_label
-
-train: images/train
-val: images/val
+# Paths are relative to this file (training/), whatever directory you run from.
+train: main_label/images/train
+val: main_label/images/val
 
 nc: 23
 names:
