@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { Button, Card, CardHeader, Field, NumberInput, Slider, Spinner, TextInput, Toggle, cx } from "./ui";
 import { ModelPicker } from "./ModelPicker";
 import { AIKeyPanel } from "./AIKeyPanel";
+import { RemoteAccessPanel } from "./RemoteAccess";
 import { useSoundPrefs } from "@/hooks/useSound";
 import { sfx } from "@/lib/sound";
 import { useToast } from "./Toast";
@@ -102,6 +103,8 @@ export function SettingsView({ onRefreshStatus, isOperator }: { onRefreshStatus:
         <ModelPicker onRefreshStatus={onRefreshStatus} />
 
         <AIKeyPanel isOperator={isOperator} />
+
+        <RemoteAccessPanel isOperator={isOperator} />
 
         <Card>
           <CardHeader icon={Cpu} title="ฮาร์ดแวร์ประมวลผล" subtitle={`กำลังใช้: ${activeDevice}`} />

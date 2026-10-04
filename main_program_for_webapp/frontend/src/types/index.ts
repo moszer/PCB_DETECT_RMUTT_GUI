@@ -330,6 +330,22 @@ export interface Statistics {
   single_inspections_count: number;
 }
 
+export interface RemoteAccess {
+  lan: Array<{ interface: string; url: string }>;
+  frontend_port: number;
+  installed: boolean;
+  default_passcode?: boolean;
+  state?: string;
+  auth_url?: string | null;
+  dns_name?: string | null;
+  ipv4?: string | null;
+  https?: boolean;
+  version?: string | null;
+  serve?: { port: number; funnel: boolean; url: string } | null;
+  others?: Array<{ port: number; target: string; funnel: boolean }>;
+  direct_url?: string;
+}
+
 export interface HardwareSnapshot {
   time: number;
   platform: "jetson" | "linux" | "other";

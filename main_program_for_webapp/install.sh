@@ -7,10 +7,11 @@
 #   ./install.sh --test     also run the backend test suite at the end
 #   ./install.sh --no-system  skip OS packages (apt / Homebrew), e.g. without sudo
 #   ./install.sh --yes      don't ask before installing OS packages
+#   ./install.sh --no-tailscale  don't install Tailscale (remote access / QR links)
 #
 # Detects macOS (Apple Silicon / Intel), Linux PC (x86_64 / arm64) and NVIDIA Jetson
 # (Orin Nano etc.), then installs: OS packages, Node.js 20+, a Python venv with the right
-# PyTorch build, the frontend packages and backend/.env. Safe to run again (updates).
+# PyTorch build, the frontend packages, Tailscale and backend/.env. Safe to run again (updates).
 # ==============================================================================
 set -euo pipefail
 
@@ -21,14 +22,15 @@ VENV="$BACKEND/venv"
 NODE_MIN_MAJOR=20
 PY_MIN_MINOR=10
 
-CPU_ONLY=0; RUN_TESTS=0; SYSTEM=1; ASSUME_YES=0
+CPU_ONLY=0; RUN_TESTS=0; SYSTEM=1; ASSUME_YES=0; TAILSCALE=1
 for arg in "$@"; do
   case "$arg" in
     --cpu) CPU_ONLY=1 ;;
     --test) RUN_TESTS=1 ;;
     --no-system) SYSTEM=0 ;;
     --yes|-y) ASSUME_YES=1 ;;
-    -h|--help) sed -n '3,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --no-tailscale) TAILSCALE=0 ;;
+    -h|--help) sed -n '3,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown option: $arg (see --help)" >&2; exit 2 ;;
   esac
 done
@@ -93,6 +95,14 @@ install_system_macos() {
     confirm "brew install ${pkgs[*]}?" && brew install "${pkgs[@]}"
   fi
   ok "Homebrew packages ready"
+  if [[ $TAILSCALE -eq 1 ]] && ! have tailscale && [[ ! -x /Applications/Tailscale.app/Contents/MacOS/Tailscale ]]; then
+    if confirm "Install Tailscale (open the station from your phone / outside the LAN)?"; then
+      brew install --cask tailscale && ok "Tailscale installed: open the Tailscale app once and sign in (or use Settings → เข้าใช้งานจากที่อื่น)" \
+        || warn "Tailscale not installed (install it from https://tailscale.com/download)"
+    fi
+  elif [[ $TAILSCALE -eq 1 ]]; then
+    ok "Tailscale already installed"
+  fi
 }
 
 install_system_linux() {
@@ -124,6 +134,21 @@ install_system_linux() {
     if [[ ${#missing[@]} -gt 0 ]]; then
       $SUDO usermod -aG "$(IFS=,; echo "${missing[*]}")" "$user" && warn "Added $user to ${missing[*]} — log out and back in for camera/serial access."
     fi
+  fi
+  # Tailscale: remote access and QR links from the web page (official installer adds its apt repo).
+  if [[ $TAILSCALE -eq 1 ]] && ! have tailscale; then
+    if confirm "Install Tailscale (open the station from your phone / outside the LAN)?"; then
+      if curl -fsSL https://tailscale.com/install.sh | $SUDO sh; then
+        $SUDO systemctl enable --now tailscaled >/dev/null 2>&1 || true
+        ok "Tailscale installed — sign in from the web page: Settings → เข้าใช้งานจากที่อื่น → เชื่อมต่อ Tailscale"
+      else
+        warn "Tailscale not installed (later: curl -fsSL https://tailscale.com/install.sh | sh)"
+      fi
+    fi
+  fi
+  # Let the station user manage serve/funnel from the web page without sudo.
+  if have tailscale && [[ -n "$user" && "$user" != "root" ]]; then
+    $SUDO tailscale set --operator="$user" >/dev/null 2>&1 && ok "Tailscale: $user may manage the tunnel from the web page" || true
   fi
   # Jetson: let the web page change power mode / max clocks / fan (a root helper limited to those).
   if [[ "$PLATFORM" == "jetson" && -n "$user" && "$user" != "root" ]] \

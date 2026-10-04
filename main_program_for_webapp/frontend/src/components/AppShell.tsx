@@ -33,6 +33,7 @@ import { useSoundPrefs } from "@/hooks/useSound";
 import { sfx } from "@/lib/sound";
 import { Button, Checkbox, Field, Modal, StatusDot, TextInput, cx } from "./ui";
 import { useToast } from "./Toast";
+import { OpenOnPhoneButton } from "./RemoteAccess";
 
 export type TabId = "aoi" | "inspect" | "dataset" | "references" | "history" | "hardware" | "settings";
 
@@ -107,6 +108,7 @@ export function AppShell({ tab, onTab, status, socketConnected, onRefreshStatus,
           </div>
           <StatusChips status={status} />
           <OperatorControl status={status} lease={lease} open={askControl} setOpen={setAskControl} />
+          <OpenOnPhoneButton />
           <SoundToggle />
           <button
             type="button"

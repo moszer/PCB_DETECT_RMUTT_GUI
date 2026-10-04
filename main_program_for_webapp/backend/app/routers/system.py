@@ -20,6 +20,9 @@ from ..services.camera_service import camera_service
 from ..services.inference_service import inference_service
 from ..services.machine_service import machine_service
 from ..services.hardware_service import HardwareError, hardware_service
+from ..services import tunnel_service
+from fastapi import Query
+from fastapi.responses import Response
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -392,3 +395,63 @@ async def set_clocks(req: ClocksRequest, x_operator_token: Optional[str] = Heade
 async def set_fan(req: FanRequest, x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token")):
     _require_lease(x_operator_token)
     return await asyncio.to_thread(_apply, lambda: hardware_service.set_fan(req.mode, req.percent))
+
+
+# ── Remote access (LAN / Tailscale) and QR codes ───────────────────────────────
+
+class ServeRequest(BaseModel):
+    funnel: bool = False  # also publish on the public internet
+
+
+def _tunnel(action):
+    try:
+        return action()
+    except tunnel_service.TunnelError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+DEFAULT_PASSCODE = "rmutt-aoi"
+
+
+def _with_passcode_flag(data: Dict[str, Any]) -> Dict[str, Any]:
+    return {**data, "default_passcode": settings.operator_passcode == DEFAULT_PASSCODE}
+
+
+@router.get("/remote-access")
+async def remote_access():
+    """LAN addresses of the station and the Tailscale state (serve/funnel entry of the station)."""
+    return _with_passcode_flag(await asyncio.to_thread(_tunnel, tunnel_service.status))
+
+
+@router.post("/remote-access/login")
+async def tailscale_login(x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token")):
+    _require_lease(x_operator_token)
+    return _with_passcode_flag(await asyncio.to_thread(_tunnel, tunnel_service.login))
+
+
+@router.post("/remote-access/serve")
+async def tailscale_serve(req: ServeRequest, x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token")):
+    _require_lease(x_operator_token)
+    if req.funnel and settings.operator_passcode == DEFAULT_PASSCODE:
+        # On the public internet anyone could take control with the documented default.
+        raise HTTPException(status_code=400, detail="เปลี่ยนรหัสผ่านสถานีก่อนเปิดสู่อินเทอร์เน็ต: ตั้ง PCB_OPERATOR_PASSCODE ใน backend/.env แล้วรีสตาร์ท")
+    return _with_passcode_flag(await asyncio.to_thread(_tunnel, lambda: tunnel_service.enable(req.funnel)))
+
+
+@router.delete("/remote-access/serve")
+async def tailscale_unserve(x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token")):
+    _require_lease(x_operator_token)
+    return _with_passcode_flag(await asyncio.to_thread(_tunnel, tunnel_service.disable))
+
+
+@router.get("/qr")
+def qr_code(text: str = Query(..., min_length=8, max_length=512)):
+    """QR code (SVG) for an http(s) link, e.g. to open the station on a phone."""
+    if not re.match(r"^https?://[^\s<>\"]+$", text):
+        raise HTTPException(status_code=400, detail="QR code is only made for http(s) links")
+    import io
+    import segno
+
+    buf = io.BytesIO()
+    segno.make(text, error="m").save(buf, kind="svg", scale=8, border=2, dark="#000000", light="#ffffff", xmldecl=False)
+    return Response(content=buf.getvalue(), media_type="image/svg+xml", headers={"Cache-Control": "max-age=3600"})

@@ -26,7 +26,7 @@ cd PCB_DETECT_RMUTT_GUI/main_program_for_webapp
 `install.sh` จัดการให้:
 1. ลงโปรแกรมระบบ: macOS ใช้ Homebrew (Python, Node.js) / Ubuntu ใช้ apt (Python, build tools, libGL, tesseract, v4l-utils) และ Node.js 22 LTS
 2. สร้าง Python venv ที่ `backend/venv` แล้วลง **PyTorch รุ่นที่ตรงกับเครื่อง** และไลบรารี backend
-3. ลงแพ็กเกจหน้าเว็บ (`npm ci`)
+3. ลงแพ็กเกจหน้าเว็บ (`npm ci`) และ Tailscale (เข้าจากมือถือ/นอกวงแลน)
 4. สร้าง `backend/.env` จาก `.env.example`
 5. Linux: เพิ่มผู้ใช้เข้ากลุ่ม `dialout` (สเตจ XY ผ่าน USB serial) และ `video` (กล้อง) **ต้อง logout/login ใหม่ 1 ครั้ง**
 6. ตรวจผล: แสดงรุ่น Python/torch/OpenCV, ฮาร์ดแวร์ AI ที่ใช้ได้ และ OCR
@@ -60,6 +60,7 @@ echo "alias aoi-update='$(pwd)/update.sh'" >> ~/.bashrc && source ~/.bashrc
 | `./install.sh --test` | รันชุดทดสอบ backend ท้ายสุด |
 | `./install.sh --no-system` | ข้ามการลงโปรแกรมระบบ (ไม่มีสิทธิ์ sudo หรือลงเองแล้ว) |
 | `./install.sh --yes` | ไม่ถามยืนยัน (ติดตั้งอัตโนมัติ) |
+| `./install.sh --no-tailscale` | ไม่ติดตั้ง Tailscale (ใช้แค่ในวงแลน) |
 | `./run_web.sh --prod` | build หน้าเว็บครั้งเดียวแล้วเสิร์ฟ เร็วและกินแรมน้อยกว่าโหมด dev **แนะนำบน Jetson และใช้งานประจำ** |
 | `./run_web.sh --update` | อัปเกรดไลบรารี Python/JS ก่อนเริ่ม (ไม่แตะ PyTorch) |
 | `./run_web.sh --no-check` | ข้ามการเช็คไลบรารีตอนเริ่ม |
@@ -149,7 +150,18 @@ docker compose -f docker-compose.yml -f docker-compose.hardware.yml -f docker-co
 
 ---
 
-## 5. ตั้งค่าหลังติดตั้ง (`backend/.env`)
+## 5. เปิดจากมือถือ / นอกวงแลน (QR code + Tailscale)
+
+- ปุ่ม **QR** มุมขวาบนของทุกหน้า: แสดงลิงก์ของสถานี (วงแลน, Tailscale) พร้อม QR code ให้สแกนด้วยมือถือ
+- **ตั้งค่าสถานี → เข้าใช้งานจากที่อื่น**:
+  - **เชื่อมต่อ Tailscale**: ถ้ายังไม่ล็อกอิน ระบบแสดงลิงก์และ QR code ให้ล็อกอินจากมือถือ
+  - **เปิด HTTPS ใน tailnet** (`tailscale serve`): เปิดสถานีด้วย `https://<ชื่อเครื่อง>.ts.net` ได้จากอุปกรณ์ในบัญชี Tailscale เดียวกันเท่านั้น
+  - **เปิดสู่อินเทอร์เน็ต** (`tailscale funnel`): ใครมีลิงก์ก็เปิดดูได้ ต้องเปลี่ยนรหัสผ่านสถานีก่อน (ระบบไม่ยอมเปิดถ้ายังใช้ `rmutt-aoi`) ปิดได้ด้วยปุ่ม "ปิดอุโมงค์"
+  - ระบบเพิ่ม/ลบเฉพาะรายการของสถานีเอง (ใช้พอร์ต 443 ถ้าว่าง ไม่งั้น 8443 หรือ 10000) บริการ Tailscale อื่นบนเครื่องไม่ถูกแตะ
+- `./install.sh` **ติดตั้ง Tailscale ให้เอง** (Linux/Jetson ใช้ตัวติดตั้งทางการของ Tailscale, macOS ใช้ `brew install --cask tailscale`) และให้สิทธิ์ผู้ใช้ของสถานีตั้งค่าอุโมงค์จากหน้าเว็บได้ (`tailscale set --operator`) ไม่ต้องการก็ใส่ `--no-tailscale` หลังติดตั้งแล้วกด "เชื่อมต่อ Tailscale" ในหน้าเว็บเพื่อล็อกอิน
+- ถ้าเปิด HTTPS ไม่ได้ ให้เปิด HTTPS ของ tailnet ที่ login.tailscale.com/admin/dns ก่อน หรือใช้ลิงก์ Tailscale IP (`http://100.x.x.x:3001`) ซึ่งไม่ต้องตั้งค่าเพิ่ม
+
+## 6. ตั้งค่าหลังติดตั้ง (`backend/.env`)
 
 ```bash
 PCB_OPERATOR_PASSCODE=รหัสของคุณ     # รหัสขอสิทธิ์ควบคุม (ค่าเริ่มต้น rmutt-aoi — ควรเปลี่ยน)
@@ -162,7 +174,7 @@ GEMINI_API_KEY=...                   # https://aistudio.google.com/apikey (ผ�
 
 ---
 
-## 6. แก้ปัญหาที่พบบ่อย
+## 7. แก้ปัญหาที่พบบ่อย
 
 | อาการ | วิธีแก้ |
 |---|---|

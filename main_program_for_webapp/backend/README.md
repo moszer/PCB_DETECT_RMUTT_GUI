@@ -20,7 +20,8 @@ app/
   routers/
     system.py           status, settings, compute device, model list/upload/select,
                         Hugging Face model list/download (/models/hub),
-                        live hardware readings and Jetson power/clock/fan control (/hardware)
+                        live hardware readings and Jetson power/clock/fan control (/hardware),
+                        LAN/Tailscale remote access (/remote-access) and QR codes (/qr)
     auth.py             operator control lease (acquire / renew / release)
     camera.py           MJPEG stream, snapshot, camera devices and format
     inspection.py       inspect upload / live / multi-frame, OCR of part markings

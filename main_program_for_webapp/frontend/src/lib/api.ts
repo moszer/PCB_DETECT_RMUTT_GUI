@@ -1,5 +1,6 @@
 import type {
   AIConfig,
+  RemoteAccess,
   HardwareSnapshot,
   AIProvider,
   HubModel,
@@ -121,6 +122,13 @@ export const api = {
   setModel: (model_path: string) => post<{ model_path: string; device: string }>("/api/system/model", { model_path }),
   listModels: () =>
     request<{ current_model: string; models: ModelFile[]; custom_dirs: string[]; search_dirs: string[] }>("/api/system/models"),
+  remote: {
+    get: () => request<RemoteAccess>("/api/system/remote-access"),
+    login: () => post<RemoteAccess>("/api/system/remote-access/login"),
+    serve: (funnel: boolean) => post<RemoteAccess>("/api/system/remote-access/serve", { funnel }),
+    unserve: () => request<RemoteAccess>("/api/system/remote-access/serve", { method: "DELETE" }),
+  },
+  qrUrl: (text: string) => `${API_BASE}/api/system/qr?text=${encodeURIComponent(text)}`,
   hardware: {
     get: () => request<HardwareSnapshot>("/api/system/hardware"),
     powerMode: (mode_id: number) => post<{ hardware: HardwareSnapshot }>("/api/system/hardware/power-mode", { mode_id }),

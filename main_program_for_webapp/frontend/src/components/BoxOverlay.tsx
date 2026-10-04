@@ -4,6 +4,7 @@ import React, { useMemo, useRef, useState } from "react";
 import { useElementSize } from "@/hooks/useElementSize";
 import { LABEL_FONT, LABEL_HEIGHT, OVERLAP_COLOR, boxesInRect, layoutLabels, overlappingPairs, paintOrder, pickAt, type NBox } from "@/lib/labelLayout";
 import { Segmented, cx } from "./ui";
+import { ZoomPan } from "./ZoomPan";
 
 export type LabelMode = "all" | "focus" | "none";
 
@@ -59,6 +60,7 @@ export function BoxOverlay({
   multi,
   onSelectMany,
   className,
+  zoomable = true,
 }: {
   src: string;
   alt: string;
@@ -73,6 +75,8 @@ export function BoxOverlay({
   multi?: Set<number>;
   onSelectMany?: (indices: number[], mode: "replace" | "add" | "toggle") => void;
   className?: string;
+  /** Wheel / pinch / buttons to zoom the image (drag pans unless drawing or marquee-selecting). */
+  zoomable?: boolean;
 }) {
   const surface = useRef<HTMLDivElement>(null);
   const { width, height } = useElementSize(surface);
@@ -104,12 +108,17 @@ export function BoxOverlay({
 
   return (
     <div className={cx("relative rounded-xl overflow-hidden bg-viewport border border-line", className)}>
+      <ZoomPanIf enabled={zoomable} panWithDrag={!drawing && !onSelectMany}>
       <div
         ref={surface}
         className={cx("relative select-none touch-none", drawing ? "cursor-crosshair" : "cursor-pointer")}
         onPointerDown={(e) => {
           down.current = point(e);
-          surface.current!.setPointerCapture(e.pointerId);
+          try {
+            surface.current!.setPointerCapture(e.pointerId);
+          } catch {
+            // Pointer already gone; the gesture still works without capture.
+          }
           if (drawing) setDraft([down.current.x, down.current.y, down.current.x, down.current.y]);
         }}
         onPointerMove={(e) => {
@@ -248,6 +257,11 @@ export function BoxOverlay({
           ซ่อน {hiddenCount} ป้ายที่ทับกัน — คลิกกรอบหรือชี้รายการเพื่อดู
         </span>
       )}
+      </ZoomPanIf>
     </div>
   );
+}
+
+function ZoomPanIf({ enabled, panWithDrag, children }: { enabled: boolean; panWithDrag: boolean; children: React.ReactNode }) {
+  return enabled ? <ZoomPan panWithDrag={panWithDrag}>{children}</ZoomPan> : <>{children}</>;
 }

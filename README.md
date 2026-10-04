@@ -104,6 +104,13 @@ The UI is in Thai. The sidebar has seven pages.
   markings, and can navigate between pages. It also has per-board chat ("what is this board
   for?"), saved chat history and sound effects. It uses Google Gemini, with automatic model
   fallback, or OpenRouter.
+- **Open on a phone / from anywhere:** a QR button on every page lists the station's LAN and
+  Tailscale links with QR codes. Settings → *เข้าใช้งานจากที่อื่น* logs in to Tailscale (login
+  link as QR), and turns on HTTPS inside your tailnet (`tailscale serve`) or on the public internet
+  (`tailscale funnel`, refused while the default passcode is in use). Only the station's own entry is
+  touched; other serve/funnel entries on the machine are left alone.
+- **Image zoom:** result images (point detail, board inspection, history) zoom with the wheel,
+  pinch, double-click or the +/− buttons, and pan by dragging.
 - **Operator control lease:** only one browser controls the stage at a time; others see a
   *view-only* banner. **STOP** always works from any device.
 - **Camera:** MJPEG live stream with a snapshot fallback. Format and crop are configurable

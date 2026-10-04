@@ -6,6 +6,7 @@ import type { AOIPointResult, RunRecord, SingleInspectionRecord, Statistics, Ver
 import { API_BASE, api } from "@/lib/api";
 import { fileName, formatDateTime } from "@/lib/format";
 import { PointResultModal } from "./PointResultModal";
+import { ZoomPan } from "./ZoomPan";
 import { Badge, Button, Card, EmptyState, IconButton, Modal, Segmented, Select, Spinner, Stat, VerdictBadge, buttonClasses, cx } from "./ui";
 import { useToast } from "./Toast";
 
@@ -305,10 +306,15 @@ function SinglesTable({ refreshKey }: { refreshKey: number }) {
       >
         {detail && (
           <div className="flex flex-col gap-4">
-            <a href={detail.annotated_url || detail.image_url} target="_blank" rel="noreferrer" className="block rounded-xl overflow-hidden bg-viewport">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={detail.annotated_url || detail.image_url} alt="ภาพผลตรวจ" className="w-full max-h-[60vh] object-contain" />
-            </a>
+            <div className="flex flex-col gap-1.5">
+              <ZoomPan className="rounded-xl bg-viewport">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={detail.annotated_url || detail.image_url} alt="ภาพผลตรวจ" draggable={false} className="w-full max-h-[60vh] object-contain select-none" />
+              </ZoomPan>
+              <a href={detail.annotated_url || detail.image_url} target="_blank" rel="noreferrer" className="self-end text-xs text-accent hover:underline">
+                เปิดภาพขนาดเต็มในแท็บใหม่
+              </a>
+            </div>
             {detail.reason && <p className="text-sm">{detail.reason}</p>}
             {/* summary is an object; rendering it directly used to crash the page */}
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
