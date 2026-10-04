@@ -18,6 +18,7 @@ done
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Which code version is running, so ./update.sh knows whether a restart is needed.
 mkdir -p "$PROJECT_DIR/.cache" && git -C "$PROJECT_DIR" rev-parse HEAD > "$PROJECT_DIR/.cache/station.commit" 2>/dev/null || true
+echo "$$" > "$PROJECT_DIR/.cache/station.pid" 2>/dev/null || true
 BACKEND_PORT="${PCB_BACKEND_PORT:-8000}"
 FRONTEND_PORT="${PCB_FRONTEND_PORT:-3001}"
 PY="$PROJECT_DIR/backend/venv/bin/python"

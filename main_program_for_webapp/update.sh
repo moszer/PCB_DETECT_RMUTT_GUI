@@ -65,18 +65,31 @@ elif [[ "$BEFORE" != "$AFTER" ]]; then
 fi
 
 # ── restart ───────────────────────────────────────────────────────────────────
-station_pids() {  # run_web.sh processes started from this folder
-    local pid
+station_pids() {  # run_web.sh processes of this folder
+    local pid args
+    # 1) the PID run_web.sh recorded at start
+    pid="$(cat .cache/station.pid 2>/dev/null || true)"
+    if [[ -n "$pid" ]] && args="$(ps -o args= -p "$pid" 2>/dev/null)" && grep -q "run_web.sh" <<<"$args"; then
+        echo "$pid"; return 0
+    fi
+    # 2) older run_web.sh without a PID file: match by working folder. A station started with
+    #    "sg dialout" hides its folder; it is only taken when it is the sole such process and
+    #    this station's backend answers.
+    local found="" hidden=""
     for pid in $(pgrep -f "run_web.sh" 2>/dev/null || true); do
         [[ "$pid" == "$$" ]] && continue
+        ps -o args= -p "$pid" 2>/dev/null | grep -q "bash .*run_web.sh" || continue
         local cwd=""
         if [[ -e "/proc/$pid/cwd" ]]; then cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
         else cwd="$(lsof -a -d cwd -p "$pid" -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)"; fi
-        if [[ "$cwd" == "$PROJECT_DIR" ]] && ps -o args= -p "$pid" | grep -q "bash .*run_web.sh"; then echo "$pid"; fi
+        if [[ "$cwd" == "$PROJECT_DIR" ]]; then found+="$pid "
+        elif [[ -z "$cwd" ]]; then hidden+="$pid "; fi
     done
+    if [[ -n "$found" ]]; then echo "$found"; return 0; fi
+    if [[ $(wc -w <<<"$hidden") -eq 1 ]] && curl -s -m 3 -o /dev/null "http://127.0.0.1:$BACKEND_PORT/api/health"; then echo "$hidden"; fi
     return 0
 }
-PIDS="$(station_pids)"
+PIDS="$(station_pids | tr -s ' ' '\n' | grep . || true)"
 ARGS=""
 if [[ -n "$PIDS" ]]; then
     ARGS="$(ps -o args= -p "$(head -1 <<<"$PIDS")" | sed -E 's/.*run_web\.sh ?//')"
