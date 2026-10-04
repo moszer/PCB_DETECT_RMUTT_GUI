@@ -54,6 +54,11 @@ data counts and URLs. Options:
 | `--update` | Upgrade Python/JS libraries before starting (PyTorch is left alone) |
 | `--no-check` | Skip the library check |
 
+**Update to the latest version:** `./update.sh` pulls from GitHub, runs `install.sh` only when
+libraries changed, and restarts the station with the same options (`--background` over SSH,
+`--no-restart` to only pull). It refuses while a scan is running or when tracked files were
+edited locally; your data, `.env` and models are untouched.
+
 ---
 
 ## Web station features
