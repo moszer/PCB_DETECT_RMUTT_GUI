@@ -511,6 +511,24 @@ export interface DepthResult {
   };
 }
 
+/** One move checked by the camera (stage_monitor_service). */
+export interface StageErrorSample {
+  time: number;
+  from_mm: [number, number];
+  to_mm: [number, number];
+  move_mm: [number, number];
+  /** Where the carriage ended up vs. where it was sent (mm, +X: further along +X). */
+  error_mm: [number, number];
+  error_um: number;
+  response: number;
+}
+
+export interface StageErrorState {
+  status: "idle" | "ready" | "measuring" | "needs_calibration" | "no_camera" | "no_texture";
+  samples: StageErrorSample[];
+  summary: { n: number; rms_um?: [number, number]; max_um?: number; last_um?: number };
+}
+
 /** One stage axis from the camera-based calibration (lengths in commanded mm). */
 export interface StageAxisCalibration {
   px_per_mm: number;

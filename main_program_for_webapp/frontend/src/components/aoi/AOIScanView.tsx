@@ -15,7 +15,7 @@ import {
   Video,
   Wrench,
 } from "lucide-react";
-import type { AOIPointResult, AOIRunReport, CustomPointRequest, InspectionResult, PointFrames, ReferenceSummary, ScanProgressEvent, SystemStatus } from "@/types";
+import type { AOIPointResult, AOIRunReport, CustomPointRequest, InspectionResult, PointFrames, ReferenceSummary, ScanProgressEvent, StageErrorState, SystemStatus } from "@/types";
 import { API_BASE, api, errorMessage } from "@/lib/api";
 import { captureInspection } from "@/lib/capture-inspection";
 import type { ExpectedComponent } from "@/lib/board-inspection";
@@ -56,6 +56,8 @@ interface AOIScanViewProps {
   report: AOIRunReport | null;
   progress: ScanProgressEvent | null;
   pointFrames: PointFrames | null;
+  /** Live positioning error of the stage's moves (camera-measured). */
+  stageError: StageErrorState | null;
   references: ReferenceSummary[];
   params: InspectionParams;
   setParams: SetParams;
@@ -120,7 +122,7 @@ const OPERATOR_TOUR: TourStep[] = [
   { target: "help", title: "ความช่วยเหลือ", body: "กด ? เพื่อดูคีย์ลัด และเปิดทัวร์นี้อีกครั้งได้" },
 ];
 
-export function AOIScanView({ status, report, progress, pointFrames, references, params, setParams, onRefreshStatus, viewOnly, introReady }: AOIScanViewProps) {
+export function AOIScanView({ status, report, progress, pointFrames, stageError, references, params, setParams, onRefreshStatus, viewOnly, introReady }: AOIScanViewProps) {
   const toast = useToast();
   const machine = status?.machine ?? null;
   const scanning = report?.status === "running";
@@ -590,7 +592,7 @@ export function AOIScanView({ status, report, progress, pointFrames, references,
 
   return (
     <div className="h-full flex flex-col">
-      <StageBar machine={machine} scanning={scanning} onChange={onRefreshStatus} lockReason={lockReason} />
+      <StageBar machine={machine} scanning={scanning} onChange={onRefreshStatus} lockReason={lockReason} stageError={stageError} />
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)] overflow-y-auto lg:overflow-hidden">
         {/* ── Left: tools ── */}

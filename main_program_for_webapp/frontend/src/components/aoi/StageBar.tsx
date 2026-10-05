@@ -2,12 +2,56 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { Home, Plug, PlugZap, Power, RefreshCw, Unplug } from "lucide-react";
-import type { MachineState, SerialPort } from "@/types";
+import type { MachineState, SerialPort, StageErrorState } from "@/types";
 import { api } from "@/lib/api";
 import { formatMm } from "@/lib/format";
-import { Badge, Button, IconButton, Select, StatusDot } from "../ui";
+import { Badge, Button, IconButton, Select, StatusDot, cx } from "../ui";
 import { useToast } from "../Toast";
 import { sfx } from "@/lib/sound";
+
+const STATUS_TEXT: Partial<Record<StageErrorState["status"], string>> = {
+  needs_calibration: "calibrate ราง XY ก่อน (หน้าตั้งค่า) จึงจะวัดได้",
+  no_texture: "ภาพไม่มีลายพอให้วัด",
+  no_camera: "ต้องใช้กล้องจริง",
+};
+
+const tone = (um: number) => (um >= 150 ? "text-fail" : um >= 50 ? "text-review" : "text-pass");
+const signed = (mm: number) => `${mm >= 0 ? "+" : "−"}${Math.abs(Math.round(mm * 1000))}`;
+
+/** Live positioning error: the last move's X/Y error and a sparkline of the recent moves. */
+function StageErrorReadout({ state }: { state: StageErrorState | null }) {
+  if (!state) return null;
+  const last = state.samples[state.samples.length - 1];
+  if (!last) {
+    const hint = STATUS_TEXT[state.status] ?? "ขยับสเตจเพื่อวัดความคลาดเคลื่อน";
+    return <span className="text-[11px] text-subtle">คลาดเคลื่อน: {hint}</span>;
+  }
+  const recent = state.samples.slice(-30).map((s) => s.error_um);
+  const top = Math.max(60, ...recent);
+  const W = 72;
+  const H = 20;
+  const pts = recent.map((v, i) => `${(i / Math.max(1, recent.length - 1)) * W},${H - (v / top) * (H - 2) - 1}`).join(" ");
+  const sum = state.summary;
+  const title =
+    `ล่าสุด: สั่ง ${last.move_mm[0].toFixed(2)}, ${last.move_mm[1].toFixed(2)} mm · คลาด X ${signed(last.error_mm[0])} Y ${signed(last.error_mm[1])} µm` +
+    (sum.rms_um ? `\nRMS ${sum.n} ครั้ง: X ${sum.rms_um[0]} Y ${sum.rms_um[1]} µm · สูงสุด ${sum.max_um} µm` : "") +
+    (STATUS_TEXT[state.status] ? `\n${STATUS_TEXT[state.status]}` : "");
+  return (
+    <div className="h-8 px-2.5 rounded-lg bg-surface-2 border border-line flex items-center gap-2 font-mono tabular text-xs" title={title}>
+      <span className="text-subtle font-sans">คลาด</span>
+      <span key={last.time} className={cx("animate-pop", tone(last.error_um))}>
+        X {signed(last.error_mm[0])} · Y {signed(last.error_mm[1])}
+      </span>
+      <span className="text-subtle">µm</span>
+      {recent.length > 1 && (
+        <svg width={W} height={H} className="text-accent shrink-0" aria-hidden>
+          <line x1={0} x2={W} y1={H - (50 / top) * (H - 2) - 1} y2={H - (50 / top) * (H - 2) - 1} className="stroke-review/50" strokeDasharray="2 2" />
+          <polyline points={pts} fill="none" stroke="currentColor" strokeWidth={1.4} />
+        </svg>
+      )}
+    </div>
+  );
+}
 
 /** Stage connection, homing and position readout across the top of the AOI screen. */
 export function StageBar({
@@ -15,12 +59,15 @@ export function StageBar({
   scanning,
   onChange,
   lockReason = null,
+  stageError = null,
 }: {
   machine: MachineState | null;
   scanning: boolean;
   onChange: () => void;
   /** Set while another operator holds the station: every control is locked with this reason. */
   lockReason?: string | null;
+  /** Live, camera-measured positioning error of the moves. */
+  stageError?: StageErrorState | null;
 }) {
   const locked = lockReason !== null;
   const [ports, setPorts] = useState<SerialPort[]>([]);
@@ -141,6 +188,7 @@ export function StageBar({
             <span className="text-subtle">mm</span>
           </div>
           {!machine?.homed && <span className="text-xs text-review font-medium">← กด HOME ก่อนเคลื่อนที่</span>}
+          {machine?.homed && machine.mode === "serial" && <StageErrorReadout state={stageError} />}
           <div className="ml-auto flex items-center gap-1">
             <Button size="sm" variant="ghost" icon={Power} disabled={scanning || locked} onClick={motorsOff}>
               ปิดมอเตอร์

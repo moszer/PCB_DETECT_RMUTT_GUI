@@ -41,6 +41,7 @@ class SettingsUpdateRequest(BaseModel):
     depth_baseline_mm: Optional[float] = Field(None, ge=0.5, le=30)
     depth_views: Optional[int] = Field(None, ge=1, le=8)
     stage_approach_mm: Optional[float] = Field(None, ge=0, le=3)
+    stage_monitor_enabled: Optional[bool] = None
 
 
 class DeviceChangeRequest(BaseModel):

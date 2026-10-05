@@ -11,6 +11,7 @@ from ..services.depth_service import depth_service
 from ..services import point_set_store
 from ..services.machine_service import machine_service
 from ..services.stage_calibration_service import stage_calibration_service
+from ..services.stage_monitor_service import stage_monitor_service
 
 router = APIRouter(prefix="/api/aoi", tags=["aoi"])
 
@@ -254,6 +255,18 @@ def measure_depth(
         return depth_service.measure(req.x_mm, req.y_mm, req.zoom, req.bbox, req.recapture)
     except (ValueError, RuntimeError, TimeoutError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/stage-error")
+def stage_error():
+    """Positioning error of the last moves, measured with the camera (see stage_monitor_service)."""
+    return stage_monitor_service.snapshot()
+
+
+@router.post("/stage-error/reset")
+def reset_stage_error():
+    stage_monitor_service.reset()
+    return stage_monitor_service.snapshot()
 
 
 @router.get("/calibration")

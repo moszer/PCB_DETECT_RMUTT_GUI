@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { API_BASE } from "@/lib/api";
-import type { DatasetProgressEvent, MachineState, PointFrames, ScanProgressEvent } from "@/types";
+import type { DatasetProgressEvent, MachineState, PointFrames, ScanProgressEvent, StageErrorSample, StageErrorState } from "@/types";
 
 /**
  * Live machine state and scan progress over /ws/status.
@@ -16,6 +16,8 @@ export function useStationSocket() {
   const [datasetProgress, setDatasetProgress] = useState<DatasetProgressEvent | null>(null);
   // Frames of the point being scanned (progress events only carry the latest one).
   const [pointFrames, setPointFrames] = useState<PointFrames | null>(null);
+  // Positioning error of each move, measured live with the camera.
+  const [stageError, setStageError] = useState<StageErrorState | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -54,6 +56,19 @@ export function useStationSocket() {
             }
           }
           else if (msg.type === "dataset_progress") setDatasetProgress(msg.data);
+          else if (msg.type === "stage_error") {
+            const ev = msg.data as { event: string; status?: StageErrorState["status"]; sample?: StageErrorSample } & Partial<StageErrorState>;
+            setStageError((prev) => {
+              if (ev.event === "snapshot") return { status: ev.status ?? "idle", samples: ev.samples ?? [], summary: ev.summary ?? { n: 0 } };
+              const base: StageErrorState = prev ?? { status: "idle", samples: [], summary: { n: 0 } };
+              if (ev.event === "reset") return { ...base, samples: [], summary: { n: 0 } };
+              if (ev.event === "status" && ev.status) return { ...base, status: ev.status };
+              if (ev.event === "sample" && ev.sample) {
+                return { status: "measuring", samples: [...base.samples, ev.sample].slice(-60), summary: ev.summary ?? base.summary };
+              }
+              return base;
+            });
+          }
         } catch {
           // Ignore malformed frames.
         }
@@ -76,5 +91,5 @@ export function useStationSocket() {
     };
   }, []);
 
-  return { connected, machineState, scanProgress, datasetProgress, pointFrames };
+  return { connected, machineState, scanProgress, datasetProgress, pointFrames, stageError };
 }

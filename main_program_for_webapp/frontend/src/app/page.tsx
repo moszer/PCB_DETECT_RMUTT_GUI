@@ -90,7 +90,7 @@ function Station() {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [polledScan, setPolledScan] = useState<AOIRunReport | null>(null);
   const [references, setReferences] = useState<ReferenceSummary[]>([]);
-  const { connected, machineState, scanProgress, datasetProgress, pointFrames } = useStationSocket();
+  const { connected, machineState, scanProgress, datasetProgress, pointFrames, stageError } = useStationSocket();
   useScanSounds(scanProgress);
   useDatasetSounds(datasetProgress);
   const [splash, setSplash] = useState(true);
@@ -179,6 +179,7 @@ function Station() {
               report={activeReport}
               progress={scanProgress}
               pointFrames={pointFrames}
+              stageError={stageError}
               references={references}
               params={params}
               setParams={setParams}

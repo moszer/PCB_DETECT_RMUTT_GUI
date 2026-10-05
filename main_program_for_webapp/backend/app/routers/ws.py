@@ -8,6 +8,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from ..services.aoi_scan_service import aoi_scan_service
 from ..services.dataset_service import dataset_service
 from ..services.machine_service import machine_service
+from ..services.stage_monitor_service import stage_monitor_service
 
 logger = logging.getLogger("ws_router")
 router = APIRouter(tags=["websocket"])
@@ -51,7 +52,13 @@ def _on_dataset_progress(payload):
         asyncio.run_coroutine_threadsafe(broadcast_json({"type": "dataset_progress", "data": payload}), loop)
 
 
+def _on_stage_error(payload):
+    if loop and loop.is_running() and active_connections:
+        asyncio.run_coroutine_threadsafe(broadcast_json({"type": "stage_error", "data": payload}), loop)
+
+
 machine_service.subscribe(_on_machine_state)
+stage_monitor_service.subscribe(_on_stage_error)
 aoi_scan_service.subscribe_progress(_on_scan_progress)
 dataset_service.subscribe(_on_dataset_progress)
 
@@ -71,6 +78,7 @@ async def websocket_status_endpoint(websocket: WebSocket):
             "type": "machine_state",
             "data": machine_service.get_state().model_dump()
         })
+        await websocket.send_json({"type": "stage_error", "data": {"event": "snapshot", **stage_monitor_service.snapshot()}})
         if aoi_scan_service.current_run:
             await websocket.send_json({
                 "type": "scan_progress",
