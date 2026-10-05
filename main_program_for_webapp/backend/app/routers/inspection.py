@@ -120,7 +120,7 @@ def _process_image_sync(
     if profile and profile.image_width and profile.image_height and (profile.image_width, profile.image_height) != (w,h):
         raise ValueError("Image resolution does not match the reference")
 
-    detections, speed = inference_service.predict(image_bgr, conf=conf, imgsz=imgsz)
+    detections, speed = inference_service.predict(image_bgr, conf=conf, imgsz=imgsz, tag="single")
 
     verdict, reason, summary, ref_eval, detections = evaluate_inspection(
         reference_points=profile.points if profile else None,
@@ -280,7 +280,7 @@ async def inspect_multiframe_live(
                 if profile.image_width and profile.image_height and (w,h) != (profile.image_width,profile.image_height):
                     raise ValueError("Camera resolution does not match the reference")
                 expected = reference_components(profile.points,w,h)
-            detections, _ = inference_service.predict(frame,conf=conf,imgsz=imgsz)
+            detections, _ = inference_service.predict(frame, conf=conf, imgsz=imgsz, tag="single")
             boxes = normalized_detections(detections,w,h)
             results.append(boxes)
             captured.append({"frame_index":index,"timestamp":after,"width":w,"height":h,"detections_count":len(boxes),"matched_indices":list(match_frame_detections(expected,boxes)["matched_expected"])})

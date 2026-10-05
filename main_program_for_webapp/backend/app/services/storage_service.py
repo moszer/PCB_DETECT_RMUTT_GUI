@@ -125,6 +125,11 @@ class StorageService:
             columns = {r[1] for r in cursor.execute("PRAGMA table_info(point_results)")}
             if "details_json" not in columns:
                 cursor.execute("ALTER TABLE point_results ADD COLUMN details_json TEXT")
+            # Which machine/model scanned the board, and its real condition (for accuracy / F1).
+            run_cols = {r[1] for r in cursor.execute("PRAGMA table_info(runs)")}
+            for col in ("host", "device", "model", "ground_truth"):
+                if col not in run_cols:
+                    cursor.execute(f"ALTER TABLE runs ADD COLUMN {col} TEXT")
             # Startup recovery for F18: mark interrupted runs as aborted
             cursor.execute("""
                 UPDATE runs
@@ -199,6 +204,9 @@ class StorageService:
     # ── AOI Run Persistence ──
 
     def create_run(self, report: AOIRunReport):
+        import socket
+        from .inference_service import inference_service
+
         run_folder = RUNS_DIR / report.id
         run_folder.mkdir(parents=True, exist_ok=True)
 
@@ -209,13 +217,16 @@ class StorageService:
                     id, status, is_simulation, is_golden_scan, reference_id,
                     created_at, completed_at, overall_verdict, total_points,
                     pass_count, fail_count, review_count, error_count,
-                    plan_json, error_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    plan_json, error_message, host, device, model
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 report.id, report.status, int(report.is_simulation), int(report.is_golden_scan),
                 report.reference_id, report.created_at, report.completed_at, report.overall_verdict,
                 len(report.points), report.pass_count, report.fail_count, report.review_count,
-                report.error_count, json.dumps(report.plan.model_dump()), report.error_message
+                report.error_count, json.dumps(report.plan.model_dump()), report.error_message,
+                socket.gethostname(),
+                inference_service.device_info.label if inference_service.device_info else None,
+                Path(inference_service.model_path or "").name or None,
             ))
             conn.commit()
         self.atomic_save_report_json(report)
@@ -291,6 +302,32 @@ class StorageService:
 
             run_dict["results"] = points
             return run_dict
+
+    def set_ground_truth(self, run_id: str, truth: Optional[str]) -> bool:
+        """The board's real condition: 'good', 'defective', or None to clear."""
+        with self._get_connection() as conn:
+            cur = conn.execute("UPDATE runs SET ground_truth = ? WHERE id = ?", (truth, run_id))
+            conn.commit()
+            return cur.rowcount > 0
+
+    def performance_rows(self, since: float = 0.0, include_simulation: bool = False) -> Dict[str, Any]:
+        """Raw rows for the performance report: finished production scans + their point timings."""
+        with self._get_connection() as conn:
+            sim = "" if include_simulation else " AND is_simulation = 0"
+            runs = [dict(r) for r in conn.execute(
+                "SELECT id, status, is_simulation, created_at, completed_at, overall_verdict, total_points, "
+                "host, device, model, ground_truth FROM runs WHERE is_golden_scan = 0 AND created_at >= ?" + sim,
+                (since,),
+            )]
+            ids = [r["id"] for r in runs]
+            points = []
+            if ids:
+                marks = ",".join("?" * len(ids))
+                points = [dict(r) for r in conn.execute(f"SELECT run_id, speed_json FROM point_results WHERE run_id IN ({marks})", ids)]
+            singles = [dict(r) for r in conn.execute(
+                "SELECT device_used, model_used, speed_json, created_at FROM single_inspections WHERE created_at >= ?", (since,)
+            )]
+        return {"runs": runs, "points": points, "singles": singles}
 
     def list_runs(
         self,

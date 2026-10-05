@@ -344,7 +344,7 @@ class DatasetService:
                 h, w = frame.shape[:2]
                 boxes = []
                 if auto_label:
-                    detections, _ = inference_service.predict(frame, conf=conf, imgsz=imgsz)
+                    detections, _ = inference_service.predict(frame, conf=conf, imgsz=imgsz, tag="dataset")
                     boxes = [{"label": d.label, "bbox": [d.box[0] / w, d.box[1] / h, d.box[2] / w, d.box[3] / h]} for d in detections]
                 with self._lock:
                     count = self._write_labels(meta, file, boxes)

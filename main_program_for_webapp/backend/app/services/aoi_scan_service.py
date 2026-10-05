@@ -400,7 +400,7 @@ class AOIScanService:
                         latest_frame = cur_f
                         h_f, w_f = cur_f.shape[:2]
 
-                        cur_dets, cur_speed = inference_service.predict(cur_f, conf=conf_thresh, imgsz=imgsz)
+                        cur_dets, cur_speed = inference_service.predict(cur_f, conf=conf_thresh, imgsz=imgsz, tag="scan")
                         last_detections = cur_dets
                         last_speed = cur_speed
 
@@ -495,7 +495,7 @@ class AOIScanService:
                     raw_path, raw_url = storage_service.save_image_array(frame, run_folder, raw_filename)
 
                     # 5. Run inference
-                    detections, speed = inference_service.predict(frame, conf=conf_thresh, imgsz=imgsz)
+                    detections, speed = inference_service.predict(frame, conf=conf_thresh, imgsz=imgsz, tag="scan")
 
                     if self._stop_event.is_set():
                         break

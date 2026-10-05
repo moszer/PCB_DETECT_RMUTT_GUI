@@ -161,7 +161,19 @@ docker compose -f docker-compose.yml -f docker-compose.hardware.yml -f docker-co
 - `./install.sh` **ติดตั้ง Tailscale ให้เอง** (Linux/Jetson ใช้ตัวติดตั้งทางการของ Tailscale, macOS ใช้ `brew install --cask tailscale`) และให้สิทธิ์ผู้ใช้ของสถานีตั้งค่าอุโมงค์จากหน้าเว็บได้ (`tailscale set --operator`) ไม่ต้องการก็ใส่ `--no-tailscale` หลังติดตั้งแล้วกด "เชื่อมต่อ Tailscale" ในหน้าเว็บเพื่อล็อกอิน
 - ถ้าเปิด HTTPS ไม่ได้ ให้เปิด HTTPS ของ tailnet ที่ login.tailscale.com/admin/dns ก่อน หรือใช้ลิงก์ Tailscale IP (`http://100.x.x.x:3001`) ซึ่งไม่ต้องตั้งค่าเพิ่ม
 
-## 6. ตั้งค่าหลังติดตั้ง (`backend/.env`)
+## 6. วัดผลเปรียบเทียบคอมพิวเตอร์กับ Jetson (ตาราง 4.13)
+
+ทำแบบเดียวกันบนทั้งสองเครื่อง แล้วนำคอลัมน์ของแต่ละเครื่องมาใส่ตาราง:
+
+1. **ใช้โมเดลไฟล์เดียวกัน** (ตรวจได้จาก sha256 ในตาราง) และ**ชุดทดสอบเดียวกัน** (คัดลอกโฟลเดอร์ dataset ที่มี `data.yaml` ไปไว้ทั้งสองเครื่อง)
+2. Jetson: ตั้งโหมดพลังงานในหน้า "ประสิทธิภาพเครื่อง" ให้ตรงกับที่จะรายงาน (เช่น MAXN_SUPER)
+3. **ประวัติ & Yield → ผลทดสอบ → ทดสอบความเร็ว**: ใส่พาธ `data.yaml` เลือกชุด `test` แล้วกด "เริ่มทดสอบ" ระบบอุ่นเครื่องก่อน จับเวลาทุกภาพหลายรอบ และคำนวณ mAP50 (ไม่ต้องใช้หน้าเว็บก็ได้: `cd backend && venv/bin/python -m app.services.benchmark --data /path/data.yaml --rounds 3`)
+4. **สแกนบอร์ดจริง** หลายบอร์ด แล้วเปิดแต่ละรอบในแท็บ "การสแกน AOI" เลือก **บอร์ดจริง: ดี / เสีย** เพื่อคิด Accuracy และ F1 ระดับบอร์ด (บอร์ดเสีย = positive, ผล REVIEW ไม่นับและแสดงแยก)
+5. กด **CSV** (เปิดใน Excel ได้) หรือ **JSON** เพื่อเก็บผล และ "ดาวน์โหลด log ทุกภาพ (JSONL)" สำหรับข้อมูลดิบ
+
+ทุกภาพที่ตรวจถูกบันทึกเวลา (preprocess / inference / postprocess / รวม) ใน `backend/data/perf/` และผล benchmark ใน `backend/data/benchmarks/`
+
+## 7. ตั้งค่าหลังติดตั้ง (`backend/.env`)
 
 ```bash
 PCB_OPERATOR_PASSCODE=รหัสของคุณ     # รหัสขอสิทธิ์ควบคุม (ค่าเริ่มต้น rmutt-aoi — ควรเปลี่ยน)
@@ -174,7 +186,7 @@ GEMINI_API_KEY=...                   # https://aistudio.google.com/apikey (ผ�
 
 ---
 
-## 7. แก้ปัญหาที่พบบ่อย
+## 8. แก้ปัญหาที่พบบ่อย
 
 | อาการ | วิธีแก้ |
 |---|---|

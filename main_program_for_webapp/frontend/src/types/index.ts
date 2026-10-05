@@ -313,7 +313,29 @@ export interface RunRecord {
   error_count: number;
   error_message?: string | null;
   results?: AOIPointResult[];
+  host?: string | null;
+  device?: string | null;
+  model?: string | null;
+  /** The board's real condition, marked by hand (for board-level accuracy / F1). */
+  ground_truth?: "good" | "defective" | null;
 }
+
+type TimingStat = { mean: number; std: number; median: number; p95: number; min: number; max: number; n: number } | null;
+
+export interface PerformanceReport {
+  system: Record<string, unknown> & { hostname?: string; board?: string; ram_gb?: number; gpu?: string };
+  benchmark: (Record<string, unknown> & { time: number; label?: string; file?: string; throughput_fps?: number | null; timing_ms?: Record<string, TimingStat>; map?: Record<string, number | string> | null; settings?: Record<string, unknown> }) | null;
+  scans: { finished: number; all: number; scan_time_s: TimingStat; hosts: string[] };
+  images: { count: number; inference_ms: TimingStat; total_ms: TimingStat; throughput_fps: number | null };
+  board: { labeled: number; decided: number; review: number; tp: number; tn: number; fp: number; fn: number; accuracy: number | null; precision: number | null; recall: number | null; f1: number | null };
+  table: Array<[string, string]>;
+}
+
+export type BenchmarkState =
+  | { status: "idle" }
+  | { status: "running"; stage: string; done: number; total: number; started: number }
+  | { status: "done"; result: NonNullable<PerformanceReport["benchmark"]> }
+  | { status: "error"; error: string };
 
 export interface Statistics {
   total_runs: number;

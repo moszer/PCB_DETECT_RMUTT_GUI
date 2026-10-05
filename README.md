@@ -109,6 +109,11 @@ The UI is in Thai. The sidebar has seven pages.
   link as QR), and turns on HTTPS inside your tailnet (`tailscale serve`) or on the public internet
   (`tailscale funnel`, refused while the default passcode is in use). Only the station's own entry is
   touched; other serve/funnel entries on the machine are left alone.
+- **Performance comparison (thesis table 4.13):** History → *ผลทดสอบ* shows this machine's
+  column — device, software, model hash/precision, power mode, benchmark timing on a fixed
+  image set (+ mAP50 on a shared test split), real-use timing, scan time per board, and
+  board-level accuracy/F1 from boards marked good/defective — exportable as CSV/JSON. Every
+  inference is logged to `backend/data/perf/*.jsonl`. CLI: `python -m app.services.benchmark`.
 - **Image zoom:** result images (point detail, board inspection, history) zoom with the wheel,
   pinch, double-click or the +/− buttons, and pan by dragging.
 - **Operator control lease:** only one browser controls the stage at a time; others see a

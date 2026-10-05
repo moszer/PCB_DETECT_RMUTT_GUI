@@ -1,19 +1,20 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, History, Image as ImageIcon, RotateCw, ScanLine } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, FlaskConical, History, Image as ImageIcon, RotateCw, ScanLine } from "lucide-react";
 import type { AOIPointResult, RunRecord, SingleInspectionRecord, Statistics, Verdict } from "@/types";
 import { API_BASE, api } from "@/lib/api";
 import { fileName, formatDateTime } from "@/lib/format";
 import { PointResultModal } from "./PointResultModal";
 import { ZoomPan } from "./ZoomPan";
+import { PerformanceView } from "./PerformanceView";
 import { Badge, Button, Card, EmptyState, IconButton, Modal, Segmented, Select, Spinner, Stat, VerdictBadge, buttonClasses, cx } from "./ui";
 import { useToast } from "./Toast";
 
 const PAGE = 50;
 
 export function HistoryView() {
-  const [tab, setTab] = useState<"aoi" | "single">("aoi");
+  const [tab, setTab] = useState<"aoi" | "single" | "perf">("aoi");
   const [stats, setStats] = useState<Statistics | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -42,20 +43,23 @@ export function HistoryView() {
             options={[
               { value: "aoi", label: "การสแกน AOI", icon: ScanLine },
               { value: "single", label: `ตรวจภาพเดี่ยว${stats ? ` (${stats.single_inspections_count})` : ""}`, icon: ImageIcon },
+              { value: "perf", label: "ผลทดสอบ", icon: FlaskConical },
             ]}
           />
           <div className="ml-auto flex items-center gap-2">
             <Button icon={RotateCw} variant="ghost" onClick={() => setRefreshKey((k) => k + 1)}>
               รีเฟรช
             </Button>
-            <a href={exportUrl} className={buttonClasses("secondary", "md")}>
-              <Download className="size-4" />
-              ส่งออก CSV
-            </a>
+            {tab !== "perf" && (
+              <a href={exportUrl} className={buttonClasses("secondary", "md")}>
+                <Download className="size-4" />
+                ส่งออก CSV
+              </a>
+            )}
           </div>
         </div>
 
-        {tab === "aoi" ? <RunsTable refreshKey={refreshKey} /> : <SinglesTable refreshKey={refreshKey} />}
+        {tab === "aoi" ? <RunsTable refreshKey={refreshKey} /> : tab === "single" ? <SinglesTable refreshKey={refreshKey} /> : <PerformanceView refreshKey={refreshKey} />}
       </div>
     </div>
   );
@@ -95,6 +99,17 @@ function RunsTable({ refreshKey }: { refreshKey: number }) {
       });
   }, [key, verdict, offset, toast]);
 
+  const markTruth = async (truth: "good" | "defective" | null) => {
+    if (!detail) return;
+    try {
+      await api.setGroundTruth(detail.id, truth);
+      setDetail({ ...detail, ground_truth: truth });
+      setPage((p) => (p ? { ...p, runs: p.runs.map((r) => (r.id === detail.id ? { ...r, ground_truth: truth } : r)) } : p));
+    } catch (err) {
+      toast.error("บันทึกผลจริงไม่สำเร็จ", err);
+    }
+  };
+
   const open = useCallback(
     async (id: string) => {
       try {
@@ -133,6 +148,7 @@ function RunsTable({ refreshKey }: { refreshKey: number }) {
             <button type="button" onClick={() => open(r.id)} className="w-full text-left px-4 py-3 flex flex-col gap-1.5 hover:bg-surface-2 cursor-pointer">
               <span className="flex items-center gap-2">
                 <VerdictBadge verdict={r.overall_verdict} />
+                <TruthBadge truth={r.ground_truth} />
                 <span className="text-xs text-muted">{formatDateTime(r.created_at)}</span>
                 <span className="ml-auto text-xs font-mono tabular text-muted">{r.total_points} จุด</span>
               </span>
@@ -166,7 +182,10 @@ function RunsTable({ refreshKey }: { refreshKey: number }) {
               <tr key={r.id} onClick={() => open(r.id)} className="hover:bg-surface-2 cursor-pointer">
                 <td className="px-4 py-2.5 whitespace-nowrap text-xs">{formatDateTime(r.created_at)}</td>
                 <td className="px-4 py-2.5">
-                  <VerdictBadge verdict={r.overall_verdict} />
+                  <div className="flex items-center gap-1">
+                    <VerdictBadge verdict={r.overall_verdict} />
+                    <TruthBadge truth={r.ground_truth} />
+                  </div>
                 </td>
                 <td className="px-4 py-2.5">
                   <div className="flex gap-1">
@@ -208,6 +227,22 @@ function RunsTable({ refreshKey }: { refreshKey: number }) {
         subtitle={detail ? `${formatDateTime(detail.created_at)} · ${detail.results?.length ?? 0}/${detail.total_points} จุด · ${detail.is_simulation ? "จำลอง" : "เครื่องจริง"}` : undefined}
       >
         {detail?.error_message && <p className="text-sm text-fail mb-3">{detail.error_message}</p>}
+        {detail && !detail.is_golden_scan && (
+          <div className="mb-4 flex items-center gap-3 flex-wrap rounded-lg border border-line bg-surface-2 px-3 py-2.5">
+            <span className="text-sm font-medium">บอร์ดจริงเป็นอย่างไร?</span>
+            <Segmented
+              size="sm"
+              value={detail.ground_truth ?? "none"}
+              onChange={(v) => markTruth(v === "none" ? null : v)}
+              options={[
+                { value: "none", label: "ไม่ระบุ" },
+                { value: "good", label: "ดี (ไม่มีจุดเสีย)" },
+                { value: "defective", label: "เสีย (มีจุดเสีย)" },
+              ]}
+            />
+            <span className="text-xs text-muted">ใช้คิด Accuracy / F1 ในแท็บ “ผลทดสอบ”{detail.device ? ` · สแกนด้วย ${detail.device}${detail.host ? ` (${detail.host})` : ""}` : ""}</span>
+          </div>
+        )}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {detail?.results?.map((pt) => (
             <button
@@ -329,4 +364,10 @@ function SinglesTable({ refreshKey }: { refreshKey: number }) {
       </Modal>
     </Card>
   );
+}
+
+/** The board's real condition as marked in the run detail (for accuracy / F1). */
+function TruthBadge({ truth }: { truth?: "good" | "defective" | null }) {
+  if (!truth) return null;
+  return <Badge tone={truth === "good" ? "pass" : "fail"}>{truth === "good" ? "จริง: ดี" : "จริง: เสีย"}</Badge>;
 }

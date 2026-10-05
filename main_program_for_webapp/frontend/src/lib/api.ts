@@ -1,5 +1,7 @@
 import type {
   AIConfig,
+  BenchmarkState,
+  PerformanceReport,
   RemoteAccess,
   HardwareSnapshot,
   AIProvider,
@@ -74,6 +76,9 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
   }
   return response.json();
 }
+
+const perfQuery = (q: { days?: number; sim?: boolean }) =>
+  new URLSearchParams({ ...(q.days ? { days: String(q.days) } : {}), include_simulation: String(!!q.sim) }).toString();
 
 const post = <T>(path: string, body?: unknown) =>
   request<T>(path, {
@@ -243,6 +248,19 @@ export const api = {
   },
   getRun: (id: string) => request<RunRecord>(`/api/history/runs/${encodeURIComponent(id)}`),
   getStatistics: () => request<Statistics>("/api/history/statistics"),
+  performance: (q: { days?: number; sim?: boolean }) =>
+    request<PerformanceReport>(`/api/history/performance?${perfQuery(q)}`),
+  performanceExport: (kind: "csv" | "json", q: { days?: number; sim?: boolean }) => `${API_BASE}/api/history/performance/export.${kind}?${perfQuery(q)}`,
+  performanceLogUrl: () => `${API_BASE}/api/history/performance/log.jsonl`,
+  setGroundTruth: (runId: string, truth: "good" | "defective" | null) =>
+    request<{ ground_truth: string | null }>(`/api/history/runs/${encodeURIComponent(runId)}/ground-truth`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ truth }),
+    }),
+  startBenchmark: (o: { data_yaml?: string; split: "test" | "val"; rounds: number; warmup: number; max_images: number; label?: string }) =>
+    post<BenchmarkState>("/api/history/benchmark", o),
+  benchmarkStatus: () => request<BenchmarkState>("/api/history/benchmark"),
   listSingleInspections: (limit: number, offset: number) =>
     request<{ inspections: SingleInspectionRecord[]; total: number }>(
       `/api/history/single-inspections?limit=${limit}&offset=${offset}`

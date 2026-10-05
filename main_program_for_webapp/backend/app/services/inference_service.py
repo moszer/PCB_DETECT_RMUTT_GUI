@@ -83,15 +83,19 @@ class InferenceService:
         self,
         image: np.ndarray,
         conf: float = 0.25,
-        imgsz: Optional[int] = None
+        imgsz: Optional[int] = None,
+        tag: str = "other",
     ) -> Tuple[List[Detection], Dict[str, float]]:
         """Run YOLO inference on an image array (BGR).
         
         Returns:
             detections: List of Detection objects with xyxy box and cx, cy.
-            speed_ms: Timing breakdown dict {'preprocess', 'inference', 'postprocess'}.
+            speed_ms: Timing breakdown dict {'preprocess', 'inference', 'postprocess', 'total'};
+                total is the wall time of the whole call (YOLO + box conversion), per image.
+        `tag` names the caller in the performance log (single / scan / dataset / other).
         """
         with self._lock:
+            started = time.perf_counter()  # after the lock: waiting for another request isn't processing time
             if self._model is None:
                 raise RuntimeError("Inference model is not loaded. Call load_model() first.")
 
@@ -135,7 +139,11 @@ class InferenceService:
                     ))
                     det_id += 1
 
-            return (detections, speed_ms)
+            speed_ms["total"] = round((time.perf_counter() - started) * 1000, 2)
+        from .perf_log import record
+
+        record(tag, speed_ms, getattr(image, "shape", None), imgsz, len(detections))
+        return (detections, speed_ms)
 
 
 # Global singleton
