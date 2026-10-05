@@ -1,3 +1,5 @@
+# This machine's default run_web.sh mode
+.station-mode
 # Runtime data: database, captured images, uploads, saved settings (contains the operator passcode), uploaded weights
 backend/data/
 # Build output and caches

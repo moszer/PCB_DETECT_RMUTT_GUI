@@ -62,6 +62,8 @@ echo "alias aoi-update='$(pwd)/update.sh'" >> ~/.bashrc && source ~/.bashrc
 | `./install.sh --yes` | ไม่ถามยืนยัน (ติดตั้งอัตโนมัติ) |
 | `./install.sh --no-tailscale` | ไม่ติดตั้ง Tailscale (ใช้แค่ในวงแลน) |
 | `./run_web.sh --prod` | build หน้าเว็บครั้งเดียวแล้วเสิร์ฟ เร็วและกินแรมน้อยกว่าโหมด dev **แนะนำบน Jetson และใช้งานประจำ** |
+| `echo prod > .station-mode` | ให้เครื่องนี้รันโหมด prod เสมอ แม้สั่งแค่ `./run_web.sh` หรือ `./update.sh` (ใช้ `--dev` ถ้าจะรัน dev ชั่วคราว) |
+| `./run_web.sh --dev` | โหมด dev แม้ `.station-mode` เป็น prod |
 | `./run_web.sh --update` | อัปเกรดไลบรารี Python/JS ก่อนเริ่ม (ไม่แตะ PyTorch) |
 | `./run_web.sh --no-check` | ข้ามการเช็คไลบรารีตอนเริ่ม |
 

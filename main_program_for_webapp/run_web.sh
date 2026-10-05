@@ -1,17 +1,29 @@
 #!/usr/bin/env bash
 # Start only this station's processes, preserve failures, and stop both on exit.
-#   ./run_web.sh            development mode (hot reload)
+#   ./run_web.sh            development mode (hot reload), or the mode in .station-mode
 #   ./run_web.sh --prod     build the frontend once and serve it (faster, lighter: Jetson / daily use)
+#   ./run_web.sh --dev      development mode even where .station-mode says prod
 #   ./run_web.sh --update   upgrade the Python/JS libraries first (not PyTorch), then start
 #   ./run_web.sh --no-check skip the library check at start-up
+# A station that must always run one mode keeps it in .station-mode (not in git):
+#   echo prod > .station-mode
 set -euo pipefail
 MODE="dev"; UPDATE=0; CHECK=1
+MODE_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.station-mode"
+if [[ -f "$MODE_FILE" ]]; then
+    case "$(tr -d '[:space:]' < "$MODE_FILE")" in
+        prod) MODE="prod" ;;
+        dev|"") ;;
+        *) echo "Unknown mode in $MODE_FILE (use prod or dev)" >&2; exit 2 ;;
+    esac
+fi
 for arg in "$@"; do
     case "$arg" in
         --prod) MODE="prod" ;;
+        --dev) MODE="dev" ;;
         --update) UPDATE=1 ;;
         --no-check) CHECK=0 ;;
-        -h|--help) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $arg" >&2; exit 2 ;;
     esac
 done
