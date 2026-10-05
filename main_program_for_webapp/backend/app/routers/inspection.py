@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from ..config import STORAGE_DIR, UPLOADS_DIR, settings
 from ..core.ocr import engine_name, read_part_text
+from ..core.resistor import read_resistor
 from ..core.inspection import (
     draw_annotated_image,
     evaluate_inspection,
@@ -85,6 +86,36 @@ def read_markings(req: OcrRequest):
             _ocr_cache.popitem(last=False)
         results.append(result)
     return {"engine": engine, "results": results}
+
+_resistor_cache: "OrderedDict[tuple, Dict[str, Any]]" = OrderedDict()
+
+
+@router.post("/resistor")
+def read_resistor_values(req: OcrRequest):
+    """Estimated value of each resistor box from its colour bands (shown to the operator only;
+    it never changes a verdict)."""
+    path = _storage_image(req.image_url)
+    image = None
+    results = []
+    for box in req.boxes:
+        if len(box) != 4 or not (0 <= box[0] < box[2] <= 1 and 0 <= box[1] < box[3] <= 1):
+            raise HTTPException(400, "boxes must be normalized [x1, y1, x2, y2]")
+        key = (str(path), path.stat().st_mtime, *(round(v, 4) for v in box))
+        if key in _resistor_cache:
+            _resistor_cache.move_to_end(key)
+            results.append(_resistor_cache[key])
+            continue
+        if image is None:
+            image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+            if image is None:
+                raise HTTPException(400, "Image could not be read")
+        result = read_resistor(image, box)
+        _resistor_cache[key] = result
+        if len(_resistor_cache) > 2000:
+            _resistor_cache.popitem(last=False)
+        results.append(result)
+    return {"results": results}
+
 
 # Limit concurrent inference to prevent GPU/RAM saturation while keeping event loop free
 _INSPECTION_SEMAPHORE = asyncio.Semaphore(2)

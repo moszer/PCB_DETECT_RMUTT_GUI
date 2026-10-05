@@ -463,6 +463,20 @@ export interface OcrResult {
   confidence: number;
 }
 
+/** A resistor's value estimated from its colour bands (/api/inspection/resistor). Display only. */
+export interface ResistorResult {
+  /** e.g. "1 kΩ ±5%"; empty when no valid code was read. */
+  text: string;
+  ohms: number | null;
+  tolerance_pct?: number | null;
+  e_series?: "E12" | "E24" | null;
+  /** Bands in reading order: the matched colour and the colour the camera saw. */
+  bands: { color: string | null; name_th: string; seen_hex: string; position: number }[];
+  confidence: number;
+  alternatives: string[];
+  reason?: string;
+}
+
 /** Height map of one part from /api/aoi/depth (motion stereo). */
 export interface DepthResult {
   grid_w: number;

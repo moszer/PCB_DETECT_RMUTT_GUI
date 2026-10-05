@@ -17,6 +17,7 @@ import type {
   StageCalibrationStatus,
   InspectionResult,
   OcrResult,
+  ResistorResult,
   PointSet,
   PointSetMeta,
   CustomPointRequest,
@@ -192,6 +193,9 @@ export const api = {
   /** Read the markings inside boxes (normalized) of a stored station image. */
   readText: (image_url: string, boxes: number[][]) =>
     post<{ engine: string; results: OcrResult[] }>("/api/inspection/ocr", { image_url, boxes }),
+  /** Estimate resistor values from the colour bands inside boxes of a stored station image. */
+  readResistors: (image_url: string, boxes: number[][]) =>
+    post<{ results: ResistorResult[] }>("/api/inspection/resistor", { image_url, boxes }),
   inspectLive: (o: InspectOptions) => postForm<InspectionResult>("/api/inspection/inspect-live", inspectFields(o)),
 
   // Stage & AOI
