@@ -54,13 +54,13 @@ export function DepthModal({ target, onClose }: { target: DepthTarget; onClose: 
           ความสูง 3D · {target.name}
         </>
       }
-      subtitle="ถ่าย 2 ภาพโดยเลื่อนสเตจไปด้านข้าง แล้วคำนวณความสูงจากการเลื่อนของภาพ (ค่าคร่าวๆ)"
+      subtitle="ถ่ายภาพที่จุดนี้และเลื่อนสเตจไปถ่ายรอบๆ แล้วคำนวณความสูงจากการเลื่อนของภาพ"
     >
       {!current ? (
         <div className="h-[440px] grid place-items-center text-center">
           <div className="flex flex-col items-center gap-3 text-sm text-muted">
             <Spinner className="size-6" />
-            กำลังเลื่อนสเตจไปที่จุดนี้และถ่าย 2 ภาพ…
+            กำลังเลื่อนสเตจไปที่จุดนี้และถ่ายภาพรอบๆ…
             <span className="text-xs text-subtle">บอร์ดต้องวางอยู่ตำแหน่งเดิมกับตอนสแกน</span>
           </div>
         </div>
@@ -85,6 +85,10 @@ export function DepthModal({ target, onClose }: { target: DepthTarget; onClose: 
               <p className="text-[11px] text-muted -mt-1">
                 วัดได้โดยตรง {Math.round(data.stats.box_valid_ratio * 100)}% ของกรอบ — ที่เหลือเติมจากรอบข้าง
                 {data.stats.box_valid_ratio < 0.5 && <span className="text-review"> (ผิวเรียบ/สะท้อนแสง ค่าอาจคลาดเคลื่อน)</span>}
+              </p>
+              <p className="text-[11px] text-muted -mt-2">
+                ใช้ภาพ {data.stats.views_used}/{data.stats.views_total} ทิศ
+                {data.stats.spread_mm !== null && <> · ค่าระหว่างทิศต่างกันราว ±{data.stats.spread_mm.toFixed(2)} mm</>}
               </p>
 
               <div className="flex flex-col gap-1.5">

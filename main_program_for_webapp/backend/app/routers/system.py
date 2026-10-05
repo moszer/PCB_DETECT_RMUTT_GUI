@@ -39,6 +39,7 @@ class SettingsUpdateRequest(BaseModel):
     model_search_dirs: Optional[List[str]] = Field(None, max_length=20)
     depth_camera_distance_mm: Optional[float] = Field(None, ge=20, le=2000)
     depth_baseline_mm: Optional[float] = Field(None, ge=0.5, le=30)
+    depth_views: Optional[int] = Field(None, ge=1, le=8)
 
 
 class DeviceChangeRequest(BaseModel):

@@ -485,6 +485,11 @@ export interface DepthResult {
     box_valid_ratio: number;
     board_shift_px: number;
     board_residual_px: number;
+    /** Side shots that went into the map, out of those taken. */
+    views_used: number;
+    views_total: number;
+    /** Typical disagreement between the shots (mm); null with a single shot. */
+    spread_mm: number | null;
   };
 }
 
@@ -501,6 +506,7 @@ export interface StationSettings {
   model_search_dirs: string[];
   depth_camera_distance_mm: number;
   depth_baseline_mm: number;
+  depth_views: number;
   has_passcode: boolean;
 }
 

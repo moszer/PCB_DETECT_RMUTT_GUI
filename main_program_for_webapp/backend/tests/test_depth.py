@@ -8,7 +8,7 @@ import numpy as np
 from fastapi.testclient import TestClient
 
 from app.config import settings
-from app.core.depth import estimate_shift, height_map
+from app.core.depth import estimate_shift, height_map, height_map_views
 from app.core.security import lease_manager
 from app.main import app
 from app.services.depth_service import depth_service
@@ -28,19 +28,40 @@ def _shifted(img, dx, dy):
     return cv2.warpAffine(img, m, (img.shape[1], img.shape[0]), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
 
 
-def scene(shift_xy, h_obj, n=1400):
-    """Frame A, and frame B after the board moved by `shift_xy` px with a block `h_obj` mm tall."""
-    board, obj = _texture(n, 1), _texture(n, 2)
+def _stripes(n):
+    """Lines running along X: matching along an X move is ambiguous, along Y it is not."""
+    return np.tile((127 + 100 * np.sin(np.arange(n) / 3.0)).astype(np.uint8)[:, None], (1, n))
+
+
+def scene_views(shifts, h_obj, n=1400, top=None):
+    """Frame A, and one frame B per board shift (px) with a block `h_obj` mm tall."""
+    board = _texture(n, 1)
+    obj = _texture(n, 2) if top is None else top(n)
     x1, y1, x2, y2 = BOX
     mask = np.zeros((n, n), np.uint8)
     mask[y1:y2, x1:x2] = 255
     a = board.copy()
     a[mask > 0] = obj[mask > 0]
     k = Z0 / (Z0 - h_obj)  # the block is closer to the camera, so it moves further
-    b = _shifted(board, *shift_xy)
-    obj_b, mask_b = _shifted(obj, shift_xy[0] * k, shift_xy[1] * k), _shifted(mask, shift_xy[0] * k, shift_xy[1] * k)
-    b[mask_b > 127] = obj_b[mask_b > 127]
-    return cv2.cvtColor(a, cv2.COLOR_GRAY2BGR), cv2.cvtColor(b, cv2.COLOR_GRAY2BGR)
+    bs = []
+    for sx, sy in shifts:
+        b = _shifted(board, sx, sy)
+        obj_b, mask_b = _shifted(obj, sx * k, sy * k), _shifted(mask, sx * k, sy * k)
+        b[mask_b > 127] = obj_b[mask_b > 127]
+        bs.append(cv2.cvtColor(b, cv2.COLOR_GRAY2BGR))
+    return cv2.cvtColor(a, cv2.COLOR_GRAY2BGR), bs
+
+
+def _noisy(img, seed, sigma=4.0):
+    """Camera sensor noise."""
+    rng = np.random.default_rng(seed)
+    return np.clip(img.astype(np.int16) + rng.normal(0, sigma, img.shape), 0, 255).astype(np.uint8)
+
+
+def scene(shift_xy, h_obj, n=1400):
+    """Frame A, and frame B after the board moved by `shift_xy` px with a block `h_obj` mm tall."""
+    a, (b,) = scene_views([shift_xy], h_obj, n)
+    return a, b
 
 
 class HeightMapTests(unittest.TestCase):
@@ -83,6 +104,40 @@ class HeightMapTests(unittest.TestCase):
         self.assertFalse(valid[40, 30])
         self.assertTrue(valid[30, 30])
 
+    def test_views_in_several_directions_measure_what_one_direction_cannot(self):
+        shifts = [(180, 0), (0, 180), (-180, 0), (0, -180)]
+        a, bs = scene_views(shifts, 6.0, top=_stripes)
+        a, bs = _noisy(a, 0), [_noisy(b, i + 1) for i, b in enumerate(bs)]
+        views = [(b, estimate_shift(a, b)[:2]) for b in bs]
+        one = height_map_views(a, views[:1], BOX, Z0)
+        self.assertGreater(abs(one["stats"]["median_mm"] - 6.0), 2.0)  # +X alone is lost on the lines
+        four = height_map_views(a, views, BOX, Z0)
+        self.assertAlmostEqual(four["stats"]["median_mm"], 6.0, delta=0.5)
+        self.assertGreater(four["stats"]["box_valid_ratio"], 0.9)
+        self.assertEqual((four["stats"]["views_used"], four["stats"]["views_total"]), (4, 4))
+        self.assertIsNotNone(four["stats"]["spread_mm"])
+
+    def test_fused_views_are_more_precise_than_one(self):
+        shifts = [(180, 0), (0, 180), (-180, 0), (0, -180)]
+        a, bs = scene_views(shifts, 6.0)
+        a, bs = _noisy(a, 0), [_noisy(b, i + 1) for i, b in enumerate(bs)]
+        views = [(b, estimate_shift(a, b)[:2]) for b in bs]
+
+        def rms(r):
+            g = np.array(r["heights"]).reshape(r["grid_h"], r["grid_w"])
+            bx1, by1, bx2, by2 = r["box_in_roi"]
+            inner = g[int(by1 * r["grid_h"]) + 2:int(by2 * r["grid_h"]) - 2, int(bx1 * r["grid_w"]) + 2:int(bx2 * r["grid_w"]) - 2]
+            return float(np.sqrt(np.mean((inner - 6.0) ** 2)))
+
+        self.assertLess(rms(height_map_views(a, views, BOX, Z0)), rms(height_map_views(a, views[:1], BOX, Z0)))
+
+    def test_a_view_the_part_left_is_skipped(self):
+        a, bs = scene_views([(180, 0), (-600, 0)], 4.0)
+        views = [(bs[0], estimate_shift(a, bs[0])[:2]), (bs[1], (-600.0, 0.0))]  # the part is off frame B
+        r = height_map_views(a, views, BOX, Z0)
+        self.assertEqual((r["stats"]["views_used"], r["stats"]["views_total"]), (1, 2))
+        self.assertAlmostEqual(r["stats"]["median_mm"], 4.0, delta=0.6)
+
     def test_rejects_frames_that_did_not_move(self):
         a, _ = scene((0, 0), 5)
         with self.assertRaises(ValueError):
@@ -102,51 +157,91 @@ class DepthEndpointTests(unittest.TestCase):
         _, cls.token = lease_manager.acquire_lease("QA", "127.0.0.1", force=True)[:2]
         cls.headers = {"X-Operator-Token": cls.token}
 
+    def setUp(self):
+        # The lease outlives a few tests only: if it lapses mid-move the stage is stopped.
+        self.assertTrue(lease_manager.renew_lease(self.token))
+
     @classmethod
     def tearDownClass(cls):
         lease_manager.release_lease(cls.token)
         machine_service.disconnect()
         depth_service.clear()
 
-    def test_measure_moves_aside_returns_and_reports_height(self):
+    def _camera(self, point, cache):
+        """Frame at the stage's current position: the board shifts PX_PER_MM px per mm moved."""
+        def frame(zoom):
+            x_mm, y_mm = machine_service.get_state().position_mm
+            moved = (round(x_mm - point[0], 3), round(y_mm - point[1], 3))
+            if moved not in cache:
+                a, (b,) = scene_views([(moved[0] * self.PX_PER_MM, moved[1] * self.PX_PER_MM)], 6.0)
+                cache[moved] = a if moved == (0, 0) else b
+            return cache[moved]
+        return frame
+
+    def _post(self, body):
+        return self.client.post("/api/aoi/depth", json=body, headers=self.headers)
+
+    def test_measure_moves_around_returns_and_reports_height(self):
         depth_service.clear()
         point = (10.0, 12.0)
         cache = {}
-
-        def frame(zoom):
-            x_mm = machine_service.get_state().position_mm[0]
-            moved = x_mm - point[0]
-            key = round(moved, 3)
-            if key not in cache:
-                cache[key] = scene((moved * self.PX_PER_MM, 0.0), 6.0)[0 if abs(moved) < 1e-6 else 1]
-            return cache[key]
-
         n = 1400
         bbox = [BOX[0] / n, BOX[1] / n, BOX[2] / n, BOX[3] / n]
-        with patch.object(depth_service, "_fresh_frame", side_effect=frame), \
+        with patch.object(depth_service, "_fresh_frame", side_effect=self._camera(point, cache)), \
              patch("app.services.depth_service.camera_service", MagicMock(is_active=True, is_mock=False)), \
-             patch("app.services.depth_service.time.sleep"):
-            res = self.client.post(
-                "/api/aoi/depth",
-                json={"x_mm": point[0], "y_mm": point[1], "zoom": 1, "bbox": bbox},
-                headers=self.headers,
-            )
+             patch("app.services.depth_service.time.sleep"), \
+             patch.object(settings, "depth_views", 4):
+            res = self._post({"x_mm": point[0], "y_mm": point[1], "zoom": 1, "bbox": bbox})
             self.assertEqual(res.status_code, 200, res.text)
             body = res.json()
             self.assertAlmostEqual(body["stats"]["median_mm"], 6.0, delta=0.7)
+            self.assertEqual((body["stats"]["views_used"], body["stats"]["views_total"]), (4, 4))
+            # Shots at the point and at ±X, ±Y one baseline away.
+            b = settings.depth_baseline_mm
+            self.assertEqual(set(cache), {(0, 0), (b, 0), (-b, 0), (0, b), (0, -b)})
             self.assertTrue(body["texture"].startswith("data:image/jpeg;base64,"))
             self.assertEqual(body["camera_distance_mm"], settings.depth_camera_distance_mm)
+            self.assertAlmostEqual(body["mm_per_px"], 1 / self.PX_PER_MM, delta=0.002)
             # The stage is back at the point afterwards.
             self.assertEqual(tuple(round(v, 2) for v in machine_service.get_state().position_mm), point)
-            # A second part at the same point reuses the cached pair (no new shots).
+            # A second part at the same point reuses the cached shots.
             calls = len(cache)
-            again = self.client.post(
-                "/api/aoi/depth",
-                json={"x_mm": point[0], "y_mm": point[1], "zoom": 1, "bbox": [0.1, 0.1, 0.2, 0.2]},
-                headers=self.headers,
-            )
+            with patch.object(depth_service, "_shot", side_effect=AssertionError("no new shots expected")):
+                again = self._post({"x_mm": point[0], "y_mm": point[1], "zoom": 1, "bbox": [0.1, 0.1, 0.2, 0.2]})
             self.assertEqual(again.status_code, 200, again.text)
             self.assertEqual(len(cache), calls)
+
+    def test_single_view_mode_moves_along_x_only(self):
+        depth_service.clear()
+        point = (10.0, 12.0)
+        cache = {}
+        n = 1400
+        bbox = [BOX[0] / n, BOX[1] / n, BOX[2] / n, BOX[3] / n]
+        with patch.object(depth_service, "_fresh_frame", side_effect=self._camera(point, cache)), \
+             patch("app.services.depth_service.camera_service", MagicMock(is_active=True, is_mock=False)), \
+             patch("app.services.depth_service.time.sleep"), \
+             patch.object(settings, "depth_views", 1):
+            res = self._post({"x_mm": point[0], "y_mm": point[1], "zoom": 1, "bbox": bbox, "recapture": True})
+            self.assertEqual(res.status_code, 200, res.text)
+            self.assertEqual(res.json()["stats"]["views_used"], 1)
+            self.assertAlmostEqual(res.json()["stats"]["median_mm"], 6.0, delta=0.7)
+            self.assertEqual(len(cache), 2)
+            self.assertEqual(next(k for k in cache if k != (0, 0))[1], 0)
+
+    def test_moves_beyond_the_travel_are_left_out(self):
+        depth_service.clear()
+        point = (2.0, 12.0)  # -X by a baseline would leave the travel
+        cache = {}
+        n = 1400
+        bbox = [BOX[0] / n, BOX[1] / n, BOX[2] / n, BOX[3] / n]
+        with patch.object(depth_service, "_fresh_frame", side_effect=self._camera(point, cache)), \
+             patch("app.services.depth_service.camera_service", MagicMock(is_active=True, is_mock=False)), \
+             patch("app.services.depth_service.time.sleep"), \
+             patch.object(settings, "depth_views", 4):
+            res = self._post({"x_mm": point[0], "y_mm": point[1], "zoom": 1, "bbox": bbox, "recapture": True})
+            self.assertEqual(res.status_code, 200, res.text)
+            self.assertEqual(res.json()["stats"]["views_total"], 3)
+            self.assertTrue(all(k[0] >= -point[0] for k in cache))
 
     def test_needs_a_homed_stage(self):
         machine_service.disconnect()

@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Box, Building2, Check, Cpu, Crosshair, Save, Volume2 } from "lucide-react";
 import type { ComputeDevice } from "@/types";
 import { api } from "@/lib/api";
-import { Button, Card, CardHeader, Field, NumberInput, Slider, Spinner, TextInput, Toggle, cx } from "./ui";
+import { Button, Card, CardHeader, Field, NumberInput, Segmented, Slider, Spinner, TextInput, Toggle, cx } from "./ui";
 import { ModelPicker } from "./ModelPicker";
 import { AIKeyPanel } from "./AIKeyPanel";
 import { RemoteAccessPanel } from "./RemoteAccess";
@@ -23,6 +23,7 @@ export function SettingsView({ onRefreshStatus, isOperator }: { onRefreshStatus:
   const [limitY, setLimitY] = useState(38);
   const [depthDistance, setDepthDistance] = useState(200);
   const [depthBaseline, setDepthBaseline] = useState(6);
+  const [depthViews, setDepthViews] = useState(4);
   const [saving, setSaving] = useState(false);
 
   // Compute device
@@ -40,6 +41,7 @@ export function SettingsView({ onRefreshStatus, isOperator }: { onRefreshStatus:
         setLimitY(s.soft_limit_y_mm);
         setDepthDistance(s.depth_camera_distance_mm);
         setDepthBaseline(s.depth_baseline_mm);
+        setDepthViews(s.depth_views ?? 4);
         setDevices(d.devices);
         setActiveDevice(d.current_device);
         setPreference(d.preference);
@@ -58,6 +60,7 @@ export function SettingsView({ onRefreshStatus, isOperator }: { onRefreshStatus:
         soft_limit_y_mm: limitY,
         depth_camera_distance_mm: depthDistance,
         depth_baseline_mm: depthBaseline,
+        depth_views: depthViews,
       });
       toast.success("บันทึกการตั้งค่าแล้ว");
       onRefreshStatus();
@@ -150,14 +153,31 @@ export function SettingsView({ onRefreshStatus, isOperator }: { onRefreshStatus:
           <CardHeader
             icon={Box}
             title="วัดความสูง 3D"
-            subtitle="ถ่าย 2 ภาพโดยเลื่อนสเตจไปด้านข้าง ของที่สูงกว่าจะเลื่อนในภาพมากกว่า — ใช้ดูคร่าวๆ ว่าชิ้นมีอยู่ สูงเท่าไหร่ เอียงหรือยกไหม"
+            subtitle="ถ่ายภาพที่จุดนั้นแล้วเลื่อนสเตจไปรอบๆ ถ่ายเพิ่ม ของที่สูงกว่าจะเลื่อนในภาพมากกว่า — ใช้ดูว่าชิ้นมีอยู่ สูงเท่าไหร่ เอียงหรือยกไหม"
           />
           <div className="grid sm:grid-cols-2 gap-4 p-4">
             <Field label="ระยะจากเลนส์กล้องถึงผิวบอร์ด" hint="วัดด้วยไม้บรรทัดจากหน้าเลนส์ถึงผิวบอร์ด — ค่านี้ผิด ความสูงจะผิดตามสัดส่วน">
               <NumberInput value={depthDistance} min={20} max={2000} step={1} suffix="mm" onChange={setDepthDistance} />
             </Field>
-            <Field label="ระยะเลื่อนสเตจระหว่าง 2 ภาพ" hint="มากขึ้น = แม่นขึ้น แต่ชิ้นที่ขอบภาพอาจหลุดเฟรม (แนะนำ 4–8 mm)">
+            <Field label="ระยะเลื่อนสเตจแต่ละภาพ" hint="มากขึ้น = แม่นขึ้น แต่ชิ้นที่ขอบภาพอาจหลุดเฟรม (แนะนำ 4–8 mm)">
               <NumberInput value={depthBaseline} min={0.5} max={30} step={0.5} suffix="mm" onChange={setDepthBaseline} />
+            </Field>
+            <Field
+              label="จำนวนทิศที่เลื่อนไปถ่าย"
+              hint="1 = +X · 2 = ±X · 4 = ±X ±Y · 8 = เพิ่มแนวทแยง — หลายทิศละเอียดขึ้น รูโหว่น้อยลง และวัดผิวที่มีลายแนวเดียวได้ แต่ช้าลงราว 1 วินาทีต่อทิศ"
+              className="sm:col-span-2"
+            >
+              <Segmented
+                className="w-full max-w-md"
+                value={depthViews}
+                onChange={setDepthViews}
+                options={[
+                  { value: 1, label: "1 ทิศ" },
+                  { value: 2, label: "2 ทิศ" },
+                  { value: 4, label: "4 ทิศ (แนะนำ)" },
+                  { value: 8, label: "8 ทิศ" },
+                ]}
+              />
             </Field>
           </div>
         </Card>
