@@ -211,6 +211,27 @@ class DepthEndpointTests(unittest.TestCase):
             self.assertEqual(again.status_code, 200, again.text)
             self.assertEqual(len(cache), calls)
 
+    def test_a_stage_calibration_predicts_the_shifts(self):
+        from app.services.stage_calibration_service import stage_calibration_service
+        import app.services.depth_service as ds
+
+        depth_service.clear()
+        point = (10.0, 12.0)
+        n = 1400
+        bbox = [BOX[0] / n, BOX[1] / n, BOX[2] / n, BOX[3] / n]
+        cal = {"image_size": [n, n], "stage_to_image": [[self.PX_PER_MM, 0], [0, self.PX_PER_MM]]}
+        with patch.object(depth_service, "_fresh_frame", side_effect=self._camera(point, {})), \
+             patch("app.services.depth_service.camera_service", MagicMock(is_active=True, is_mock=False)), \
+             patch("app.services.depth_service.time.sleep"), \
+             patch.object(settings, "depth_views", 4), \
+             patch.object(stage_calibration_service, "last_result", return_value=cal), \
+             patch.object(ds, "estimate_shift", side_effect=AssertionError("calibrated: no blind correlation")), \
+             patch.object(ds, "measure_shift", wraps=ds.measure_shift) as measured:
+            res = self._post({"x_mm": point[0], "y_mm": point[1], "zoom": 1, "bbox": bbox, "recapture": True})
+            self.assertEqual(res.status_code, 200, res.text)
+            self.assertEqual(measured.call_count, 4)
+            self.assertAlmostEqual(res.json()["stats"]["median_mm"], 6.0, delta=0.7)
+
     def test_single_view_mode_moves_along_x_only(self):
         depth_service.clear()
         point = (10.0, 12.0)

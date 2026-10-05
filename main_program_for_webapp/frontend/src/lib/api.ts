@@ -14,6 +14,7 @@ import type {
   DatasetImage,
   DatasetSummary,
   DepthResult,
+  StageCalibrationStatus,
   InspectionResult,
   OcrResult,
   PointSet,
@@ -213,6 +214,10 @@ export const api = {
     remove: (id: string) => request<{ success: boolean }>(`/api/aoi/point-sets/${encodeURIComponent(id)}`, { method: "DELETE" }),
   },
   /** Height map of one part (moves the stage aside and back; the photo pair is cached per point). */
+  getStageCalibration: () => request<StageCalibrationStatus>("/api/aoi/calibration"),
+  startStageCalibration: (req: { checkerboard_cols?: number; checkerboard_rows?: number; square_mm?: number }) =>
+    post<StageCalibrationStatus>("/api/aoi/calibration/start", req),
+  stopStageCalibration: () => post<StageCalibrationStatus>("/api/aoi/calibration/stop"),
   measureDepth: (req: { x_mm: number; y_mm: number; zoom: number; bbox: number[]; recapture?: boolean }) =>
     post<DepthResult>("/api/aoi/depth", req),
   stopEmergency: () => post("/api/aoi/stop"),

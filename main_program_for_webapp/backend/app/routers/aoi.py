@@ -10,6 +10,7 @@ from ..services.dataset_service import dataset_service
 from ..services.depth_service import depth_service
 from ..services import point_set_store
 from ..services.machine_service import machine_service
+from ..services.stage_calibration_service import stage_calibration_service
 
 router = APIRouter(prefix="/api/aoi", tags=["aoi"])
 
@@ -47,6 +48,13 @@ class DepthRequest(BaseModel):
     # The part's box, normalized to the (zoomed) inspection image.
     bbox: List[float] = Field(..., min_length=4, max_length=4)
     recapture: bool = False
+
+
+class CalibrationRequest(BaseModel):
+    # Optional checkerboard (inner corners) of known square size for the absolute scale.
+    checkerboard_cols: Optional[int] = Field(None, ge=3, le=40)
+    checkerboard_rows: Optional[int] = Field(None, ge=3, le=40)
+    square_mm: Optional[float] = Field(None, gt=0, le=50)
 
 
 class StartScanRequest(BaseModel):
@@ -91,7 +99,7 @@ def connect_stage(
 ):
     _require_operator_lease(x_operator_token, x_operator_id)
     try:
-        if aoi_scan_service.is_running or dataset_service.is_running:
+        if aoi_scan_service.is_running or dataset_service.is_running or stage_calibration_service.is_running:
             raise ValueError("Stop the current scan before reconnecting")
         machine_service.connect(mode=req.mode, port=req.port, baud=req.baud)
         return {"success": True, "state": machine_service.get_state()}
@@ -107,6 +115,7 @@ def disconnect_stage(
     _require_operator_lease(x_operator_token, x_operator_id)
     aoi_scan_service.stop_scan()
     dataset_service.stop_capture()
+    stage_calibration_service.stop()
     machine_service.disconnect()
     return {"success": True, "state": machine_service.get_state()}
 
@@ -118,7 +127,7 @@ def home_stage(
 ):
     _require_operator_lease(x_operator_token, x_operator_id)
     try:
-        if aoi_scan_service.is_running or dataset_service.is_running:
+        if aoi_scan_service.is_running or dataset_service.is_running or stage_calibration_service.is_running:
             raise ValueError("Cannot HOME during a scan")
         machine_service.home()
         return {"success": True, "state": machine_service.get_state()}
@@ -134,7 +143,7 @@ def jog_stage(
 ):
     _require_operator_lease(x_operator_token, x_operator_id)
     try:
-        if aoi_scan_service.is_running or dataset_service.is_running:
+        if aoi_scan_service.is_running or dataset_service.is_running or stage_calibration_service.is_running:
             raise ValueError("Cannot jog during a scan")
         machine_service.jog(req.dx_mm, req.dy_mm, req.speed)
         return {"success": True, "state": machine_service.get_state()}
@@ -150,7 +159,7 @@ def move_stage(
 ):
     _require_operator_lease(x_operator_token, x_operator_id)
     try:
-        if aoi_scan_service.is_running or dataset_service.is_running:
+        if aoi_scan_service.is_running or dataset_service.is_running or stage_calibration_service.is_running:
             raise ValueError("Cannot move manually during a scan")
         if req.x_steps is not None and req.y_steps is not None:
             machine_service.move_to_steps(req.x_steps, req.y_steps, req.speed)
@@ -236,7 +245,7 @@ def measure_depth(
 ):
     """Height map of one part: moves to the point, shoots two frames a few mm apart (cached)."""
     _require_operator_lease(x_operator_token, x_operator_id)
-    if aoi_scan_service.is_running or dataset_service.is_running:
+    if aoi_scan_service.is_running or dataset_service.is_running or stage_calibration_service.is_running:
         raise HTTPException(status_code=409, detail="Stop the scan before measuring in 3D")
     x1, y1, x2, y2 = req.bbox
     if not (0 <= x1 < x2 <= 1 and 0 <= y1 < y2 <= 1):
@@ -247,11 +256,45 @@ def measure_depth(
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+@router.get("/calibration")
+def calibration_status():
+    """Progress of the running stage calibration and the last saved result."""
+    return stage_calibration_service.status()
+
+
+@router.post("/calibration/start")
+def start_calibration(
+    req: CalibrationRequest,
+    x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token"),
+    x_operator_id: Optional[str] = Header(None, alias="X-Operator-Id"),
+):
+    """Measure the stage's scale, backlash, straightness and repeatability around the current position."""
+    _require_operator_lease(x_operator_token, x_operator_id)
+    board = None
+    if req.checkerboard_cols and req.checkerboard_rows and req.square_mm:
+        board = (req.checkerboard_cols, req.checkerboard_rows)
+    try:
+        return stage_calibration_service.start(board, req.square_mm if board else None)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/calibration/stop")
+def stop_calibration(
+    x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token"),
+    x_operator_id: Optional[str] = Header(None, alias="X-Operator-Id"),
+):
+    _require_operator_lease(x_operator_token, x_operator_id)
+    stage_calibration_service.stop()
+    return stage_calibration_service.status()
+
+
 @router.post("/stop")
 def stop_stage():
     """Emergency STOP: Accessible to anyone at all times for safety."""
     aoi_scan_service.stop_scan()
     dataset_service.stop_capture()
+    stage_calibration_service.stop()
     machine_service.stop()
     return {"success": True, "message": "STOP command executed."}
 
@@ -286,6 +329,8 @@ def start_scan(
     try:
         if dataset_service.is_running:
             raise RuntimeError("Stop the dataset capture before starting an AOI scan")
+        if stage_calibration_service.is_running:
+            raise RuntimeError("รอให้ calibrate ราง XY เสร็จก่อนเริ่มสแกน")
         depth_service.clear()  # a new scan usually means a new board: drop old stereo pairs
         report = aoi_scan_service.start_scan(
             plan=req.plan,

@@ -8,6 +8,7 @@ import { Button, Card, CardHeader, Field, NumberInput, Segmented, Slider, Spinne
 import { ModelPicker } from "./ModelPicker";
 import { AIKeyPanel } from "./AIKeyPanel";
 import { RemoteAccessPanel } from "./RemoteAccess";
+import { StageCalibrationCard } from "./StageCalibrationCard";
 import { useSoundPrefs } from "@/hooks/useSound";
 import { sfx } from "@/lib/sound";
 import { useToast } from "./Toast";
@@ -148,6 +149,8 @@ export function SettingsView({ onRefreshStatus, isOperator }: { onRefreshStatus:
             </Field>
           </div>
         </Card>
+
+        <StageCalibrationCard isOperator={isOperator} />
 
         <Card>
           <CardHeader

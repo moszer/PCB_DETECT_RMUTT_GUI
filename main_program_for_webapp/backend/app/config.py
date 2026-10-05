@@ -101,6 +101,9 @@ class Settings(BaseModel):
     depth_camera_distance_mm: float = Field(200.0, ge=20, le=2000)
     depth_baseline_mm: float = Field(6.0, ge=0.5, le=30)
     depth_views: int = Field(4, ge=1, le=8)
+    # Backlash compensation: automated moves end every axis in + after overshooting this far
+    # below the target when they arrive moving - (0 = off). Set from the stage calibration.
+    stage_approach_mm: float = Field(0.0, ge=0, le=3)
 
 
 SETTINGS_FILE = STORAGE_DIR / "settings.json"

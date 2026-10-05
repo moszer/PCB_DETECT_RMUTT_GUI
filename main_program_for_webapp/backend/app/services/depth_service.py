@@ -16,6 +16,7 @@ import numpy as np
 from ..config import STORAGE_DIR, settings
 from ..core.depth import crop_texture, estimate_shift, height_map_views
 from ..core.inspection import digital_zoom
+from ..core.stage_calibration import measure_shift
 from .camera_service import camera_service
 from .machine_service import machine_service
 
@@ -100,6 +101,19 @@ class DepthService:
         spm = machine_service.steps_per_mm
         machine_service.move_to_steps(int(round(x_mm * spm)), int(round(y_mm * spm)), speed=settings.default_speed)
 
+    @staticmethod
+    def _stage_matrix(shape) -> Optional[np.ndarray]:
+        """Stage mm -> image px (zoom 1) from the last stage calibration with this image size."""
+        from .stage_calibration_service import stage_calibration_service
+
+        cal = stage_calibration_service.last_result()
+        if not cal or cal.get("image_size") != [int(shape[1]), int(shape[0])]:
+            return None
+        try:
+            return np.asarray(cal["stage_to_image"], np.float64).reshape(2, 2)
+        except (KeyError, ValueError):
+            return None
+
     def _travel(self) -> Tuple[float, float]:
         state = machine_service.get_state()
         spm = machine_service.steps_per_mm
@@ -165,8 +179,15 @@ class DepthService:
                 self._move_mm(x_mm, y_mm)  # always come back to the point
 
             views = []
+            matrix = self._stage_matrix(frame_a.shape)
             for (mx, my), frame_b in shots:
-                dx, dy, response = estimate_shift(frame_a, frame_b)
+                if matrix is not None:
+                    # Calibrated: predict the shift from the stage move and only measure the rest
+                    # (a whole-frame correlation can lock onto a wrong peak for large Y shifts).
+                    px, py = matrix @ np.array([mx, my]) * zoom
+                    dx, dy, response = measure_shift(frame_a, frame_b, (float(px), float(py)))
+                else:
+                    dx, dy, response = estimate_shift(frame_a, frame_b)
                 if response < 0.03 or np.hypot(dx, dy) < 3:
                     logger.info("Stereo view (%.1f, %.1f) mm dropped: shift (%.1f, %.1f) px, response %.2f",
                                 mx, my, dx, dy, response)

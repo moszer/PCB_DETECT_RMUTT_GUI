@@ -258,6 +258,9 @@ class DatasetService:
                 raise RuntimeError("A dataset capture is already running")
             if aoi_scan_service.is_running:
                 raise RuntimeError("Stop the AOI scan before capturing a dataset")
+            from .stage_calibration_service import stage_calibration_service
+            if stage_calibration_service.is_running:
+                raise RuntimeError("รอให้ calibrate ราง XY เสร็จก่อน")
             state = machine_service.get_state()
             if not state.connected or not state.homed:
                 raise RuntimeError("Connect and HOME the stage first")

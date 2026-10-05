@@ -493,6 +493,53 @@ export interface DepthResult {
   };
 }
 
+/** One stage axis from the camera-based calibration (lengths in commanded mm). */
+export interface StageAxisCalibration {
+  px_per_mm: number;
+  backlash_mm: number;
+  backlash_cross_mm: number;
+  linearity_mm: number;
+  straightness_mm: number;
+  points: number;
+  /** [commanded mm, error along the axis mm, approached in +]. */
+  errors: Array<[number, number, boolean]>;
+  scale_error_pct?: number;
+  suggested_steps_per_mm?: number;
+}
+
+export interface StageCalibrationResult {
+  x: StageAxisCalibration;
+  y: StageAxisCalibration;
+  camera_rotation_deg: number;
+  squareness_deg: number;
+  xy_scale_ratio: number;
+  stage_to_image: number[][];
+  mm_per_px: number | null;
+  repeatability: {
+    plus?: { n: number; rms_mm: number; max_mm: number };
+    minus?: { n: number; rms_mm: number; max_mm: number };
+    compensated?: { n: number; rms_mm: number; max_mm: number; worst_pair_mm: number };
+    direction_gap_mm?: [number, number];
+  };
+  suggested_approach_mm: number;
+  time: number;
+  center_mm: [number, number];
+  range_mm: number;
+  steps_per_mm: number;
+  approach_mm_during_test: number;
+  checkerboard: [number, number] | null;
+  square_mm: number | null;
+}
+
+export interface StageCalibrationStatus {
+  state: "idle" | "running" | "done" | "error" | "cancelled";
+  step?: number;
+  total?: number;
+  message?: string;
+  center_mm?: [number, number];
+  last: StageCalibrationResult | null;
+}
+
 export interface StationSettings {
   station_name: string;
   default_operator: string;
@@ -507,6 +554,7 @@ export interface StationSettings {
   depth_camera_distance_mm: number;
   depth_baseline_mm: number;
   depth_views: number;
+  stage_approach_mm: number;
   has_passcode: boolean;
 }
 

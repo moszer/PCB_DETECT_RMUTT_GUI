@@ -39,6 +39,7 @@ app/
     aoi_scan_service    scan sequencing, multi-frame confirmation, point_frame events
     dataset_service     automatic whole-board photography and auto-labelling
     depth_service       motion-stereo height map of a part: shots in up to 8 stage directions, fused (phase correlation + SGBM)
+    stage_calibration_service  XY stage accuracy from the camera (backlash, linearity, squareness, repeatability)
     chat_service        Gemini (streamGenerateContent, model fallback) / OpenRouter
     agent_service       tool-calling agent over read-only station data + page navigation
     storage_service     SQLite (data/inspection.db) and run images

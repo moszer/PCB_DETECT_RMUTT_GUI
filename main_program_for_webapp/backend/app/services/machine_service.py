@@ -323,8 +323,27 @@ class MachineService:
         self._notify()
         return True
 
-    def move_to_steps(self, target_x_steps: int, target_y_steps: int, speed: int = 800, timeout_sec: float = 30.0) -> bool:
-        """Move to absolute machine steps position and wait for completion."""
+    def move_to_steps(self, target_x_steps: int, target_y_steps: int, speed: int = 800, timeout_sec: float = 30.0,
+                      compensate: bool = True) -> bool:
+        """Move to absolute machine steps position and wait for completion.
+
+        With backlash compensation on (settings.stage_approach_mm > 0), an axis that would arrive
+        moving - first overshoots below the target and then comes up to it, so every axis always
+        ends its move in +: the slack in the drive is then always on the same side.
+        """
+        approach = round(settings.stage_approach_mm * self.steps_per_mm) if compensate else 0
+        if approach > 0:
+            with self._lock:
+                current = self._client.position if self._client else (target_x_steps, target_y_steps)
+            pre = (
+                max(0, target_x_steps - approach) if target_x_steps < current[0] else target_x_steps,
+                max(0, target_y_steps - approach) if target_y_steps < current[1] else target_y_steps,
+            )
+            if pre != (target_x_steps, target_y_steps):
+                self._move_raw(pre[0], pre[1], speed, timeout_sec)
+        return self._move_raw(target_x_steps, target_y_steps, speed, timeout_sec)
+
+    def _move_raw(self, target_x_steps: int, target_y_steps: int, speed: int, timeout_sec: float) -> bool:
         evt = threading.Event()
         with self._lock:
             if not self._client or not self._client.homed:

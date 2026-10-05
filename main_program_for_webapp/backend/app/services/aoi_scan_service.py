@@ -152,6 +152,9 @@ class AOIScanService:
             # Check without re-locking / deadlock (F01)
             if self.is_running:
                 raise RuntimeError("An AOI scan is already in progress.")
+            from .stage_calibration_service import stage_calibration_service
+            if stage_calibration_service.is_running:
+                raise RuntimeError("รอให้ calibrate ราง XY เสร็จก่อนเริ่มสแกน")
 
             state = machine_service.get_state()
             if not state.connected:
