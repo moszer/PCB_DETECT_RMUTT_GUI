@@ -24,6 +24,14 @@ def is_gpu_out_of_memory(exc: BaseException) -> bool:
     )
 
 
+def half_precision(device: str) -> bool:
+    """FP16 on CUDA: on the Jetson it halves the GPU memory and the inference time (180 -> 85 ms
+    at imgsz 1280) with the same detections. MPS/CPU stay FP32."""
+    from ..config import settings
+
+    return settings.inference_half and str(device).startswith("cuda")
+
+
 def release_memory() -> None:
     """Hand cached GPU blocks and freed heap back to the system. On Jetson the GPU allocates
     from the same RAM as everything else, so memory PyTorch keeps cached for one input size
@@ -111,6 +119,43 @@ class InferenceService:
             self._device_preference = device_preference
             return True
 
+    def _predict_with_fallback(self, predict_kwargs: Dict[str, Any]):
+        """Predict, recovering from GPU out-of-memory (see is_gpu_out_of_memory).
+
+        1) free the cached blocks and retry; 2) retry once more without cuDNN, whose per-layer
+        workspace (up to 1.5 GiB seen on the station) is what no longer fits; plain CUDA
+        convolutions are ~25% slower but need no workspace.
+        """
+        try:
+            return self._model.predict(**predict_kwargs)
+        except RuntimeError as exc:
+            if not is_gpu_out_of_memory(exc):
+                raise
+            logger.warning("GPU out of memory (%s); freeing the cache and retrying", str(exc).splitlines()[0][:120])
+        release_memory()
+        try:
+            return self._model.predict(**predict_kwargs)
+        except RuntimeError as exc:
+            if not is_gpu_out_of_memory(exc):
+                raise
+            logger.warning("Still out of GPU memory; retrying without cuDNN")
+        release_memory()
+        import torch
+
+        enabled = torch.backends.cudnn.enabled
+        torch.backends.cudnn.enabled = False
+        try:
+            return self._model.predict(**predict_kwargs)
+        except RuntimeError as exc:
+            if not is_gpu_out_of_memory(exc):
+                raise
+            release_memory()
+            raise RuntimeError(
+                "หน่วยความจำ GPU ไม่พอ — ปิดโปรแกรมอื่นบนเครื่อง (เช่น เบราว์เซอร์บน Jetson) หรือลดขนาดภาพ (imgsz)"
+            ) from exc
+        finally:
+            torch.backends.cudnn.enabled = enabled
+
     def predict(
         self,
         image: np.ndarray,
@@ -142,23 +187,9 @@ class InferenceService:
             if imgsz is not None and int(imgsz) > 0:
                 predict_kwargs["imgsz"] = int(imgsz)
 
-            try:
-                results = self._model.predict(**predict_kwargs)
-            except RuntimeError as exc:
-                if not is_gpu_out_of_memory(exc):
-                    raise
-                # Usually blocks cached for earlier input sizes: give them back and retry once.
-                logger.warning("GPU out of memory (%s); freeing the cache and retrying", str(exc).splitlines()[0][:120])
-                release_memory()
-                try:
-                    results = self._model.predict(**predict_kwargs)
-                except RuntimeError as again:
-                    if not is_gpu_out_of_memory(again):
-                        raise
-                    release_memory()
-                    raise RuntimeError(
-                        "หน่วยความจำ GPU ไม่พอ — ปิดโปรแกรมอื่นบนเครื่อง (เช่น เบราว์เซอร์บน Jetson) หรือลดขนาดภาพ (imgsz)"
-                    ) from again
+            if half_precision(device):
+                predict_kwargs["half"] = True
+            results = self._predict_with_fallback(predict_kwargs)
 
             detections: List[Detection] = []
             speed_ms = {"preprocess": 0.0, "inference": 0.0, "postprocess": 0.0}

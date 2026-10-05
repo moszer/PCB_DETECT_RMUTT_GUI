@@ -522,12 +522,34 @@ class GpuOutOfMemoryTests(unittest.TestCase):
             dets, _ = svc.predict(np.zeros((32, 32, 3), np.uint8))
         self.assertEqual((dets, calls["n"], release.call_count), ([], 2, 1))
 
+    def test_last_try_runs_without_cudnn(self):
+        import torch
+
+        svc, calls = self._service(failures=2)
+        seen = []
+        inner = svc._model.predict
+        svc._model.predict = lambda **kw: (seen.append(torch.backends.cudnn.enabled), inner(**kw))[1]
+        with patch("app.services.inference_service.release_memory"), patch("app.services.perf_log.record"):
+            svc.predict(np.zeros((32, 32, 3), np.uint8))
+        self.assertEqual(seen, [True, True, False])
+        self.assertTrue(torch.backends.cudnn.enabled)  # restored
+
     def test_gives_a_clear_error_when_memory_stays_short(self):
+        import torch
+
         svc, calls = self._service(failures=5)
         with patch("app.services.inference_service.release_memory"), patch("app.services.perf_log.record"):
             with self.assertRaisesRegex(RuntimeError, "หน่วยความจำ GPU ไม่พอ"):
                 svc.predict(np.zeros((32, 32, 3), np.uint8))
-        self.assertEqual(calls["n"], 2)
+        self.assertEqual(calls["n"], 3)
+        self.assertTrue(torch.backends.cudnn.enabled)
+
+    def test_half_precision_only_on_cuda(self):
+        from app.services.inference_service import half_precision
+
+        self.assertTrue(half_precision("cuda:0"))
+        self.assertFalse(half_precision("mps"))
+        self.assertFalse(half_precision("cpu"))
 
     def test_other_errors_are_not_retried(self):
         from app.services.inference_service import InferenceService, is_gpu_out_of_memory

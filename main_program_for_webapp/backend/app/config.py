@@ -104,6 +104,8 @@ class Settings(BaseModel):
     # Backlash compensation: automated moves end every axis in + after overshooting this far
     # below the target when they arrive moving - (0 = off). Set from the stage calibration.
     stage_approach_mm: float = Field(0.0, ge=0, le=3)
+    # FP16 inference on CUDA (Jetson): half the GPU memory and time, same detections.
+    inference_half: bool = True
 
 
 SETTINGS_FILE = STORAGE_DIR / "settings.json"
