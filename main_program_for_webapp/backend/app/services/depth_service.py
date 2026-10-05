@@ -85,7 +85,12 @@ class DepthService:
 
     def clear(self) -> None:
         with self._lock:
+            had = bool(self._pairs)
             self._pairs.clear()
+        if had:
+            from .inference_service import release_memory
+
+            release_memory()
 
     def _shot(self, zoom: float) -> np.ndarray:
         frames = [self._fresh_frame(zoom) for _ in range(FRAMES_PER_SHOT)]
@@ -205,8 +210,8 @@ class DepthService:
             if not views:
                 raise ValueError("จับการเลื่อนของภาพไม่ได้ — ตรวจว่ากล้องยึดแน่นและบอร์ดอยู่ในภาพ")
             pair = StereoPair(key, frame_a, views)
-            self._pairs = {k: p for k, p in self._pairs.items() if time.monotonic() - p.created < PAIR_TTL_SEC}
-            self._pairs[key] = pair
+            # One set only: 9 frames of 4K are ~220 MB, and the Jetson's GPU needs that RAM too.
+            self._pairs = {key: pair}
             _save_debug_set(pair, x_mm, y_mm, zoom)
             logger.info("Stereo set at %s: %d/%d views", key, len(views), len(moves))
             return pair

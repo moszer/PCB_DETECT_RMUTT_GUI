@@ -316,6 +316,10 @@ class AOIScanService:
             with self._lock:
                 if self._worker_thread is threading.current_thread():
                     self._worker_thread = None
+            # Jetson: the GPU shares RAM with the rest; don't sit on the scan's cached blocks.
+            from .inference_service import release_memory
+
+            release_memory()
 
     def _do_scan(
         self,

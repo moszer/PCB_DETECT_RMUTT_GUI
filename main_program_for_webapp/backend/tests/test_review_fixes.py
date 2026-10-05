@@ -496,3 +496,51 @@ class CameraCropModeTests(unittest.TestCase):
             camera_service.start()  # bare restart keeps the mode
             self.assertEqual(camera_service.output_mode, "crop")
         camera_service.stop()
+
+
+class GpuOutOfMemoryTests(unittest.TestCase):
+    """Jetson reports CUDA OOM as an NVML internal assert; predict frees the cache and retries."""
+
+    def _service(self, failures):
+        from app.services.inference_service import InferenceService
+
+        svc = InferenceService()
+        calls = {"n": 0}
+
+        def predict(**kwargs):
+            calls["n"] += 1
+            if calls["n"] <= failures:
+                raise RuntimeError('NVML_SUCCESS == r INTERNAL ASSERT FAILED at "CUDACachingAllocator.cpp":1407')
+            return []
+
+        svc._model = MagicMock(predict=predict)
+        return svc, calls
+
+    def test_retries_once_after_freeing_memory(self):
+        svc, calls = self._service(failures=1)
+        with patch("app.services.inference_service.release_memory") as release, patch("app.services.perf_log.record"):
+            dets, _ = svc.predict(np.zeros((32, 32, 3), np.uint8))
+        self.assertEqual((dets, calls["n"], release.call_count), ([], 2, 1))
+
+    def test_gives_a_clear_error_when_memory_stays_short(self):
+        svc, calls = self._service(failures=5)
+        with patch("app.services.inference_service.release_memory"), patch("app.services.perf_log.record"):
+            with self.assertRaisesRegex(RuntimeError, "หน่วยความจำ GPU ไม่พอ"):
+                svc.predict(np.zeros((32, 32, 3), np.uint8))
+        self.assertEqual(calls["n"], 2)
+
+    def test_other_errors_are_not_retried(self):
+        from app.services.inference_service import InferenceService, is_gpu_out_of_memory
+
+        self.assertFalse(is_gpu_out_of_memory(RuntimeError("shape mismatch")))
+        self.assertTrue(is_gpu_out_of_memory(RuntimeError("CUDA out of memory. Tried to allocate 1.5 GiB")))
+        svc = InferenceService()
+        svc._model = MagicMock(predict=MagicMock(side_effect=RuntimeError("shape mismatch")))
+        with self.assertRaisesRegex(RuntimeError, "shape mismatch"):
+            svc.predict(np.zeros((32, 32, 3), np.uint8))
+        self.assertEqual(svc._model.predict.call_count, 1)
+
+    def test_release_memory_is_safe_without_cuda(self):
+        from app.services.inference_service import release_memory
+
+        release_memory()

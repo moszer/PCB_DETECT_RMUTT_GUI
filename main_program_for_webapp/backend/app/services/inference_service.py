@@ -15,6 +15,38 @@ from ..core.schemas import Detection
 logger = logging.getLogger("inference_service")
 
 
+def is_gpu_out_of_memory(exc: BaseException) -> bool:
+    """CUDA out of memory, including the form it takes on Jetson: there PyTorch's OOM path
+    asks NVML for details, which Tegra lacks, and fails with an internal assert instead."""
+    msg = str(exc)
+    return isinstance(exc, RuntimeError) and (
+        "out of memory" in msg.lower() or "NVML_SUCCESS" in msg or "CUDACachingAllocator" in msg
+    )
+
+
+def release_memory() -> None:
+    """Hand cached GPU blocks and freed heap back to the system. On Jetson the GPU allocates
+    from the same RAM as everything else, so memory PyTorch keeps cached for one input size
+    is missing for the next (or for the camera, the 3D frames, the browser...)."""
+    import gc
+
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+    except Exception:  # never let the cleanup itself fail a request
+        logger.debug("empty_cache failed", exc_info=True)
+    try:
+        import ctypes
+
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        pass  # not glibc (macOS)
+
+
 class InferenceService:
     """Thread-safe YOLO inference runner supporting MPS, CUDA, and CPU."""
 
@@ -110,7 +142,23 @@ class InferenceService:
             if imgsz is not None and int(imgsz) > 0:
                 predict_kwargs["imgsz"] = int(imgsz)
 
-            results = self._model.predict(**predict_kwargs)
+            try:
+                results = self._model.predict(**predict_kwargs)
+            except RuntimeError as exc:
+                if not is_gpu_out_of_memory(exc):
+                    raise
+                # Usually blocks cached for earlier input sizes: give them back and retry once.
+                logger.warning("GPU out of memory (%s); freeing the cache and retrying", str(exc).splitlines()[0][:120])
+                release_memory()
+                try:
+                    results = self._model.predict(**predict_kwargs)
+                except RuntimeError as again:
+                    if not is_gpu_out_of_memory(again):
+                        raise
+                    release_memory()
+                    raise RuntimeError(
+                        "หน่วยความจำ GPU ไม่พอ — ปิดโปรแกรมอื่นบนเครื่อง (เช่น เบราว์เซอร์บน Jetson) หรือลดขนาดภาพ (imgsz)"
+                    ) from again
 
             detections: List[Detection] = []
             speed_ms = {"preprocess": 0.0, "inference": 0.0, "postprocess": 0.0}
