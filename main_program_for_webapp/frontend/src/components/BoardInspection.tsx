@@ -279,8 +279,10 @@ export default function BoardInspection({ point, params, onSave, onMoveToPoint }
             alt="ภาพต้นแบบของจุดตรวจ"
             boxes={items.map((item, i) => {
               const matched = frameRec ? frameRec.matchedIndices.includes(i) : null;
+              // On a captured frame, draw the box where it was matched (shifted with the stage).
+              const [ox, oy] = frameRec?.offset ?? [0, 0];
               return {
-                bbox: item.bbox,
+                bbox: [item.bbox[0] + ox, item.bbox[1] + oy, item.bbox[2] + ox, item.bbox[3] + oy],
                 label: item.id,
                 color: matched === null ? (i === selected || picked.has(i) ? "#f59e0b" : "#22d3ee") : matched ? "#22c55e" : "#ef4444",
                 dashed: matched === false,

@@ -140,6 +140,25 @@ class MultiFrameInspectionTests(unittest.TestCase):
         self.assertEqual(res["confirmed_count"], 2)
         self.assertEqual(res["missing_count"], 0)
 
+    def test_slots_are_drawn_where_the_shifted_frame_put_them(self):
+        """A stage shift moves every part; the saved frame must show the boxes moved with it."""
+        from app.core.inspection import evaluate_multiframe_round
+        expected = [
+            {"id": "P1", "label": "chip", "box": [0.10, 0.10, 0.20, 0.20]},
+            {"id": "P2", "label": "resistor", "box": [0.40, 0.40, 0.45, 0.43]},
+            {"id": "P3", "label": "capacitor", "box": [0.60, 0.20, 0.66, 0.26]},
+        ]
+        dx, dy = 0.0, 0.03  # small parts: IoU without alignment would fail
+        frames = [[{"label": e["label"], "box": [e["box"][0] + dx, e["box"][1] + dy, e["box"][2] + dx, e["box"][3] + dy]}
+                   for e in expected] for _ in range(5)]
+        res = evaluate_multiframe_round(expected, frames, target_frames=5, pass_threshold=4)
+        self.assertEqual(res["verdict"], "PASS")
+        self.assertEqual(res["frame_offset"], [0.0, 0.03])
+        for c, e in zip(res["components"], expected):
+            self.assertEqual(c["expected"]["box"], e["box"])  # the reference itself is unchanged
+            for got, want in zip(c["box_in_frame"], [e["box"][0], e["box"][1] + dy, e["box"][2], e["box"][3] + dy]):
+                self.assertAlmostEqual(got, want, places=5)
+
     def test_evaluate_multiframe_round_missing(self):
         from app.core.inspection import evaluate_multiframe_round
         expected = [

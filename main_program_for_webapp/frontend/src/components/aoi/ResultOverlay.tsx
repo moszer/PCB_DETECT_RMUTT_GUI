@@ -39,7 +39,7 @@ function marksOf(item: ResultSource, w: number, h: number): Mark[] {
   if (item.kind === "point" && item.point.component_eval?.length) {
     // Taught point: one slot per expected component (normalized boxes).
     return item.point.component_eval.map((c) => {
-      const b = c.expected.box ?? c.expected.bbox ?? [0, 0, 0, 0];
+      const b = c.box_in_frame ?? c.expected.box ?? c.expected.bbox ?? [0, 0, 0, 0];
       const kind: Kind = c.status === "confirmed" ? "ok" : c.status === "uncertain" ? "review" : "fail";
       const label =
         c.status === "wrong"

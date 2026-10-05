@@ -62,7 +62,7 @@ function PointResultDetail({ point, onClose }: { point: AOIPointResult; onClose:
   const size = dims?.src === src ? dims : null;
   const parts: Part[] = slots.length
     ? slots.map((slot) => {
-        const b = (slot.expected.box ?? slot.expected.bbox ?? [0, 0, 0, 0]) as NBox;
+        const b = (slot.box_in_frame ?? slot.expected.box ?? slot.expected.bbox ?? [0, 0, 0, 0]) as NBox;
         return {
           bbox: b,
           name: `${slot.expected.id} ${slot.expected.name}`,

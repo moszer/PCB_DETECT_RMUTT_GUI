@@ -276,7 +276,7 @@ def draw_multiframe_annotated_image(
     # Semi-transparent box fills
     for item in component_eval:
         exp = item.get("expected", {})
-        bbox = exp.get("box", exp.get("bbox", [0, 0, 0, 0]))
+        bbox = item.get("box_in_frame") or exp.get("box", exp.get("bbox", [0, 0, 0, 0]))
         x1 = int(round(max(0.0, min(1.0, bbox[0])) * w))
         y1 = int(round(max(0.0, min(1.0, bbox[1])) * h))
         x2 = int(round(max(0.0, min(1.0, bbox[2])) * w))
@@ -294,7 +294,7 @@ def draw_multiframe_annotated_image(
         cname = exp.get("name", "component")
         hits = item.get("hits", 0)
         target = item.get("target_frames", 10)
-        bbox = exp.get("box", exp.get("bbox", [0, 0, 0, 0]))
+        bbox = item.get("box_in_frame") or exp.get("box", exp.get("bbox", [0, 0, 0, 0]))
         x1 = int(round(max(0.0, min(1.0, bbox[0])) * w))
         y1 = int(round(max(0.0, min(1.0, bbox[1])) * h))
         x2 = int(round(max(0.0, min(1.0, bbox[2])) * w))
@@ -525,10 +525,12 @@ def evaluate_multiframe_round(
     wrong_found_labels = [{} for _ in expected_components]
     extra_detections_all = []
     max_offset = 0.0
+    last_offset = (0.0, 0.0)
 
     for f_idx, detections in enumerate(frame_results):
         m = match_frame_detections(expected_components, detections)
         max_offset = max(max_offset, math.hypot(*m["offset"]))
+        last_offset = m["offset"]
         for ei in m["matched_expected"]:
             hits[ei] += 1
         for w in m["wrong_matches"]:
@@ -560,8 +562,12 @@ def evaluate_multiframe_round(
             status = "uncertain"
             has_uncertain = True
 
+        shown = _shifted(exp, *last_offset)
         component_eval.append({
             "expected": exp,
+            # Where the slot sits in the last frame (the one saved and shown): the reference box
+            # moved by that frame's stage shift, as used for matching.
+            "box_in_frame": [round(float(v), 5) for v in shown.get("box", shown.get("bbox", [0, 0, 0, 0]))],
             "hits": h,
             "total_frames": total_frames,
             "target_frames": target,
@@ -609,4 +615,5 @@ def evaluate_multiframe_round(
         "uncertain_count": sum(1 for c in component_eval if c["status"] == "uncertain"),
         "extra_count": extra_count,
         "max_offset": round(max_offset, 4),  # largest whole-frame shift vs. reference (normalized)
+        "frame_offset": [round(float(last_offset[0]), 5), round(float(last_offset[1]), 5)],  # of the last frame
     }

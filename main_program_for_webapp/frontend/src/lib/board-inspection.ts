@@ -33,6 +33,8 @@ export interface RecordedInspectionFrame {
   matchedIndices: number[];
   unmatchedIndices: number[];
   matches: Array<{ expectedIndex: number; boxIndex: number; overlap: number }>;
+  /** Whole-frame stage shift (normalized) the reference was moved by for matching. */
+  offset?: [number, number];
 }
 
 export interface InspectionRound {
@@ -221,6 +223,7 @@ export function inspectFrame(
     matchedIndices: Array.from(matched),
     unmatchedIndices: expected.map((_, i) => i).filter((i) => !matched.has(i)),
     matches,
+    offset: [dx, dy],
   };
 
   const capturedFrames = [...(round.capturedFrames || []), recordedFrame];

@@ -163,6 +163,8 @@ export interface ComponentEvaluation {
   pass_threshold: number;
   status: SlotStatus;
   wrong_label?: string | null;
+  /** The slot in the saved (last) frame: the reference box moved by that frame's stage shift. */
+  box_in_frame?: number[];
 }
 
 export interface MultiframeInfo {
