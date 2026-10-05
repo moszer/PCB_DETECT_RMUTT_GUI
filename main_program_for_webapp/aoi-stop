@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# Stop this folder's station: run_web.sh and its backend/frontend, including ones left behind
+# (e.g. started in the background with ./update.sh, or a crashed run_web.sh).
+#   ./aoi-stop          stop gracefully, force after 15 s
+#   ./aoi-stop --quiet  only print problems
+# Processes of other folders/stations are never touched.
+set -uo pipefail
+QUIET=0
+for arg in "$@"; do
+    case "$arg" in
+        --quiet|-q) QUIET=1 ;;
+        -h|--help) sed -n '2,6p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) echo "Unknown option: $arg (see ./aoi-stop --help)" >&2; exit 2 ;;
+    esac
+done
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_PORT="${PCB_BACKEND_PORT:-8000}"
+FRONTEND_PORT="${PCB_FRONTEND_PORT:-3001}"
+
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then G=$'\e[32m'; Y=$'\e[33m'; R=$'\e[31m'; N=$'\e[0m'; else G=; Y=; R=; N=; fi
+say()  { [[ $QUIET -eq 1 ]] || echo "  $*"; }
+ok()   { say "${G}✓${N} $*"; }
+warn() { echo "  ${Y}!${N} $*"; }
+
+cwd_of() {
+    if [[ -d "/proc/$1" ]]; then readlink "/proc/$1/cwd" 2>/dev/null
+    else lsof -a -d cwd -p "$1" -Fn 2>/dev/null | sed -n 's/^n//p' | head -1; fi
+}
+ours() {  # running inside this folder (or launched from its files)
+    local cwd args
+    cwd="$(cwd_of "$1")"
+    [[ -n "$cwd" && ( "$cwd" == "$PROJECT_DIR" || "$cwd" == "$PROJECT_DIR"/* ) ]] && return 0
+    args="$(ps -o args= -p "$1" 2>/dev/null)"
+    [[ "$args" == *"$PROJECT_DIR"* ]]
+}
+descendants() {
+    local kid
+    for kid in $(pgrep -P "$1" 2>/dev/null); do echo "$kid"; descendants "$kid"; done
+}
+port_pids() {
+    if command -v lsof >/dev/null 2>&1; then lsof -t -iTCP:"$1" -sTCP:LISTEN 2>/dev/null
+    else ss -ltnpH "sport = :$1" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2; fi
+}
+
+find_pids() {
+    local pid found=""
+    pid="$(cat "$PROJECT_DIR/.cache/station.pid" 2>/dev/null || true)"
+    if [[ -n "$pid" ]] && ps -o args= -p "$pid" 2>/dev/null | grep -q "run_web.sh"; then found+=" $pid"; fi
+    for pid in $(pgrep -f "run_web.sh" 2>/dev/null); do
+        [[ "$pid" == "$$" ]] && continue
+        ps -o args= -p "$pid" 2>/dev/null | grep -q "bash .*run_web.sh" && ours "$pid" && found+=" $pid"
+    done
+    # Backend/frontend still holding the station's ports (also orphans of a dead run_web.sh).
+    for port in "$BACKEND_PORT" "$FRONTEND_PORT"; do
+        for pid in $(port_pids "$port"); do ours "$pid" && found+=" $pid"; done
+    done
+    local all="$found"
+    for pid in $found; do all+=" $(descendants "$pid" | tr '\n' ' ')"; done
+    tr ' ' '\n' <<<"$all" | grep -E '^[0-9]+$' | sort -un
+}
+
+PIDS="$(find_pids)"
+if [[ -z "$PIDS" ]]; then
+    ok "No station running in $PROJECT_DIR"
+    exit 0
+fi
+say "Stopping: $(tr '\n' ' ' <<<"$PIDS")"
+# shellcheck disable=SC2086
+kill -TERM $PIDS 2>/dev/null
+for _ in $(seq 1 30); do
+    alive=""
+    for pid in $PIDS; do kill -0 "$pid" 2>/dev/null && alive+=" $pid"; done
+    [[ -z "$alive" ]] && break
+    sleep 0.5
+done
+if [[ -n "${alive:-}" ]]; then
+    warn "Still running after 15 s, forcing:$alive"
+    # shellcheck disable=SC2086
+    kill -KILL $alive 2>/dev/null
+    sleep 1
+fi
+left=""
+for port in "$BACKEND_PORT" "$FRONTEND_PORT"; do
+    [[ -n "$(port_pids "$port")" ]] && left+=" $port"
+done
+if [[ -n "$left" ]]; then
+    echo "  ${R}✗${N} Port(s)$left still in use by another program (not this station): check with  ss -ltnp" >&2
+    exit 1
+fi
+rm -f "$PROJECT_DIR/.cache/station.pid"
+ok "Station stopped (ports $BACKEND_PORT and $FRONTEND_PORT are free)"

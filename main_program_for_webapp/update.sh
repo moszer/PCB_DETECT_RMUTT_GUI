@@ -121,9 +121,8 @@ if [[ "$(cat .cache/station.commit 2>/dev/null)" == "$AFTER" ]]; then
     exit 0
 fi
 step "Restarting the station (run_web.sh ${ARGS:-<no options>})"
-kill -TERM $PIDS 2>/dev/null || true
-for _ in $(seq 1 30); do [[ -z "$(station_pids)" ]] && break; sleep 0.5; done
-[[ -n "$(station_pids)" ]] && die "The old station did not stop; stop it with Ctrl+C in its window, then run ./run_web.sh"
+# aoi-stop also clears a backend/frontend left behind by a crashed run_web.sh.
+./aoi-stop --quiet || die "The old station did not stop; run ./aoi-stop, then ./run_web.sh"
 ok "Stopped the old station"
 # shellcheck disable=SC2086
 if [[ "$RESTART" == "background" ]]; then

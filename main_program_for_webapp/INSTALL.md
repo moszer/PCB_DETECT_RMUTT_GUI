@@ -63,6 +63,7 @@ echo "alias aoi-update='$(pwd)/update.sh'" >> ~/.bashrc && source ~/.bashrc
 | `./install.sh --no-tailscale` | ไม่ติดตั้ง Tailscale (ใช้แค่ในวงแลน) |
 | `./run_web.sh --prod` | build หน้าเว็บครั้งเดียวแล้วเสิร์ฟ เร็วและกินแรมน้อยกว่าโหมด dev **แนะนำบน Jetson และใช้งานประจำ** |
 | `echo prod > .station-mode` | ให้เครื่องนี้รันโหมด prod เสมอ แม้สั่งแค่ `./run_web.sh` หรือ `./update.sh` (ใช้ `--dev` ถ้าจะรัน dev ชั่วคราว) |
+| `./aoi-stop` | หยุดสถานีของโฟลเดอร์นี้ (รวมตัวที่รันเบื้องหลังหรือค้างอยู่) ใช้เมื่อขึ้น `Address already in use` |
 | `./run_web.sh --dev` | โหมด dev แม้ `.station-mode` เป็น prod |
 | `./run_web.sh --update` | อัปเกรดไลบรารี Python/JS ก่อนเริ่ม (ไม่แตะ PyTorch) |
 | `./run_web.sh --no-check` | ข้ามการเช็คไลบรารีตอนเริ่ม |
@@ -193,7 +194,7 @@ GEMINI_API_KEY=...                   # https://aistudio.google.com/apikey (ผ�
 | อาการ | วิธีแก้ |
 |---|---|
 | `Missing backend virtual environment` | ยังไม่ได้รัน `./install.sh` |
-| `Address already in use` | มีสถานีรันอยู่แล้ว ปิดตัวเก่า หรือเปลี่ยนพอร์ต `PCB_FRONTEND_PORT=3002 PCB_BACKEND_PORT=8002 ./run_web.sh` |
+| `Address already in use` | มีสถานีรันอยู่แล้ว สั่ง `./aoi-stop` ก่อน หรือเปลี่ยนพอร์ต `PCB_FRONTEND_PORT=3002 PCB_BACKEND_PORT=8002 ./run_web.sh` |
 | Linux: เปิดกล้อง/สเตจไม่ได้ (Permission denied) | logout แล้ว login ใหม่หลังติดตั้ง (สิทธิ์กลุ่ม `video`, `dialout`) |
 | Jetson: หน้าเว็บขึ้น CPU แทน CUDA | `backend/venv/bin/python -c "import torch; print(torch.cuda.is_available())"` ถ้าได้ False ให้ลง PyTorch ของ JetPack ตัวเองด้วย `PCB_TORCH_INDEX` |
 | `best.pt` เป็น LFS pointer | รัน `./install.sh` ใหม่ (โหลดจาก Hugging Face แทน) หรือ `git lfs install && git lfs pull` |
