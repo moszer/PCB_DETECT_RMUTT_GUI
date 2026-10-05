@@ -74,7 +74,28 @@ def _vision_lines(img: np.ndarray) -> List[Line]:
     return lines
 
 
+# Tesseract word confidence below which a word is noise (unless it looks like a part code).
+TESSERACT_MIN_CONF = 0.6
+# Stray marks Tesseract glues to words ("|", "—", "_" from edges and pins).
+_EDGE_JUNK = re.compile(r"^[^0-9A-Za-z+(#]+|[^0-9A-Za-z%)Ω.]+$")
+# An uppercase/digit code with both letters and digits: EPM570T144C5, N-AACQM0537A, LM317T.
+_CODE_LIKE = re.compile(r"^(?=.*\d)(?=.*[A-Z])[A-Z0-9][A-Z0-9\-./]{3,}$")
+
+
+def binarize_for_tesseract(img: np.ndarray) -> np.ndarray:
+    """Dark text on a white page, as Tesseract expects: part markings are usually light
+    print on a dark body, and its own thresholding on a colour photo leaves the body's
+    texture, glare and pins as noise."""
+    g = img if img.ndim == 2 else cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    g = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(g)
+    _, bw = cv2.threshold(cv2.GaussianBlur(g, (3, 3), 0), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    if bw.mean() < 127:  # mostly dark: the text is the light part
+        bw = 255 - bw
+    return cv2.copyMakeBorder(bw, 12, 12, 12, 12, cv2.BORDER_CONSTANT, value=255)
+
+
 def _tesseract_lines(img: np.ndarray) -> List[Line]:
+    img = binarize_for_tesseract(img)
     ok, png = cv2.imencode(".png", img)
     if not ok or not _TESSERACT:
         return []
@@ -97,8 +118,18 @@ def _tesseract_lines(img: np.ndarray) -> List[Line]:
             continue
         if conf < 0:
             continue
+        word = _EDGE_JUNK.sub("", cols[11])
+        if not word:
+            continue
+        conf /= 100
+        # Tesseract often scores whole lines 0 next to a stray "|" although the code itself is
+        # read right: keep words shaped like part codes, as uncertain readings.
+        if conf < TESSERACT_MIN_CONF:
+            if not _CODE_LIKE.match(word):
+                continue  # fragments of texture, pins and logos come back at low confidence
+            conf = 0.5
         key = (int(cols[2]), int(cols[3]), int(cols[4]))  # block, paragraph, line
-        rows.setdefault(key, []).append((cols[11], conf / 100, tuple(int(c) for c in cols[6:10])))
+        rows.setdefault(key, []).append((word, conf, tuple(int(c) for c in cols[6:10])))
     lines: List[Line] = []
     for words in rows.values():
         xs = [b[0] for _, _, b in words]
@@ -127,8 +158,20 @@ _HOMOGLYPHS = str.maketrans("АВЕКМНОРСТХІУаеорсхуΑΒΕΚΜ�
 _PAD_CHARS = set("oO0°•·.,:;'\"-_ ")
 
 
+# Characters a marking may contain besides letters and digits (100uF/35V, LM317-T, 1.5K, +5V...).
+_MARK_PUNCT = set("-./+%()#:_Ωµ ")
+
+
+def _junk(text: str) -> int:
+    return sum(1 for ch in text if not ch.isalnum() and ch not in _MARK_PUNCT)
+
+
 def clean_lines(lines: Sequence[Line]) -> List[Line]:
-    """Normalize look-alike letters and drop readings that are just pads, dots or noise."""
+    """Normalize look-alike letters and drop readings that are just pads, dots or noise.
+
+    Pins, pads and textured bodies read as runs of '=', '—', '|' and short fragments
+    ("== zm =", "a WD ——"): a line must be mostly letters/digits and hold a real token.
+    """
     out: List[Line] = []
     for text, conf, box in lines:
         text = text.translate(_HOMOGLYPHS).strip()
@@ -137,13 +180,23 @@ def clean_lines(lines: Sequence[Line]) -> List[Line]:
             continue
         if conf < 0.35 or (len(alnum) < 2 and conf < 0.6):
             continue
+        visible = len(text.replace(" ", ""))
+        if len(alnum) / max(1, visible) < 0.6:
+            continue
+        # A row of pins reads as a long run of lowercase letters ("dedaaseancabsavati...").
+        if any(len(t) >= 10 and t.isalpha() and t.islower() for t in re.findall(r"[A-Za-z]+", text)):
+            continue
+        # Keep the line only if one word has 2+ characters, or it is short and certain.
+        tokens = [re.sub(r"[^0-9A-Za-z]", "", t) for t in text.split()]
+        if max((len(t) for t in tokens), default=0) < 3 and not (len(alnum) >= 2 and conf >= 0.8 and not _junk(text)):
+            continue
         out.append((text, conf, box))
     return out
 
 
 def _score(lines: Sequence[Line]) -> float:
-    """Confident readings with more real characters win."""
-    return sum(conf * len(re.sub(r"[^0-9A-Za-z]", "", text)) for text, conf, _ in lines)
+    """Confident readings with more real characters win; stray symbols count against."""
+    return sum(conf * (len(re.sub(r"[^0-9A-Za-z]", "", text)) - 2 * _junk(text)) for text, conf, _ in lines)
 
 
 def warm_up() -> None:
@@ -156,10 +209,16 @@ def warm_up() -> None:
         logger.warning("OCR warm-up failed", exc_info=True)
 
 
-def prepare_crop(image: np.ndarray, bbox_norm: Sequence[float], pad: float = 0.08) -> np.ndarray:
-    """Crop a part (with a little margin) and upscale small crops so the text is legible."""
+def prepare_crop(image: np.ndarray, bbox_norm: Sequence[float], pad: Optional[float] = None) -> np.ndarray:
+    """Crop a part and upscale small crops so the text is legible.
+
+    Small parts get a little margin (the box may clip the marking); large ones are inset
+    instead, leaving out the rows of pins along an IC's edges, which read as text.
+    """
     h, w = image.shape[:2]
     x1, y1, x2, y2 = bbox_norm
+    if pad is None:
+        pad = -0.07 if min((x2 - x1) * w, (y2 - y1) * h) >= 200 else 0.08
     px, py = (x2 - x1) * pad, (y2 - y1) * pad
     l, t = int(max(0, (x1 - px) * w)), int(max(0, (y1 - py) * h))
     r, b = int(min(w, (x2 + px) * w)), int(min(h, (y2 + py) * h))

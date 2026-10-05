@@ -150,7 +150,7 @@ function PointResultDetail({ point, onClose }: { point: AOIPointResult; onClose:
                   <Button size="sm" variant="primary" icon={Box} onClick={openDepth}>
                     ดูความสูง 3D
                   </Button>
-                  <span className="text-[11px] text-subtle">เลื่อนสเตจไปที่จุดนี้ ถ่าย 2 ภาพ แล้วกลับ — บอร์ดต้องอยู่ที่เดิม</span>
+                  <span className="text-[11px] text-subtle">เลื่อนสเตจไปถ่ายรอบจุดนี้หลายทิศแล้วกลับ — บอร์ดต้องอยู่ที่เดิม</span>
                 </>
               ) : (
                 <span className="text-xs text-muted">คลิกกรอบบนภาพ (หรือในรายการ) เพื่อเลือกชิ้น — อ่านตัวอักษรบนชิ้นและดูความสูงแบบ 3D</span>
