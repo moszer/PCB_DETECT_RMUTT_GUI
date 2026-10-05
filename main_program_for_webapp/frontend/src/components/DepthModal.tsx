@@ -83,11 +83,12 @@ export function DepthModal({ target, onClose }: { target: DepthTarget; onClose: 
                 <Stat label="ค่ากลางในกรอบ" value={data.stats.median_mm !== null ? `${data.stats.median_mm.toFixed(1)} mm` : "–"} />
               </div>
               <p className="text-[11px] text-muted -mt-1">
-                วัดได้โดยตรง {Math.round(data.stats.box_valid_ratio * 100)}% ของกรอบ — ที่เหลือเติมจากรอบข้าง
+                วัดได้โดยตรง {Math.round(data.stats.box_valid_ratio * 100)}% ของกรอบ (ค่าความสูงคิดจากส่วนนี้) — สีเทาคือที่วัดไม่ได้
                 {data.stats.box_valid_ratio < 0.5 && <span className="text-review"> (ผิวเรียบ/สะท้อนแสง ค่าอาจคลาดเคลื่อน)</span>}
               </p>
               <p className="text-[11px] text-muted -mt-2">
                 ใช้ภาพ {data.stats.views_used}/{data.stats.views_total} ทิศ
+                {!!data.stats.views_dropped && <> (ตัด {data.stats.views_dropped} ทิศที่ค่าไม่ตรงกับทิศอื่น)</>}
                 {data.stats.spread_mm !== null && <> · ค่าระหว่างทิศต่างกันราว ±{data.stats.spread_mm.toFixed(2)} mm</>}
               </p>
 

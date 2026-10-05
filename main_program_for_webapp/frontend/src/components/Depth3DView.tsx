@@ -21,9 +21,13 @@ export function heightColor(t: number): [number, number, number] {
   return [0, 1, 2].map((k) => stops[i][k] + (stops[i + 1][k] - stops[i][k]) * f) as [number, number, number];
 }
 
-/** Robust display range (2nd–98th percentile, always including the board level). */
+/** Cells the matcher could not measure (filled in from their surroundings) are drawn in this grey. */
+export const UNMEASURED_RGB: [number, number, number] = [0.42, 0.44, 0.48];
+
+/** Robust display range of the measured cells (2nd–98th percentile, always including the board level). */
 export function heightRange(data: DepthResult): [number, number] {
-  const sorted = [...data.heights].sort((a, b) => a - b);
+  const measured = data.heights.filter((_, i) => data.valid[i]);
+  const sorted = (measured.length ? measured : [...data.heights]).sort((a, b) => a - b);
   const lo = Math.min(0, sorted[Math.floor(sorted.length * 0.02)] ?? 0);
   const hi = Math.max(1, sorted[Math.floor(sorted.length * 0.98)] ?? 1);
   return [lo, hi];
@@ -105,7 +109,7 @@ export function Depth3DView({
       const pos = geometry.attributes.position as InstanceType<typeof THREE.BufferAttribute>;
       const colors = new Float32Array(gw * gh * 3);
       for (let i = 0; i < gw * gh; i++) {
-        const [r, g, b] = heightColor((heights[i] - lo) / (hi - lo || 1));
+        const [r, g, b] = data.valid[i] ? heightColor((heights[i] - lo) / (hi - lo || 1)) : UNMEASURED_RGB;
         colors.set([r, g, b], i * 3);
       }
       geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));

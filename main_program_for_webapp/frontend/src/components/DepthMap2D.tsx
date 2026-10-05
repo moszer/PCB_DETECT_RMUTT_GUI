@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { DepthResult } from "@/types";
 import { useElementSize } from "@/hooks/useElementSize";
-import { heightColor, heightRange } from "./Depth3DView";
+import { UNMEASURED_RGB, heightColor, heightRange } from "./Depth3DView";
 
 /** Where a w×h picture lands inside a box with object-contain. */
 function fit(box: { width: number; height: number }, w: number, h: number) {
@@ -79,17 +79,17 @@ export function DepthMap2D({ data }: { data: DepthResult }) {
     el.height = data.grid_h;
     const img = ctx.createImageData(data.grid_w, data.grid_h);
     data.heights.forEach((h, i) => {
-      const [r, g, b] = heightColor((h - lo) / (hi - lo || 1));
-      img.data.set([r * 255, g * 255, b * 255, data.valid[i] ? 255 : 150], i * 4);
+      // Unmeasured cells stay grey: their filled-in height is a guess, not a measurement.
+      const [r, g, b] = data.valid[i] ? heightColor((h - lo) / (hi - lo || 1)) : UNMEASURED_RGB;
+      img.data.set([r * 255, g * 255, b * 255, 255], i * 4);
     });
     ctx.putImageData(img, 0, 0);
   }, [data, lo, hi]);
 
-  const value = cursor
-    ? data.heights[
-        Math.min(data.grid_h - 1, Math.floor(cursor[1] * data.grid_h)) * data.grid_w + Math.min(data.grid_w - 1, Math.floor(cursor[0] * data.grid_w))
-      ]
+  const cell = cursor
+    ? Math.min(data.grid_h - 1, Math.floor(cursor[1] * data.grid_h)) * data.grid_w + Math.min(data.grid_w - 1, Math.floor(cursor[0] * data.grid_w))
     : null;
+  const value = cell !== null ? data.heights[cell] : null;
 
   return (
     <div className="flex flex-col gap-2">
@@ -103,10 +103,14 @@ export function DepthMap2D({ data }: { data: DepthResult }) {
         </Panel>
       </div>
       <span className="h-6 text-xs text-muted flex items-center">
-        {value !== null && value !== undefined ? (
-          <span className="font-mono tabular text-text">สูง {value.toFixed(1)} mm</span>
+        {cell !== null && value !== null && value !== undefined ? (
+          data.valid[cell] ? (
+            <span className="font-mono tabular text-text">สูง {value.toFixed(1)} mm</span>
+          ) : (
+            <span className="text-muted">ไม่มีข้อมูล — วัดจุดนี้ไม่ได้ (ผิวเงา/เรียบ หรือถูกบัง) · ประมาณ {value.toFixed(1)} mm จากรอบข้าง</span>
+          )
         ) : (
-          "ชี้บนภาพเพื่ออ่านความสูง · กรอบสีส้มคือชิ้นที่เลือก · ส่วนที่จางคือที่เติมจากรอบข้าง (วัดตรงไม่ได้)"
+          "ชี้บนภาพเพื่ออ่านความสูง · กรอบสีส้มคือชิ้นที่เลือก · สีเทาคือจุดที่วัดไม่ได้"
         )}
       </span>
     </div>

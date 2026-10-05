@@ -490,6 +490,8 @@ export interface DepthResult {
     /** Side shots that went into the map, out of those taken. */
     views_used: number;
     views_total: number;
+    /** Views left out for disagreeing with the others about the part's height. */
+    views_dropped?: number;
     /** Typical disagreement between the shots (mm); null with a single shot. */
     spread_mm: number | null;
   };

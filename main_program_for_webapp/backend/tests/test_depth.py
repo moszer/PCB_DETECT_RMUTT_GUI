@@ -110,10 +110,12 @@ class HeightMapTests(unittest.TestCase):
         a, bs = _noisy(a, 0), [_noisy(b, i + 1) for i, b in enumerate(bs)]
         views = [(b, estimate_shift(a, b)[:2]) for b in bs]
         one = height_map_views(a, views[:1], BOX, Z0)
-        self.assertGreater(abs(one["stats"]["median_mm"] - 6.0), 2.0)  # +X alone is lost on the lines
         four = height_map_views(a, views, BOX, Z0)
+        # +X alone matches little of the lines and guesses; ±Y sees them.
+        self.assertGreater(four["stats"]["box_valid_ratio"], one["stats"]["box_valid_ratio"])
+        self.assertGreater(four["stats"]["box_valid_ratio"], 0.85)
         self.assertAlmostEqual(four["stats"]["median_mm"], 6.0, delta=0.5)
-        self.assertGreater(four["stats"]["box_valid_ratio"], 0.9)
+        self.assertLess(abs(four["stats"]["median_mm"] - 6.0), abs(one["stats"]["median_mm"] - 6.0))
         self.assertEqual((four["stats"]["views_used"], four["stats"]["views_total"]), (4, 4))
         self.assertIsNotNone(four["stats"]["spread_mm"])
 
@@ -137,6 +139,26 @@ class HeightMapTests(unittest.TestCase):
         r = height_map_views(a, views, BOX, Z0)
         self.assertEqual((r["stats"]["views_used"], r["stats"]["views_total"]), (1, 2))
         self.assertAlmostEqual(r["stats"]["median_mm"], 4.0, delta=0.6)
+
+    def test_board_level_is_the_lowest_surface_not_the_median(self):
+        from app.core.depth import lowest_surface
+
+        rng = np.random.default_rng(0)
+        board = rng.normal(0.0, 0.4, 3000)
+        neighbours = rng.normal(40.0, 1.0, 5000)  # tall parts filling most of the margin
+        self.assertAlmostEqual(lowest_surface(np.concatenate([board, neighbours])), 0.0, delta=0.3)
+        self.assertAlmostEqual(lowest_surface(rng.normal(5.0, 0.4, 2000)), 5.0, delta=0.2)
+        # A few stray low matches are not a surface.
+        self.assertAlmostEqual(lowest_surface(np.concatenate([rng.normal(-30, 0.5, 40), board])), 0.0, delta=0.3)
+
+    def test_tall_neighbours_do_not_lift_the_board(self):
+        """Frame-wide shift locked onto tall parts' tops: the board must still read ~0."""
+        a, (b,) = scene_views([(200, 0)], 8.0)
+        k = Z0 / (Z0 - 8.0)
+        r = height_map(a, b, (200 * k, 0.0), BOX, Z0)  # as if the correlation followed the tops
+        self.assertAlmostEqual(r["stats"]["median_mm"], 8.0, delta=0.8)
+        grid = np.array(r["heights"]).reshape(r["grid_h"], r["grid_w"])
+        self.assertLess(abs(float(np.median(grid[:5, :]))), 0.6)
 
     def test_rejects_frames_that_did_not_move(self):
         a, _ = scene((0, 0), 5)
@@ -231,6 +253,12 @@ class DepthEndpointTests(unittest.TestCase):
             self.assertEqual(res.status_code, 200, res.text)
             self.assertEqual(measured.call_count, 4)
             self.assertAlmostEqual(res.json()["stats"]["median_mm"], 6.0, delta=0.7)
+        # Calibrated at another capture size (a crop of the same sensor): scaled by the height.
+        half = {"image_size": [n // 2, n // 2], "stage_to_image": [[self.PX_PER_MM / 2, 0], [0, self.PX_PER_MM / 2]]}
+        with patch.object(stage_calibration_service, "last_result", return_value=half):
+            np.testing.assert_allclose(depth_service._stage_matrix((n, n, 3)), [[self.PX_PER_MM, 0], [0, self.PX_PER_MM]])
+        with patch.object(stage_calibration_service, "last_result", return_value=None):
+            self.assertIsNone(depth_service._stage_matrix((n, n, 3)))
 
     def test_single_view_mode_moves_along_x_only(self):
         depth_service.clear()
