@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Maximize2, ZoomIn, ZoomOut } from "lucide-react";
 import { cx } from "./ui";
 
@@ -9,6 +9,10 @@ const STEP = 1.25;
 const PAN_START_PX = 6; // more than BoxOverlay's 5 px click tolerance, so a pan never clicks
 
 type View = { s: number; x: number; y: number };
+
+/** The zoom of the nearest ZoomPan (1 outside one): images load full resolution only when zoomed in. */
+const ZoomScale = createContext(1);
+export const useZoomScale = () => useContext(ZoomScale);
 
 /**
  * Zoom and pan any content (an image with boxes): mouse wheel or pinch to zoom around the
@@ -164,7 +168,7 @@ export function ZoomPan({
         className="origin-top-left will-change-transform"
         style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.s})` }}
       >
-        {children}
+        <ZoomScale.Provider value={view.s}>{children}</ZoomScale.Provider>
       </div>
 
       <div className="absolute bottom-2 right-2 z-10 flex items-center gap-0.5 rounded-lg bg-black/60 backdrop-blur p-0.5 text-white" onPointerDownCapture={(e) => e.stopPropagation()}>

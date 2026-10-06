@@ -10,6 +10,7 @@ import { ZoomPan } from "./ZoomPan";
 import { PerformanceView } from "./PerformanceView";
 import { Badge, Button, Card, EmptyState, IconButton, Modal, Segmented, Select, Spinner, Stat, VerdictBadge, buttonClasses, cx } from "./ui";
 import { useToast } from "./Toast";
+import { ProgressiveImage } from "./ProgressiveImage";
 
 const PAGE = 50;
 
@@ -252,8 +253,7 @@ function RunsTable({ refreshKey }: { refreshKey: number }) {
               className="text-left rounded-lg border border-line overflow-hidden hover:border-accent transition-colors cursor-pointer bg-surface"
             >
               <div className="relative aspect-video bg-viewport">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={pt.annotated_url} alt={pt.name ?? ""} className="size-full object-cover" loading="lazy" />
+                <ProgressiveImage src={pt.annotated_url} alt={pt.name ?? ""} fit="object-cover" previewWidth={480} />
                 <VerdictBadge verdict={pt.verdict} className="absolute top-1.5 right-1.5" />
               </div>
               <div className="px-2.5 py-2 text-xs">
@@ -308,8 +308,7 @@ function SinglesTable({ refreshKey }: { refreshKey: number }) {
             className="text-left rounded-lg border border-line overflow-hidden hover:border-accent transition-colors cursor-pointer"
           >
             <div className="relative aspect-video bg-viewport">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={s.annotated_url || s.image_url} alt={`การตรวจ #${s.id}`} className="size-full object-cover" loading="lazy" />
+              <ProgressiveImage src={s.annotated_url || s.image_url || ""} alt={`การตรวจ #${s.id}`} fit="object-cover" previewWidth={480} />
               <VerdictBadge verdict={s.verdict} className="absolute top-1.5 right-1.5" />
             </div>
             <div className="px-2.5 py-2 text-xs">
@@ -343,8 +342,7 @@ function SinglesTable({ refreshKey }: { refreshKey: number }) {
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <ZoomPan className="rounded-xl bg-viewport">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={detail.annotated_url || detail.image_url} alt="ภาพผลตรวจ" draggable={false} className="w-full max-h-[60vh] object-contain select-none" />
+                <ProgressiveImage src={detail.annotated_url || detail.image_url || ""} alt="ภาพผลตรวจ" layout="flow" className="max-h-[60vh]" />
               </ZoomPan>
               <a href={detail.annotated_url || detail.image_url} target="_blank" rel="noreferrer" className="self-end text-xs text-accent hover:underline">
                 เปิดภาพขนาดเต็มในแท็บใหม่

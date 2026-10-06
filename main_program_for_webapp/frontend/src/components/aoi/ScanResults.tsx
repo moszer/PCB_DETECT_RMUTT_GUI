@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { VERDICT_TONE } from "@/lib/format";
 import { VerdictBadge, cx } from "../ui";
 import { AnimatedResult, CaptureProgress, revealDelay } from "./ResultOverlay";
+import { ProgressiveImage } from "../ProgressiveImage";
 
 export type OutputItem = { kind: "point"; point: AOIPointResult } | { kind: "snap"; result: InspectionResult };
 
@@ -109,8 +110,7 @@ function IdleSummary({ refreshKey, onOpenPoint }: { refreshKey: string; onOpenPo
                   onClick={() => onOpenPoint?.(pt)}
                   className="relative min-h-0 rounded-lg overflow-hidden bg-black/40 cursor-zoom-in"
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={pt.annotated_url} alt={pt.name ?? ""} className="size-full object-contain opacity-85" loading="lazy" />
+                  <ProgressiveImage src={pt.annotated_url} alt={pt.name ?? ""} fit="object-contain" imgClassName="opacity-85" previewWidth={480} />
                   <span className={cx("absolute top-1.5 right-1.5 h-4 px-1 rounded text-[9px] font-bold", VERDICT_TONE[pt.verdict].solid)}>{pt.verdict}</span>
                   <span className="absolute bottom-0 inset-x-0 bg-black/60 text-[10px] px-1.5 py-0.5 text-left truncate">
                     {pt.point_index + 1}. {pt.name || `จุด ${pt.point_index + 1}`}

@@ -5,6 +5,7 @@ import { useElementSize } from "@/hooks/useElementSize";
 import { LABEL_FONT, LABEL_HEIGHT, OVERLAP_COLOR, boxesInRect, layoutLabels, overlappingPairs, paintOrder, pickAt, type NBox } from "@/lib/labelLayout";
 import { Segmented, cx } from "./ui";
 import { ZoomPan } from "./ZoomPan";
+import { ProgressiveImage } from "./ProgressiveImage";
 
 export type LabelMode = "all" | "focus" | "none";
 
@@ -157,8 +158,7 @@ export function BoxOverlay({
           setMarquee(null);
         }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src} alt={alt} draggable={false} className="w-full block pointer-events-none" />
+        <ProgressiveImage src={src} alt={alt} layout="flow" className="pointer-events-none" />
 
         {order.map((i) => {
           const b = boxes[i];

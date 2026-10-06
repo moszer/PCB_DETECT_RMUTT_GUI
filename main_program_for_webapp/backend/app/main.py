@@ -15,6 +15,7 @@ from .routers import (
     datasets_router,
     history_router,
     inspection_router,
+    media_router,
     references_router,
     system_router,
     ws_router,
@@ -91,6 +92,7 @@ app.include_router(camera_router)
 app.include_router(chat_router)
 app.include_router(datasets_router)
 app.include_router(inspection_router)
+app.include_router(media_router)
 app.include_router(aoi_router)
 app.include_router(references_router)
 app.include_router(history_router)

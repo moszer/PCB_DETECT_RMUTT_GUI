@@ -163,6 +163,9 @@ class StorageService:
         success = cv2.imwrite(str(file_path), image)
         if not success:
             raise IOError(f"Failed to write image file to {file_path}")
+        from ..core.thumbs import warm
+
+        warm(file_path)  # placeholder + preview ready before anyone opens the result
         # Build relative url
         rel_path = file_path.relative_to(RUNS_DIR.parent)
         url = f"/api/storage/{rel_path.as_posix()}"

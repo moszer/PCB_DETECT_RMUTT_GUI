@@ -7,6 +7,7 @@ import { classColor } from "@/lib/format";
 import { LABEL_FONT, LABEL_HEIGHT, layoutLabels, type NBox } from "@/lib/labelLayout";
 import { useElementSize } from "@/hooks/useElementSize";
 import { cx } from "../ui";
+import { ProgressiveImage } from "../ProgressiveImage";
 
 type Kind = "ok" | "fail" | "review" | "plain";
 
@@ -127,15 +128,13 @@ export function AnimatedResult({ item }: { item: ResultSource }) {
 
   return (
     <div ref={box} className="absolute inset-0">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
+      {/* Boxes are in original pixels: the size comes from /api/media/meta, not the preview. */}
+      <ProgressiveImage
         src={src}
         alt="ภาพผลตรวจ"
-        className="absolute inset-0 size-full object-contain"
-        onLoad={(e) => {
-          const img = e.currentTarget;
-          setNatural({ src, w: img.naturalWidth, h: img.naturalHeight });
-        }}
+        layout="fill"
+        fit="object-contain"
+        onMeta={(m) => setNatural({ src, w: m.width, h: m.height })}
         onError={() => useClean && setBroken(clean)}
       />
       {dims && scale > 0 && (

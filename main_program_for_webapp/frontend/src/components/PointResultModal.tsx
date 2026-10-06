@@ -11,6 +11,7 @@ import { DepthModal, type DepthTarget } from "./DepthModal";
 import { ChatPanel, type BoardContext } from "./ChatPanel";
 import { Badge, Button, Modal, SectionLabel, Spinner, Stat, VerdictBadge, cx } from "./ui";
 import { useToast } from "./Toast";
+import { imageMeta, isStorageImage } from "@/lib/media";
 
 const SLOT_COLOR: Record<SlotStatus, string> = { confirmed: "#22c55e", uncertain: "#f59e0b", missing: "#ef4444", wrong: "#ef4444" };
 
@@ -98,6 +99,16 @@ function PointResultDetail({ point, onClose }: { point: AOIPointResult; onClose:
   const [dims, setDims] = useState<{ src: string; w: number; h: number } | null>(null);
   useEffect(() => {
     if (slots.length) return;
+    if (isStorageImage(src)) {
+      // The original size without downloading the 19 MB original.
+      let live = true;
+      imageMeta(src)
+        .then((m) => live && setDims({ src, w: m.width, h: m.height }))
+        .catch(() => undefined);
+      return () => {
+        live = false;
+      };
+    }
     const img = new Image();
     img.onload = () => setDims({ src, w: img.naturalWidth, h: img.naturalHeight });
     img.src = src;
