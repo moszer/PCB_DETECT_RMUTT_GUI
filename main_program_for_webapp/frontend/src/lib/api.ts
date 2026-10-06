@@ -19,6 +19,8 @@ import type {
   OcrResult,
   ResistorResult,
   PointSet,
+  BoardDetail,
+  BoardSummary,
   PointSetMeta,
   CustomPointRequest,
   LabelBox,
@@ -207,6 +209,15 @@ export const api = {
   homeMachine: () => post("/api/aoi/home"),
   jogMachine: (dx_mm: number, dy_mm: number, speed: number) => post("/api/aoi/jog", { dx_mm, dy_mm, speed }),
   moveToPosition: (x_mm: number, y_mm: number, speed: number) => post("/api/aoi/move", { x_mm, y_mm, speed }),
+  boards: {
+    list: () => request<{ boards: BoardSummary[] }>("/api/boards").then((r) => r.boards),
+    get: (id: string) => request<BoardDetail>(`/api/boards/${encodeURIComponent(id)}`),
+    thumb: (id: string, index: number, w: 240 | 480 | 960 = 480, updated = 0) =>
+      `${API_BASE}/api/boards/${encodeURIComponent(id)}/points/${index}/thumb.jpg?w=${w}&v=${Math.round(updated)}`,
+    exportUrl: (id: string) => `${API_BASE}/api/boards/${encodeURIComponent(id)}/export`,
+    duplicate: (id: string, name?: string) => post<PointSetMeta>(`/api/boards/${encodeURIComponent(id)}/duplicate`, { name }),
+    importBoard: (body: unknown) => post<PointSetMeta>("/api/boards/import", body),
+  },
   pointSets: {
     list: () => request<{ sets: PointSetMeta[] }>("/api/aoi/point-sets").then((r) => r.sets),
     get: (id: string) => request<PointSet>(`/api/aoi/point-sets/${encodeURIComponent(id)}`),

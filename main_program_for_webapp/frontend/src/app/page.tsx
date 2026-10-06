@@ -7,7 +7,7 @@ import { SplashScreen } from "@/components/SplashScreen";
 import { ToastProvider } from "@/components/Toast";
 import { InspectionView } from "@/components/InspectionView";
 import { AOIScanView } from "@/components/aoi/AOIScanView";
-import { ReferencesView } from "@/components/ReferencesView";
+import { BoardsView } from "@/components/BoardsView";
 import { HistoryView } from "@/components/HistoryView";
 import { SettingsView } from "@/components/SettingsView";
 import { HardwareView } from "@/components/HardwareView";
@@ -190,7 +190,9 @@ function Station() {
           )}
           {tab === "inspect" && <InspectionView references={references} params={params} setParams={setParams} status={liveStatus} />}
           {tab === "dataset" && <DatasetView status={liveStatus} progress={datasetProgress} params={params} onRefreshStatus={refreshStatus} />}
-          {tab === "references" && <ReferencesView references={references} onRefresh={refreshReferences} />}
+          {tab === "references" && (
+            <BoardsView references={references} onRefreshReferences={refreshReferences} onOpenBoard={() => setTab("aoi")} isOperator={lease.isMine} />
+          )}
           {tab === "history" && <HistoryView />}
           {tab === "hardware" && <HardwareView isOperator={lease.isMine} />}
           {tab === "settings" && <SettingsView onRefreshStatus={refreshStatus} isOperator={lease.isMine} />}

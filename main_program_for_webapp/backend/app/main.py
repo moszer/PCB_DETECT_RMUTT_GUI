@@ -10,6 +10,7 @@ from .config import DB_PATH, DEFAULT_MODEL_PATH, STORAGE_DIR, settings
 from .routers import (
     aoi_router,
     auth_router,
+    boards_router,
     camera_router,
     chat_router,
     datasets_router,
@@ -91,6 +92,7 @@ for asset_dir in ("uploads", "runs", "references", "datasets"):
 # Include Routers
 app.include_router(system_router)
 app.include_router(auth_router)
+app.include_router(boards_router)
 app.include_router(camera_router)
 app.include_router(chat_router)
 app.include_router(datasets_router)

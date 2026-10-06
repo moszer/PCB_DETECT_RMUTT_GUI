@@ -12,6 +12,8 @@ import { useToast } from "../Toast";
 export type ActiveBoard = { id: string; name: string } | null;
 
 const AUTOSAVE_MS = 800;
+/** Set by the boards page before switching to the scan page: open this board there. */
+export const OPEN_BOARD_KEY = "pcb_aoi_open_board";
 
 /**
  * Boards (named sets of test points) stored on the station. A board must be created or
@@ -93,6 +95,27 @@ export function PointSets({
     onLoad(loadedPoints);
     onBoardChange({ id, name: nameOf });
   };
+
+  // "Open in the scan page" from the boards page: it leaves the board id here and switches tab.
+  useEffect(() => {
+    let id: string | null = null;
+    try {
+      id = localStorage.getItem(OPEN_BOARD_KEY);
+      if (id) localStorage.removeItem(OPEN_BOARD_KEY);
+    } catch {
+      id = null;
+    }
+    if (!id) return;
+    api.pointSets
+      .get(id)
+      .then((set) => {
+        open(set.id, set.name, set.points);
+        toast.success(`เปิดบอร์ด “${set.name}” แล้ว`, `${set.point_count} จุด`);
+      })
+      .catch((err) => toast.error("เปิดบอร์ดไม่สำเร็จ", errorMessage(err)));
+    // Once, when the scan page opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const create = () =>
     run(async () => {

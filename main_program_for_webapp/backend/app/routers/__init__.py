@@ -1,6 +1,7 @@
 """FastAPI routers."""
 from .aoi import router as aoi_router
 from .auth import router as auth_router
+from .boards import router as boards_router
 from .camera import router as camera_router
 from .chat import router as chat_router
 from .datasets import router as datasets_router
@@ -14,6 +15,7 @@ from .ws import router as ws_router
 __all__ = [
     "aoi_router",
     "auth_router",
+    "boards_router",
     "camera_router",
     "chat_router",
     "datasets_router",

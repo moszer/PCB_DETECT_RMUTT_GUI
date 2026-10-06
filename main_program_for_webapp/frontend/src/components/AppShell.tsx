@@ -41,7 +41,7 @@ export const NAV: Array<{ id: TabId; label: string; short: string; icon: LucideI
   { id: "aoi", label: "สแกน AOI", short: "AOI", icon: ScanLine, description: "มาร์คจุด สอนต้นแบบ และสแกนบอร์ดอัตโนมัติด้วยสเตจ XY" },
   { id: "inspect", label: "ตรวจภาพเดี่ยว", short: "ตรวจภาพ", icon: ImageIcon, description: "ตรวจจากกล้องสดหรืออัปโหลดภาพ เทียบกับโปรไฟล์อ้างอิง" },
   { id: "dataset", label: "ชุดข้อมูลเทรน", short: "ข้อมูล", icon: Database, description: "มาร์ค 4 มุมบอร์ด ถ่ายทั้งบอร์ดอัตโนมัติ แก้ label และดาวน์โหลดไปเทรนโมเดล" },
-  { id: "references", label: "โปรไฟล์อ้างอิง", short: "อ้างอิง", icon: BookMarked, description: "โปรไฟล์บอร์ดต้นแบบ (Golden reference)" },
+  { id: "references", label: "บอร์ด", short: "บอร์ด", icon: BookMarked, description: "บอร์ดที่สอนไว้: ภาพต้นแบบ ความพร้อมก่อนสแกน ประวัติและ yield ของแต่ละบอร์ด" },
   { id: "history", label: "ประวัติ & Yield", short: "ประวัติ", icon: BarChart3, description: "ผลการตรวจย้อนหลังและอัตราผ่านการผลิต" },
   { id: "hardware", label: "ประสิทธิภาพเครื่อง", short: "เครื่อง", icon: Gauge, description: "CPU/GPU แต่ละคอร์ อุณหภูมิ พลังงาน พัดลม และโหมดพลังงาน Jetson แบบสด" },
   { id: "settings", label: "ตั้งค่าสถานี", short: "ตั้งค่า", icon: Settings, description: "โมเดล ฮาร์ดแวร์ประมวลผล ขอบเขตสเตจ และข้อมูลสถานี" },

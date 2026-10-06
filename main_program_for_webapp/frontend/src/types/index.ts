@@ -473,6 +473,48 @@ export interface PointSet extends PointSetMeta {
   points: CustomPointRequest[];
 }
 
+/** A board on the boards page: classes, readiness and scan history (no pictures). */
+export interface BoardSummary extends PointSetMeta {
+  classes: Record<string, number>;
+  taught_points: number;
+  ready_points: number;
+  issue_points?: number;
+  cover_point?: number | null;
+  board_issues: string[];
+  history: BoardHistory;
+}
+
+export interface BoardHistory {
+  runs: number;
+  completed: number;
+  pass: number;
+  fail: number;
+  review: number;
+  yield_pct: number | null;
+  last: { id: string; created_at: number; overall_verdict: Verdict; status: string } | null;
+  recent: { id: string; created_at: number; overall_verdict: Verdict; status: string; pass_count: number; fail_count: number; review_count: number; total_points: number }[];
+  top_failing_points: { point_id: string; name: string; fails: number }[];
+  top_failing_parts: { point: string; part: string; class: string; status: string; count: number }[];
+}
+
+export interface BoardPoint {
+  index: number;
+  id: string;
+  name: string;
+  x_mm: number;
+  y_mm: number;
+  zoom: number;
+  has_reference: boolean;
+  reference_size: [number, number] | null;
+  components: number;
+  classes: Record<string, number>;
+  issues: string[];
+}
+
+export interface BoardDetail extends BoardSummary {
+  points: BoardPoint[];
+}
+
 /** Text printed on a part, read by /api/inspection/ocr. */
 export interface OcrResult {
   text: string;
