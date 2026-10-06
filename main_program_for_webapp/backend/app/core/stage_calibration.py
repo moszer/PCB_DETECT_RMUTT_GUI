@@ -88,18 +88,52 @@ def _to_mm(m_inv: np.ndarray, vec_px: Sequence[float]) -> np.ndarray:
     return m_inv @ np.asarray(vec_px, np.float64)
 
 
+def find_checkerboard(frame: np.ndarray, inner_corners: Tuple[int, int], square_mm: float) -> Optional[Dict[str, Any]]:
+    """Camera scale from a checkerboard of known square size: {mm_per_px, pattern} or None.
+
+    Searched on a ~1600 px copy (a 4K frame is slow and less reliable), with the counts as
+    given, swapped (landscape/portrait), and one less each way (squares counted instead of
+    the inner corners — a common slip).
+    """
+    gray = to_gray(frame)
+    h, w = gray.shape[:2]
+    scale = min(1.0, 1600 / max(h, w))
+    small = cv2.resize(gray, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA) if scale < 1 else gray
+    cols, rows = inner_corners
+    tries = [(cols, rows), (rows, cols), (cols - 1, rows - 1), (rows - 1, cols - 1)]
+    flags = cv2.CALIB_CB_NORMALIZE_IMAGE | cv2.CALIB_CB_EXHAUSTIVE | cv2.CALIB_CB_ACCURACY
+    for pattern in dict.fromkeys(t for t in tries if min(t) >= 2):
+        found, corners = cv2.findChessboardCornersSB(small, pattern, flags=flags)
+        if not found:
+            continue
+        c = corners.reshape(pattern[1], pattern[0], 2) / scale
+        steps = np.concatenate([
+            np.linalg.norm(np.diff(c, axis=1), axis=2).ravel(),
+            np.linalg.norm(np.diff(c, axis=0), axis=2).ravel(),
+        ])
+        return {"mm_per_px": float(square_mm / np.median(steps)), "pattern": [int(pattern[0]), int(pattern[1])]}
+    return None
+
+
 def checkerboard_mm_per_px(frame: np.ndarray, inner_corners: Tuple[int, int], square_mm: float) -> Optional[float]:
     """Camera scale from a checkerboard (inner corners cols x rows) of known square size."""
-    gray = to_gray(frame)
-    found, corners = cv2.findChessboardCornersSB(gray, inner_corners, flags=cv2.CALIB_CB_NORMALIZE_IMAGE)
-    if not found:
-        return None
-    c = corners.reshape(inner_corners[1], inner_corners[0], 2)
-    steps = np.concatenate([
-        np.linalg.norm(np.diff(c, axis=1), axis=2).ravel(),
-        np.linalg.norm(np.diff(c, axis=0), axis=2).ravel(),
-    ])
-    return float(square_mm / np.median(steps))
+    found = find_checkerboard(frame, inner_corners, square_mm)
+    return found["mm_per_px"] if found else None
+
+
+def checkerboard_image(inner_corners: Tuple[int, int], square_mm: float, dpi: int = 300, margin_mm: float = 10.0) -> np.ndarray:
+    """A printable board (white margin, black/white squares) at `dpi`: inner corners cols x rows."""
+    cols, rows = inner_corners
+    px = square_mm / 25.4 * dpi
+    m = int(round(margin_mm / 25.4 * dpi))
+    w, h = int(round((cols + 1) * px)), int(round((rows + 1) * px))
+    img = np.full((h + 2 * m, w + 2 * m), 255, np.uint8)
+    for r in range(rows + 1):
+        for c in range(cols + 1):
+            if (r + c) % 2 == 0:
+                x0, y0 = m + int(round(c * px)), m + int(round(r * px))
+                img[y0:m + int(round((r + 1) * px)), x0:m + int(round((c + 1) * px))] = 0
+    return img
 
 
 def summarize(

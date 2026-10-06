@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 from ..config import STORAGE_DIR, settings
-from ..core.stage_calibration import checkerboard_mm_per_px, fit_axis, measure_shift, summarize
+from ..core.stage_calibration import find_checkerboard, fit_axis, measure_shift, summarize
 from .camera_service import camera_service
 from .machine_service import machine_service
 
@@ -155,9 +155,14 @@ class StageCalibrationService:
         self._advance("ถ่ายภาพอ้างอิง")
         mm_per_px = None
         if checkerboard and square_mm:
-            mm_per_px = checkerboard_mm_per_px(ref, checkerboard, square_mm)
-            if mm_per_px is None:
-                raise ValueError("หา checkerboard ในภาพไม่เจอ — ตรวจจำนวนมุมด้านใน และให้ทั้งแผ่นอยู่ในภาพ")
+            board = find_checkerboard(ref, checkerboard, square_mm)
+            if board is None:
+                raise ValueError(
+                    f"ไม่เห็น checkerboard ({checkerboard[0]}×{checkerboard[1]} มุมด้านใน) ในภาพกล้อง — วางแผ่นให้ราบใต้กล้อง "
+                    "ทั้งแผ่นอยู่ในภาพ หรือปิดตัวเลือก “ใช้ checkerboard” ถ้าไม่ต้องการวัดสเกลจริง (ค่าอื่นวัดได้ครบ)"
+                )
+            mm_per_px = board["mm_per_px"]
+            checkerboard = tuple(board["pattern"])
 
         fits = {}
         for axis in ("x", "y"):

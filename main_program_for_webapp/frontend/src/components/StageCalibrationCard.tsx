@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Play, Ruler, Square, Wand2 } from "lucide-react";
+import { Download, Play, Ruler, Square, Wand2 } from "lucide-react";
 import type { StageAxisCalibration, StageCalibrationResult, StageCalibrationStatus } from "@/types";
-import { api } from "@/lib/api";
-import { Button, Card, CardHeader, Field, NumberInput, Stat, Toggle, cx } from "./ui";
+import { API_BASE, api } from "@/lib/api";
+import { Button, Card, CardHeader, Field, NumberInput, Stat, Toggle, buttonClasses, cx } from "./ui";
 import { useToast } from "./Toast";
 
 const um = (mm: number | undefined | null) => (mm === undefined || mm === null ? "–" : `${Math.round(mm * 1000)} µm`);
@@ -215,6 +215,19 @@ export function StageCalibrationCard({ isOperator }: { isOperator: boolean }) {
               <Field label="ขนาดช่อง">
                 <NumberInput value={squareMm} min={0.1} max={50} step={0.1} suffix="mm" onChange={setSquareMm} />
               </Field>
+              <div className="col-span-3 flex flex-wrap items-center gap-2 text-[11px] text-muted">
+                <a
+                  className={buttonClasses("secondary", "sm")}
+                  href={`${API_BASE}/api/aoi/calibration/checkerboard.png?cols=${cols}&rows=${rows}&square_mm=${squareMm}`}
+                  download
+                >
+                  <Download className="size-3.5" /> ดาวน์โหลด checkerboard สำหรับพิมพ์
+                </a>
+                <span>
+                  {cols + 1}×{rows + 1} ช่อง ({((cols + 1) * squareMm).toFixed(0)}×{((rows + 1) * squareMm).toFixed(0)} mm) · พิมพ์ขนาดจริง 100% แล้ววัดช่องด้วยไม้บรรทัด
+                  ใส่ค่าที่วัดได้ในช่อง “ขนาดช่อง” · วางให้ราบ ทั้งแผ่นอยู่ในภาพกล้อง
+                </span>
+              </div>
             </div>
           )}
         </div>

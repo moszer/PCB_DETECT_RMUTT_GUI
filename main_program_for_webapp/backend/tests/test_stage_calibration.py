@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from app.config import settings
 from app.core.security import lease_manager
-from app.core.stage_calibration import checkerboard_mm_per_px, fit_axis, measure_shift, summarize
+from app.core.stage_calibration import checkerboard_image, checkerboard_mm_per_px, find_checkerboard, fit_axis, measure_shift, summarize
 from app.main import app
 from app.services import stage_calibration_service as scs_module
 from app.services.machine_service import machine_service
@@ -96,6 +96,46 @@ class MathTests(unittest.TestCase):
         mm = checkerboard_mm_per_px(img, (10, 7), 5.0)
         self.assertAlmostEqual(mm, 5.0 / sq, delta=0.002)
         self.assertIsNone(checkerboard_mm_per_px(np.full((200, 200), 128, np.uint8), (10, 7), 5.0))
+
+
+class CheckerboardTests(unittest.TestCase):
+    def _scene(self, inner=(9, 6), square_mm=5.0, px_per_mm=40.0, size=3840, angle=4.0):
+        """The printable board as a 4K camera sees it: scaled, slightly turned, on a PCB-red mat."""
+        board = checkerboard_image(inner, square_mm, dpi=int(round(px_per_mm * 25.4)), margin_mm=4)
+        h, w = board.shape
+        canvas = np.full((size, size), 90, np.uint8)
+        y0, x0 = (size - h) // 2, (size - w) // 2
+        canvas[y0:y0 + h, x0:x0 + w] = board
+        m = cv2.getRotationMatrix2D((size / 2, size / 2), angle, 1.0)
+        canvas = cv2.warpAffine(canvas, m, (size, size), borderValue=90)
+        return cv2.cvtColor(cv2.GaussianBlur(canvas, (0, 0), 1.5), cv2.COLOR_GRAY2BGR)
+
+    def test_finds_the_board_in_a_4k_frame_even_with_counts_swapped_or_squares_counted(self):
+        img = self._scene()
+        for given in [(9, 6), (6, 9), (10, 7)]:
+            with self.subTest(given=given):
+                found = find_checkerboard(img, given, 5.0)
+                self.assertIsNotNone(found)
+                self.assertAlmostEqual(found["mm_per_px"], 1 / 40.0, delta=0.0005)
+                self.assertEqual(sorted(found["pattern"]), [6, 9])
+
+    def test_a_pcb_without_a_board_reads_nothing(self):
+        rng = np.random.default_rng(1)
+        pcb = cv2.GaussianBlur(rng.integers(0, 255, (1200, 1600, 3)).astype(np.uint8), (0, 0), 3)
+        self.assertIsNone(find_checkerboard(pcb, (9, 6), 5.0))
+
+    def test_printable_board_endpoint(self):
+        from fastapi.testclient import TestClient
+        from PIL import Image
+        import io
+
+        res = TestClient(app).get("/api/aoi/calibration/checkerboard.png", params={"cols": 9, "rows": 6, "square_mm": 5})
+        self.assertEqual(res.status_code, 200)
+        im = Image.open(io.BytesIO(res.content))
+        self.assertEqual(round(im.info["dpi"][0]), 300)
+        # 10 x 7 squares of 5 mm plus 10 mm margins, at 300 DPI.
+        self.assertAlmostEqual(im.width, (10 * 5 + 20) / 25.4 * 300, delta=3)
+        self.assertEqual(TestClient(app).get("/api/aoi/calibration/checkerboard.png", params={"cols": 1}).status_code, 400)
 
 
 class Carriage:

@@ -275,6 +275,24 @@ def calibration_status():
     return stage_calibration_service.status()
 
 
+@router.get("/calibration/checkerboard.png")
+def checkerboard_png(cols: int = 9, rows: int = 6, square_mm: float = 5.0):
+    """A printable checkerboard (300 DPI: print at 100 % / actual size, then measure a square)."""
+    import io
+
+    from fastapi.responses import Response
+    from PIL import Image
+
+    from ..core.stage_calibration import checkerboard_image
+
+    if not (3 <= cols <= 40 and 3 <= rows <= 40 and 0.5 <= square_mm <= 50):
+        raise HTTPException(status_code=400, detail="cols/rows 3-40, square_mm 0.5-50")
+    buf = io.BytesIO()
+    Image.fromarray(checkerboard_image((cols, rows), square_mm)).save(buf, format="PNG", dpi=(300, 300))
+    name = f"checkerboard_{cols}x{rows}_{square_mm:g}mm.png"
+    return Response(buf.getvalue(), media_type="image/png", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
 @router.post("/calibration/start")
 def start_calibration(
     req: CalibrationRequest,
