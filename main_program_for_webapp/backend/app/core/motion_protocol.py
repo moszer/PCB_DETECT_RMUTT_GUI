@@ -82,7 +82,7 @@ class MotionClient:
             raise IOError("Incomplete serial write")
         self._emit("wire", "TX  " + line)
 
-    def command(self, kind: str, x: int = 0, y: int = 0, speed: int = 800) -> int:
+    def command(self, kind: str, x: int = 0, y: int = 0, speed: int = 800, extra: Optional[int] = None) -> int:
         if self.closed or not self.ready:
             raise ValueError("Connect and wait for firmware v2 first.")
         if kind not in ("MOVE", "HOME", "STOP", "OFF", "TONE"):
@@ -98,8 +98,8 @@ class MotionClient:
             max_y = min(self.limits[1], self.soft_limits[1]) if self.soft_limits else self.limits[1]
             if not all(isinstance(v, int) for v in (x, y, speed)) or not (0 <= x <= max_x and 0 <= y <= max_y and 20 <= speed <= 1500):
                 raise ValueError("Move is outside travel or speed limits.")
-        if kind == "TONE" and not (50 <= x <= 4000 and 5 <= y <= 5000 and 1 <= speed <= 3):
-            raise ValueError("Tone: 50-4000 Hz, 5-5000 ms, motors mask 1-3.")
+        if kind == "TONE" and not (50 <= x <= 4000 and 5 <= y <= 5000 and 1 <= speed <= 3 and (extra or 1) in (1, 2, 3, 4)):
+            raise ValueError("Tone: 50-4000 Hz, 5-5000 ms, motors mask 1-3, swing 1-4.")
         self.sequence += 1
         timeout = 540 if kind == "HOME" else (
             max(abs(x - self.position[0]), abs(y - self.position[1])) / speed + 15 if kind == "MOVE"
@@ -109,8 +109,11 @@ class MotionClient:
         if kind in ("HOME", "OFF"):
             self.homed = False
             self.home_verified = False
-        # TONE reuses the three numbers: frequency (Hz), duration (ms), motors mask.
-        self._write(f"@{self.sequence} {kind}" + (f" {x} {y} {speed}" if kind in ("MOVE", "TONE") else ""))
+        # TONE reuses the numbers: frequency (Hz), duration (ms), motors mask, swing (half-steps).
+        args = f" {x} {y} {speed}" if kind in ("MOVE", "TONE") else ""
+        if kind == "TONE" and extra:
+            args += f" {extra}"
+        self._write(f"@{self.sequence} {kind}" + args)
         return self.sequence
 
     def _fault(self, message: str):

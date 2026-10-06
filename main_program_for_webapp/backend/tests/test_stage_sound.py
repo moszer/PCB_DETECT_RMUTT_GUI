@@ -59,9 +59,16 @@ class ToneProtocolTests(unittest.TestCase):
 
     def test_tone_limits(self):
         client, _ = self._client()
-        for args in [(20, 100, 3), (440, 9000, 3), (440, 100, 0)]:
+        for args in [(20, 100, 3), (440, 9000, 3), (440, 100, 0), (440, 100, 3, 5)]:
             with self.assertRaises(ValueError):
                 client.command("TONE", *args)
+
+    def test_swing_is_sent_when_given(self):
+        client, _ = self._client()
+        lines = []
+        client.on_event = lambda kind, data: kind == "wire" and lines.append(data)
+        seq = client.command("TONE", 1200, 100, 3, 2)
+        self.assertIn(f"TX  @{seq} TONE 1200 100 3 2", lines)
 
 
 class TuneTests(unittest.TestCase):
@@ -100,7 +107,8 @@ class TuneTests(unittest.TestCase):
 
     def test_tunes_are_short(self):
         for name, notes in TUNES.items():
-            self.assertLess(sum(ms for _, ms in notes), 1000, name)
+            self.assertLess(sum(ms for _, ms, _ in notes), 1000, name)
+            self.assertTrue(all(1 <= sw <= 4 for _, _, sw in notes), name)
 
 
 if __name__ == "__main__":

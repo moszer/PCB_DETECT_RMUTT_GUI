@@ -4,8 +4,9 @@
  * Idle coils are switched off IDLE_RELEASE_MS after each command finishes (the 28BYJ-48 runs
  * hot when held); position and HOME are kept: the 1:64 gearbox holds the axis, and the next
  * MOVE re-energizes the same coil phase. OFF still clears HOME; RELEASE switches off now.
- * TONE f ms [mask]: buzz the motors at f Hz (50-4000) for ms (5-5000) by flipping the coils
- * between the current step and the next; they end on the current step, so position and HOME
+ * TONE f ms [mask] [swing]: buzz the motors at f Hz (50-4000) for ms (5-5000) by flipping the
+ * coils between two steps around the current one, `swing` half-steps apart (1 = current/next,
+ * 2 = -1/+1, 4 = -2/+2: wider is louder); they end on the current step, so position and HOME
  * stay. mask: 1 = X, 2 = Y, 3 = both (default). ACK, then DONE when it ends.
  */
 #include <AccelStepper.h>
@@ -19,8 +20,8 @@ public:
   AxisStepper(uint8_t a, uint8_t b, uint8_t c, uint8_t d)
     : AccelStepper(8, a, b, c, d) {}
   void hold() { enableOutputs(); step(currentPosition()); }
-  // Coils of the current step (false) or the next one (true), without moving the counter.
-  void buzz(bool next) { step(currentPosition() + (next ? 1 : 0)); }
+  // Coils of a step `offset` half-steps from the current one, without moving the counter.
+  void buzz(int offset) { step(currentPosition() + offset); }
   void advance(int direction) {
     setCurrentPosition(currentPosition()+direction);
     step(currentPosition());
@@ -55,6 +56,7 @@ unsigned long idleSince=0;
 unsigned long toneHalfUs=0, toneLast=0, toneEnd=0;
 uint8_t toneMask=0;
 bool toneNext=false;
+int toneLow=0, toneHigh=1;
 char inputLine[96];
 uint8_t inputLength=0;
 bool inputOverflow=false;
@@ -99,8 +101,8 @@ void reject(unsigned long id, const __FlashStringHelper *reason) {
   Serial.print(F("[ERR] ")); Serial.print(id); Serial.print(' '); Serial.print(reason); Serial.print(' '); positionFields();
 }
 void endTone() {
-  if (toneMask & 1) stepperX.buzz(false);
-  if (toneMask & 2) stepperY.buzz(false);
+  if (toneMask & 1) stepperX.buzz(0);
+  if (toneMask & 2) stepperY.buzz(0);
   toneMask=0;
 }
 void haltMotion() {
@@ -172,8 +174,9 @@ void runHoming() {
   }
 }
 
-void startTone(unsigned long id, long freq, long ms, long mask) {
-  if (freq<50 || freq>4000 || ms<5 || ms>5000 || mask<1 || mask>3) { reject(id,F("BAD_TONE")); return; }
+void startTone(unsigned long id, long freq, long ms, long mask, long swing) {
+  if (freq<50 || freq>4000 || ms<5 || ms>5000 || mask<1 || mask>3 || swing<1 || swing>4) { reject(id,F("BAD_TONE")); return; }
+  toneLow=-(int)(swing/2); toneHigh=(int)swing+toneLow;
   activeId=id; acknowledge(id); powerOn();
   toneHalfUs=500000UL/(unsigned long)freq; toneEnd=millis()+(unsigned long)ms;
   toneLast=micros(); toneNext=false; toneMask=(uint8_t)mask; phase=TONE;
@@ -183,8 +186,8 @@ void runTone() {
   unsigned long now=micros();
   if (now-toneLast>=toneHalfUs) {
     toneLast+=toneHalfUs; toneNext=!toneNext;
-    if (toneMask & 1) stepperX.buzz(toneNext);
-    if (toneMask & 2) stepperY.buzz(toneNext);
+    if (toneMask & 1) stepperX.buzz(toneNext ? toneHigh : toneLow);
+    if (toneMask & 2) stepperY.buzz(toneNext ? toneHigh : toneLow);
   }
 }
 
@@ -255,9 +258,10 @@ void processLine(char *line) {
   if ((!strcmp(cmd,"SETHOME") || !strcmp(cmd,"SETZERO")) && !args) { reject(id,F("USE_HOME")); return; }
   if (!strcmp(cmd,"ON") && !args) { powerOn(); activeId=id; acknowledge(id); complete(); return; }
   if (!strcmp(cmd,"RELEASE") && !args) { powerOff(); activeId=id; acknowledge(id); complete(); return; }
-  if (!strcmp(cmd,"TONE") && (args==2 || args==3)) {
-    long f, ms, mask=3;
-    if (parseLong(tokens[p],f) && parseLong(tokens[p+1],ms) && (args==2 || parseLong(tokens[p+2],mask))) { startTone(id,f,ms,mask); return; }
+  if (!strcmp(cmd,"TONE") && args>=2 && args<=4) {
+    long f, ms, mask=3, swing=1;
+    if (parseLong(tokens[p],f) && parseLong(tokens[p+1],ms) && (args<3 || parseLong(tokens[p+2],mask)) &&
+        (args<4 || parseLong(tokens[p+3],swing))) { startTone(id,f,ms,mask,swing); return; }
   }
   long x,y,speed;
   if (!strcmp(cmd,"S") && args==1 && parseLong(tokens[p],speed) && speed>=20 && speed<=1500) {

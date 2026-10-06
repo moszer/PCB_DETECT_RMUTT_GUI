@@ -15,13 +15,17 @@ from ..core.schemas import MachineState
 
 logger = logging.getLogger("machine_service")
 
-# Short tunes the motors buzz (frequency Hz, duration ms; 0 Hz = rest). Both motors play together.
-TUNES: Dict[str, List[Tuple[int, int]]] = {
-    "done": [(1760, 70)],
-    "pass": [(1319, 90), (0, 40), (1760, 160)],
-    "fail": [(523, 220), (0, 60), (392, 380)],
-    "error": [(440, 140), (0, 60), (440, 140), (0, 60), (440, 140)],
-    "test": [(1047, 120), (1319, 120), (1568, 120), (2093, 240)],
+# Short tunes the motors buzz: (frequency Hz, duration ms, swing half-steps; 0 Hz = rest).
+# Notes and swings were picked from a sweep recorded with the camera's microphone on the
+# station (dB over the room): the frame rings loudest near 1200 Hz (+21 dB at swing 2),
+# 880 Hz likes swing 4 (+18), the low 150/220 Hz and 3000 Hz swing 3 (+17/+20). The first
+# tunes (1319-1760 Hz, swing 1) sat at +4..+17 dB.
+TUNES: Dict[str, List[Tuple[int, int, int]]] = {
+    "done": [(1200, 120, 2)],
+    "pass": [(880, 130, 4), (0, 50, 1), (1200, 220, 2)],
+    "fail": [(220, 260, 3), (0, 70, 1), (150, 420, 3)],
+    "error": [(3000, 150, 3), (0, 70, 1), (3000, 150, 3), (0, 70, 1), (3000, 150, 3)],
+    "test": [(220, 140, 3), (880, 140, 4), (1200, 140, 2), (3000, 260, 3)],
 }
 
 
@@ -396,13 +400,13 @@ class MachineService:
         with self._lock:
             return bool(self._client and not self._client.closed and self._client.ready and "TONE" in self._client.capabilities)
 
-    def tone(self, freq: int, ms: int, motors: int = 3) -> None:
+    def tone(self, freq: int, ms: int, motors: int = 3, swing: int = 1) -> None:
         """Buzz the motors (blocking until the tone ends). Position and HOME are kept."""
         evt = threading.Event()
         with self._lock:
             if not self._client or self._client.closed or not self._client.ready:
                 raise ValueError("Machine is not connected.")
-            seq = self._client.command("TONE", int(freq), int(ms), int(motors))
+            seq = self._client.command("TONE", int(freq), int(ms), int(motors), int(swing))
             self._move_completion_events[seq] = evt
             self._move_completion_status[seq] = "pending"
         evt.wait(ms / 1000 + 3)
@@ -421,7 +425,7 @@ class MachineService:
 
         def run():
             try:
-                for freq, ms in notes:
+                for freq, ms, swing in notes:
                     with self._lock:
                         busy = bool(self._client and self._client.pending)
                     if busy:
@@ -429,7 +433,7 @@ class MachineService:
                     if freq <= 0:
                         time.sleep(ms / 1000)
                     else:
-                        self.tone(freq, ms)
+                        self.tone(freq, ms, swing=swing)
             except Exception:
                 logger.debug("Tune %s not played", tune, exc_info=True)
             finally:
