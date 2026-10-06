@@ -377,6 +377,25 @@ class CameraService:
                 return (None, None)
             return (self._latest_timestamp, self._latest_frame.copy())
 
+    def wait_until_still(self, after_timestamp: float, should_stop=None, max_wait_sec: Optional[float] = None) -> Dict[str, Any]:
+        """Anti-shake: block until the picture stops moving after a stage move (see core.stabilize).
+
+        Returns {still, waited_sec, frames, motion_px, timestamp}; ask for frames after
+        `timestamp` from then on. Skipped (returns at once) when disabled or on the mock camera.
+        """
+        from ..config import settings
+        from ..core.stabilize import wait_until_still
+
+        if not settings.stabilize_enabled or self.is_mock or not self.is_active:
+            return {"still": True, "waited_sec": 0.0, "frames": 0, "motion_px": 0.0, "timestamp": after_timestamp, "skipped": True}
+        return wait_until_still(
+            lambda after: self.get_fresh_frame(after, timeout_sec=3.0),
+            after_timestamp,
+            max_wait_sec=settings.stabilize_max_wait_sec if max_wait_sec is None else max_wait_sec,
+            threshold_px=settings.stabilize_threshold_px,
+            should_stop=should_stop,
+        )
+
     def get_fresh_frame(self, after_timestamp: float, timeout_sec: float = 2.5) -> Tuple[float, np.ndarray]:
         """Block until a newly captured frame arriving strictly AFTER `after_timestamp` is available.
         

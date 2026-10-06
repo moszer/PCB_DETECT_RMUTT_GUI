@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Box, Building2, Check, Cpu, Crosshair, Save, Volume2 } from "lucide-react";
+import { Box, Building2, Check, Cpu, Crosshair, Save, Vibrate, Volume2 } from "lucide-react";
 import type { ComputeDevice } from "@/types";
 import { api } from "@/lib/api";
 import { Button, Card, CardHeader, Field, NumberInput, Segmented, Slider, Spinner, TextInput, Toggle, cx } from "./ui";
@@ -25,6 +25,9 @@ export function SettingsView({ onRefreshStatus, isOperator }: { onRefreshStatus:
   const [depthDistance, setDepthDistance] = useState(200);
   const [depthBaseline, setDepthBaseline] = useState(6);
   const [depthViews, setDepthViews] = useState(4);
+  const [stabilize, setStabilize] = useState(true);
+  const [stabilizeWait, setStabilizeWait] = useState(2);
+  const [stabilizePx, setStabilizePx] = useState(1.5);
   const [saving, setSaving] = useState(false);
 
   // Compute device
@@ -43,6 +46,9 @@ export function SettingsView({ onRefreshStatus, isOperator }: { onRefreshStatus:
         setDepthDistance(s.depth_camera_distance_mm);
         setDepthBaseline(s.depth_baseline_mm);
         setDepthViews(s.depth_views ?? 4);
+        setStabilize(s.stabilize_enabled ?? true);
+        setStabilizeWait(s.stabilize_max_wait_sec ?? 2);
+        setStabilizePx(s.stabilize_threshold_px ?? 1.5);
         setDevices(d.devices);
         setActiveDevice(d.current_device);
         setPreference(d.preference);
@@ -62,6 +68,9 @@ export function SettingsView({ onRefreshStatus, isOperator }: { onRefreshStatus:
         depth_camera_distance_mm: depthDistance,
         depth_baseline_mm: depthBaseline,
         depth_views: depthViews,
+        stabilize_enabled: stabilize,
+        stabilize_max_wait_sec: stabilizeWait,
+        stabilize_threshold_px: stabilizePx,
       });
       toast.success("บันทึกการตั้งค่าแล้ว");
       onRefreshStatus();
@@ -151,6 +160,25 @@ export function SettingsView({ onRefreshStatus, isOperator }: { onRefreshStatus:
         </Card>
 
         <StageCalibrationCard isOperator={isOperator} />
+
+        <Card>
+          <CardHeader
+            icon={Vibrate}
+            title="กันสั่นกล้อง"
+            subtitle="หลังสเตจเคลื่อนที่ รอจนภาพนิ่งจริงก่อนถ่าย (เทียบภาพเฟรมต่อเฟรม) และถ่ายเฟรมที่สั่นใหม่ระหว่างตรวจหลายเฟรม — ใช้กับการสแกน 3D calibrate และเก็บ dataset"
+          />
+          <div className="p-4 flex flex-col gap-4">
+            <Toggle checked={stabilize} onChange={setStabilize} label="รอภาพนิ่งก่อนถ่าย" description="เวลา settle ที่ตั้งในแผนสแกนเป็นเวลาขั้นต่ำ ถ้าภาพยังสั่นจะรอต่อจนนิ่ง" />
+            <div className={cx("grid sm:grid-cols-2 gap-4", !stabilize && "opacity-50 pointer-events-none")}>
+              <Field label="รอนานสุด" hint="ภาพไม่นิ่งภายในเวลานี้จะถ่ายต่อไปเลย">
+                <NumberInput value={stabilizeWait} min={0.1} max={10} step={0.1} suffix="s" onChange={setStabilizeWait} />
+              </Field>
+              <Field label="ถือว่านิ่งเมื่อภาพขยับไม่เกิน" hint="px ของภาพเต็ม (1.5 px ≈ 11 µm ที่ 130 px/mm) — น้อยลง = นิ่งกว่าแต่รอนานขึ้น">
+                <NumberInput value={stabilizePx} min={0.2} max={50} step={0.1} suffix="px" onChange={setStabilizePx} />
+              </Field>
+            </div>
+          </div>
+        </Card>
 
         <Card>
           <CardHeader

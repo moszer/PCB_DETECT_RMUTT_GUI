@@ -271,6 +271,12 @@ function PointResultDetail({ point, onClose }: { point: AOIPointResult; onClose:
                 <Stat label="ผิดชนิด" value={mf.wrong_count} tone={mf.wrong_count ? "fail" : undefined} />
                 <p className="col-span-3 text-[11px] text-muted">
                   ตรวจ {mf.total_frames}/{mf.target_frames} เฟรม · ผ่านเมื่อพบ ≥ {mf.pass_threshold} เฟรม ({percent(mf.pass_ratio)})
+                  {mf.stabilize && (mf.stabilize.waited_sec > 0.05 || mf.stabilize.shaken_frames > 0 || mf.stabilize.still === false) && (
+                    <span className={mf.stabilize.still === false ? "text-review" : undefined}>
+                      {" "}· รอภาพนิ่ง {mf.stabilize.waited_sec.toFixed(2)} s{mf.stabilize.still === false ? " (ยังไม่นิ่ง)" : ""}
+                      {mf.stabilize.shaken_frames > 0 && ` · ถ่ายใหม่ ${mf.stabilize.shaken_frames} เฟรมที่สั่น`}
+                    </span>
+                  )}
                   {mf.max_offset_px !== undefined && (
                     <span className={mf.max_offset_px > 20 ? "text-review" : undefined}>
                       {" "}· ภาพเลื่อนจากต้นแบบสูงสุด {mf.max_offset_px} px (ชดเชยแล้ว)

@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 import math
 
-from ..config import RUNS_DIR
+from ..config import RUNS_DIR, settings
+from ..core.stabilize import motion_px, small_gray
 from ..core.inspection import (
     digital_zoom,
     draw_annotated_image,
@@ -372,7 +373,11 @@ class AOIScanService:
                 # 2. Wait settle interval so stage vibration settles and target is clearly framed and zoomed before shot
                 if self._stop_event.wait(report.plan.settle_sec):
                     break
-                capture_after = time.monotonic()
+                # Anti-shake: the fixed settle is a minimum; also wait until the picture is still.
+                stab = camera_service.wait_until_still(time.monotonic(), should_stop=self._stop_event.is_set)
+                if self._stop_event.is_set():
+                    break
+                capture_after = stab["timestamp"]
 
                 # 3. Check if this point has golden reference components for multi-frame completeness inspection
                 exp_comps = getattr(pt, "expected_components", None)
@@ -392,7 +397,13 @@ class AOIScanService:
                     last_speed = {}
 
                     last_frame_time = capture_after
-                    for f_idx in range(actual_frames):
+                    # A frame shifted against the point's first one was taken while the frame
+                    # shook (a bump, a passing vibration): it is re-taken, at most once per frame.
+                    check_shake = settings.stabilize_enabled and not camera_service.is_mock
+                    first_small = None
+                    shaken = 0
+                    f_idx = 0
+                    while f_idx < actual_frames:
                         if self._stop_event.is_set():
                             break
 
@@ -401,6 +412,15 @@ class AOIScanService:
                             last_frame_time, cur_f = camera_service.get_fresh_frame(after_timestamp=frame_after, timeout_sec=3.0)
                         except Exception as exc:
                             raise RuntimeError(f"Point {pt.index} Frame {f_idx + 1}: Failed to capture camera frame: {exc}")
+
+                        if check_shake:
+                            small, small_scale = small_gray(cur_f)
+                            if first_small is None:
+                                first_small = small
+                            elif shaken < actual_frames and first_small.shape == small.shape and \
+                                    motion_px(first_small, small, small_scale) > 2 * settings.stabilize_threshold_px:
+                                shaken += 1
+                                continue
 
                         cur_f = digital_zoom(cur_f, pt.zoom)
 
@@ -421,6 +441,7 @@ class AOIScanService:
 
                         if f_idx < actual_frames - 1:
                             time.sleep(0.06)
+                        f_idx += 1
 
                     if self._stop_event.is_set():
                         break
@@ -463,6 +484,8 @@ class AOIScanService:
                         "missing_count": eval_res["missing_count"],
                         "wrong_count": eval_res["wrong_count"],
                         "max_offset_px": round(eval_res["max_offset"] * max(latest_frame.shape[:2]), 1),
+                        # Anti-shake: how long the picture took to settle, and frames re-taken.
+                        "stabilize": {k: stab.get(k) for k in ("still", "waited_sec", "motion_px")} | {"shaken_frames": shaken},
                     }
 
                     pt_result = AOIPointResult(

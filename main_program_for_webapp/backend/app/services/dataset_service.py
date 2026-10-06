@@ -340,7 +340,8 @@ class DatasetService:
                 machine_service.move_to_steps(xs, ys, speed=speed)
                 if self._stop.wait(settle_sec):
                     break
-                _, frame = camera_service.get_fresh_frame(after_timestamp=time.monotonic(), timeout_sec=3.0)
+                stab = camera_service.wait_until_still(time.monotonic(), should_stop=self._stop.is_set)
+                _, frame = camera_service.get_fresh_frame(after_timestamp=stab["timestamp"], timeout_sec=3.0)
                 file = f"img_{index + 1:04d}.jpg"
                 if not cv2.imwrite(str(base / "images" / file), frame, [int(cv2.IMWRITE_JPEG_QUALITY), 95]):
                     raise IOError(f"Could not write {file}")

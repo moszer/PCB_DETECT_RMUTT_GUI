@@ -107,7 +107,10 @@ class StageMonitorService:
         if not camera_service.is_active or camera_service.is_mock:
             self._set_status("no_camera")
             return
-        _, frame = camera_service.get_fresh_frame(time.monotonic(), timeout_sec=2.0)
+        stab = camera_service.wait_until_still(time.monotonic(), max_wait_sec=1.0)
+        if machine_service.get_state().is_moving:
+            return
+        _, frame = camera_service.get_fresh_frame(stab["timestamp"], timeout_sec=2.0)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if frame.ndim == 3 else frame
         h, w = gray.shape[:2]
         scale = min(1.0, WORK_SIDE / max(h, w))

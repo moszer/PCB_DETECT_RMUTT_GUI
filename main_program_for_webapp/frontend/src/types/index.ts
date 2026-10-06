@@ -177,6 +177,8 @@ export interface MultiframeInfo {
   wrong_count: number;
   /** Largest whole-frame shift vs. the reference that was compensated (pixels). */
   max_offset_px?: number;
+  /** Anti-shake: time waited for a still picture, and frames re-taken because they shook. */
+  stabilize?: { still: boolean | null; waited_sec: number; motion_px: number; shaken_frames: number };
 }
 
 export interface AOIPointResult {
@@ -591,6 +593,9 @@ export interface StationSettings {
   depth_baseline_mm: number;
   depth_views: number;
   stage_approach_mm: number;
+  stabilize_enabled: boolean;
+  stabilize_max_wait_sec: number;
+  stabilize_threshold_px: number;
   has_passcode: boolean;
 }
 

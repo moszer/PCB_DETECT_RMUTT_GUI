@@ -104,6 +104,11 @@ class Settings(BaseModel):
     # Backlash compensation: automated moves end every axis in + after overshooting this far
     # below the target when they arrive moving - (0 = off). Set from the stage calibration.
     stage_approach_mm: float = Field(0.0, ge=0, le=3)
+    # Anti-shake: after a move, wait until consecutive frames stop moving (up to max wait)
+    # instead of trusting the fixed settle time alone; shaken frames of a point are re-taken.
+    stabilize_enabled: bool = True
+    stabilize_max_wait_sec: float = Field(2.0, ge=0.1, le=10)
+    stabilize_threshold_px: float = Field(1.5, gt=0, le=50)
     # Measure each move's positioning error with the camera and show it live (needs a stage calibration).
     stage_monitor_enabled: bool = True
     # FP16 inference on CUDA (Jetson): half the GPU memory and time, same detections.

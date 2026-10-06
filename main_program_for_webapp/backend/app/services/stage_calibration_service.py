@@ -107,6 +107,7 @@ class StageCalibrationService:
         machine_service.move_to_steps(int(round(x_mm * spm)), int(round(y_mm * spm)),
                                       speed=settings.default_speed, compensate=compensate)
         time.sleep(max(0.4, settings.default_settle_sec))
+        camera_service.wait_until_still(time.monotonic(), should_stop=self._cancel.is_set)
 
     def _advance(self, message: str) -> None:
         with self._lock:

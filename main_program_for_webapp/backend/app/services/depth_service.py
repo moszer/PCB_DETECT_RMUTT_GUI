@@ -92,6 +92,12 @@ class DepthService:
 
             release_memory()
 
+    @staticmethod
+    def _settle(settle: float) -> None:
+        """Fixed settle, then anti-shake: stereo needs both shots taken on a still frame."""
+        time.sleep(settle)
+        camera_service.wait_until_still(time.monotonic())
+
     def _shot(self, zoom: float) -> np.ndarray:
         frames = [self._fresh_frame(zoom) for _ in range(FRAMES_PER_SHOT)]
         if len(frames) == 1:
@@ -179,13 +185,13 @@ class DepthService:
 
             settle = max(0.4, settings.default_settle_sec)
             self._move_mm(x_mm, y_mm)
-            time.sleep(settle)
+            self._settle(settle)
             frame_a = self._shot(zoom)
             shots = []
             try:
                 for mx, my in moves:
                     self._move_mm(x_mm + mx, y_mm + my)
-                    time.sleep(settle)
+                    self._settle(settle)
                     shots.append(((mx, my), self._shot(zoom)))
             finally:
                 self._move_mm(x_mm, y_mm)  # always come back to the point
