@@ -15,6 +15,15 @@ from ..core.schemas import MachineState
 
 logger = logging.getLogger("machine_service")
 
+# Short tunes the motors buzz (frequency Hz, duration ms; 0 Hz = rest). Both motors play together.
+TUNES: Dict[str, List[Tuple[int, int]]] = {
+    "done": [(1760, 70)],
+    "pass": [(1319, 90), (0, 40), (1760, 160)],
+    "fail": [(523, 220), (0, 60), (392, 380)],
+    "error": [(440, 140), (0, 60), (440, 140), (0, 60), (440, 140)],
+    "test": [(1047, 120), (1319, 120), (1568, 120), (2093, 240)],
+}
+
 
 class MachineService:
     """Thread-safe controller for the Nano XY Stage."""
@@ -36,6 +45,7 @@ class MachineService:
         self._state_subscribers: List[Callable[[MachineState], None]] = []
         self._last_reported_pos = (0, 0)
         self._last_reported_pending = None
+        self._tune_lock = threading.Lock()
 
     def subscribe(self, callback: Callable[[MachineState], None]):
         self._state_subscribers.append(callback)
@@ -272,6 +282,7 @@ class MachineService:
                     break
             time.sleep(0.05)
 
+        self._wait_for_tone()
         evt = threading.Event()
         with self._lock:
             if not self._client or self._client.closed or not self._client.ready:
@@ -296,10 +307,12 @@ class MachineService:
             if not self._client.homed:
                 raise RuntimeError("HOME operation failed: stage is not homed.")
         self._notify()
+        self.play("done")
         return True
 
     def jog(self, dx_mm: float, dy_mm: float, speed: int = 800) -> bool:
         """Jog relative distance in mm."""
+        self._wait_for_tone()
         with self._lock:
             if not self._client or not self._client.homed:
                 raise ValueError("Stage must be HOMED before moving.")
@@ -344,6 +357,7 @@ class MachineService:
         return self._move_raw(target_x_steps, target_y_steps, speed, timeout_sec)
 
     def _move_raw(self, target_x_steps: int, target_y_steps: int, speed: int, timeout_sec: float) -> bool:
+        self._wait_for_tone()
         evt = threading.Event()
         with self._lock:
             if not self._client or not self._client.homed:
@@ -375,6 +389,64 @@ class MachineService:
                 )
         self._notify()
         return True
+
+    # ── sound ─────────────────────────────────────────────────────────────────
+    @property
+    def can_play(self) -> bool:
+        with self._lock:
+            return bool(self._client and not self._client.closed and self._client.ready and "TONE" in self._client.capabilities)
+
+    def tone(self, freq: int, ms: int, motors: int = 3) -> None:
+        """Buzz the motors (blocking until the tone ends). Position and HOME are kept."""
+        evt = threading.Event()
+        with self._lock:
+            if not self._client or self._client.closed or not self._client.ready:
+                raise ValueError("Machine is not connected.")
+            seq = self._client.command("TONE", int(freq), int(ms), int(motors))
+            self._move_completion_events[seq] = evt
+            self._move_completion_status[seq] = "pending"
+        evt.wait(ms / 1000 + 3)
+        with self._lock:
+            self._move_completion_events.pop(seq, None)
+            self._move_completion_status.pop(seq, None)
+
+    def play(self, tune: str) -> bool:
+        """Play a short tune in the background when sound is on, the firmware can and the stage
+        is idle (never delays or interrupts motion). Returns whether it started."""
+        notes = TUNES.get(tune)
+        if not notes or not settings.stage_sound_enabled or not self.can_play:
+            return False
+        if not self._tune_lock.acquire(blocking=False):
+            return False  # one tune at a time
+
+        def run():
+            try:
+                for freq, ms in notes:
+                    with self._lock:
+                        busy = bool(self._client and self._client.pending)
+                    if busy:
+                        break  # motion asked for the stage: give way
+                    if freq <= 0:
+                        time.sleep(ms / 1000)
+                    else:
+                        self.tone(freq, ms)
+            except Exception:
+                logger.debug("Tune %s not played", tune, exc_info=True)
+            finally:
+                self._tune_lock.release()
+
+        threading.Thread(target=run, name="stage-tune", daemon=True).start()
+        return True
+
+    def _wait_for_tone(self, timeout: float = 2.0) -> None:
+        """A tune note may still be sounding: motion waits for it rather than failing."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            with self._lock:
+                pending = self._client.pending if self._client else None
+            if not pending or pending[1] != "TONE":
+                return
+            time.sleep(0.01)
 
     def stop(self):
         """Immediately command STOP and cancel pending motions."""

@@ -10,6 +10,7 @@ import { AIKeyPanel } from "./AIKeyPanel";
 import { RemoteAccessPanel } from "./RemoteAccess";
 import { StageCalibrationCard } from "./StageCalibrationCard";
 import { StraightenCard } from "./StraightenCard";
+import { StageSoundCard } from "./StageSoundCard";
 import { useSoundPrefs } from "@/hooks/useSound";
 import { sfx } from "@/lib/sound";
 import { useToast } from "./Toast";
@@ -245,6 +246,8 @@ export function SettingsView({ onRefreshStatus, isOperator }: { onRefreshStatus:
         </Card>
 
         <SoundCard />
+
+        <StageSoundCard isOperator={isOperator} />
 
         <Card>
           <CardHeader icon={Building2} title="ข้อมูลสถานี" />

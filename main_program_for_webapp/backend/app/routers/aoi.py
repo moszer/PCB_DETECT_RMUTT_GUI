@@ -257,6 +257,30 @@ def measure_depth(
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+class BeepRequest(BaseModel):
+    tune: Literal["done", "pass", "fail", "error", "test"] = "test"
+
+
+@router.post("/beep")
+def beep(
+    req: BeepRequest,
+    x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token"),
+    x_operator_id: Optional[str] = Header(None, alias="X-Operator-Id"),
+):
+    """Play a short tune on the stage motors (test of the machine's own sounds)."""
+    _require_operator_lease(x_operator_token, x_operator_id)
+    if aoi_scan_service.is_running or stage_calibration_service.is_running:
+        raise HTTPException(status_code=409, detail="สเตจกำลังทำงานอยู่")
+    if not machine_service.can_play:
+        raise HTTPException(status_code=400, detail="เฟิร์มแวร์ยังไม่รองรับเสียง หรือยังไม่ได้เชื่อมต่อสเตจ")
+    from ..config import settings
+
+    if not settings.stage_sound_enabled:
+        raise HTTPException(status_code=400, detail="ปิดเสียงจากมอเตอร์อยู่ในหน้าตั้งค่า")
+    started = machine_service.play(req.tune)
+    return {"success": started}
+
+
 @router.get("/stage-error")
 def stage_error():
     """Positioning error of the last moves, measured with the camera (see stage_monitor_service)."""

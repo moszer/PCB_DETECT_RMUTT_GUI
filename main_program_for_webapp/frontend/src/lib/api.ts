@@ -194,6 +194,8 @@ export const api = {
   readText: (image_url: string, boxes: number[][]) =>
     post<{ engine: string; results: OcrResult[] }>("/api/inspection/ocr", { image_url, boxes }),
   /** Estimate resistor values from the colour bands inside boxes of a stored station image. */
+  /** Play a short tune on the stage motors. */
+  beep: (tune: "test" | "pass" | "fail" | "done" | "error") => post<{ success: boolean }>("/api/aoi/beep", { tune }),
   readResistors: (image_url: string, boxes: number[][]) =>
     post<{ results: ResistorResult[] }>("/api/inspection/resistor", { image_url, boxes }),
   inspectLive: (o: InspectOptions) => postForm<InspectionResult>("/api/inspection/inspect-live", inspectFields(o)),

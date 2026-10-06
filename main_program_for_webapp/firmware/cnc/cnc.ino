@@ -4,6 +4,9 @@
  * Idle coils are switched off IDLE_RELEASE_MS after each command finishes (the 28BYJ-48 runs
  * hot when held); position and HOME are kept: the 1:64 gearbox holds the axis, and the next
  * MOVE re-energizes the same coil phase. OFF still clears HOME; RELEASE switches off now.
+ * TONE f ms [mask]: buzz the motors at f Hz (50-4000) for ms (5-5000) by flipping the coils
+ * between the current step and the next; they end on the current step, so position and HOME
+ * stay. mask: 1 = X, 2 = Y, 3 = both (default). ACK, then DONE when it ends.
  */
 #include <AccelStepper.h>
 #include <EEPROM.h>
@@ -16,6 +19,8 @@ public:
   AxisStepper(uint8_t a, uint8_t b, uint8_t c, uint8_t d)
     : AccelStepper(8, a, b, c, d) {}
   void hold() { enableOutputs(); step(currentPosition()); }
+  // Coils of the current step (false) or the next one (true), without moving the counter.
+  void buzz(bool next) { step(currentPosition() + (next ? 1 : 0)); }
   void advance(int direction) {
     setCurrentPosition(currentPosition()+direction);
     step(currentPosition());
@@ -38,7 +43,7 @@ const float STEPS_PER_MM=512.0, ACCEL=600.0;
 long maxX=19456, maxY=19456; // 38.00 mm @ 512 steps/mm
 float currentSpeed=1000;
 bool homed=false, coilsOff=true;
-enum Phase { IDLE, MOVING, RELEASE, SEEK, BACKING };
+enum Phase { IDLE, MOVING, RELEASE, SEEK, BACKING, TONE };
 Phase phase=IDLE;
 bool calibrating=false, bothAxes=true;
 uint8_t homeAxis=0;
@@ -47,6 +52,9 @@ unsigned long activeId=0, phaseTime=0, lastTelemetry=0;
 unsigned long lastHostMessage=0;
 const unsigned long IDLE_RELEASE_MS=3000; // longer than a scan point's capture, so a scan keeps them on
 unsigned long idleSince=0;
+unsigned long toneHalfUs=0, toneLast=0, toneEnd=0;
+uint8_t toneMask=0;
+bool toneNext=false;
 char inputLine[96];
 uint8_t inputLength=0;
 bool inputOverflow=false;
@@ -90,7 +98,13 @@ void reportReady() {
 void reject(unsigned long id, const __FlashStringHelper *reason) {
   Serial.print(F("[ERR] ")); Serial.print(id); Serial.print(' '); Serial.print(reason); Serial.print(' '); positionFields();
 }
+void endTone() {
+  if (toneMask & 1) stepperX.buzz(false);
+  if (toneMask & 2) stepperY.buzz(false);
+  toneMask=0;
+}
 void haltMotion() {
+  if (phase==TONE) endTone();
   pathStepper.setCurrentPosition(0);
   stepperX.setCurrentPosition(stepperX.currentPosition());
   stepperY.setCurrentPosition(stepperY.currentPosition());
@@ -158,6 +172,22 @@ void runHoming() {
   }
 }
 
+void startTone(unsigned long id, long freq, long ms, long mask) {
+  if (freq<50 || freq>4000 || ms<5 || ms>5000 || mask<1 || mask>3) { reject(id,F("BAD_TONE")); return; }
+  activeId=id; acknowledge(id); powerOn();
+  toneHalfUs=500000UL/(unsigned long)freq; toneEnd=millis()+(unsigned long)ms;
+  toneLast=micros(); toneNext=false; toneMask=(uint8_t)mask; phase=TONE;
+}
+void runTone() {
+  if ((long)(millis()-toneEnd)>=0) { endTone(); complete(); return; }
+  unsigned long now=micros();
+  if (now-toneLast>=toneHalfUs) {
+    toneLast+=toneHalfUs; toneNext=!toneNext;
+    if (toneMask & 1) stepperX.buzz(toneNext);
+    if (toneMask & 2) stepperY.buzz(toneNext);
+  }
+}
+
 void startMove(unsigned long id, long x, long y, long speed) {
   if (!homed) { reject(id,F("HOME_REQUIRED")); return; }
   if (x<0 || x>maxX || y<0 || y>maxY) { reject(id,F("OUT_OF_BOUNDS")); return; }
@@ -215,7 +245,7 @@ void processLine(char *line) {
     reportPosition(); reportLimits(); return;
   }
   if ((!strcmp(cmd,"?") || !strcmp(cmd,"HELP")) && !args) {
-    Serial.println(F("CNC v2: HOME AUTOCAL MOVE x y speed X/Y/XY/XD/YD/XR/YR S STOP OFF ON RELEASE POS")); return;
+    Serial.println(F("CNC v2: HOME AUTOCAL MOVE x y speed X/Y/XY/XD/YD/XR/YR S STOP OFF ON RELEASE TONE POS")); return;
   }
   if (phase!=IDLE) { reject(id,F("BUSY")); return; }
   if ((!strcmp(cmd,"HOME") || !strcmp(cmd,"G28")) && !args) { startHoming(id,false,0,true); return; }
@@ -225,6 +255,10 @@ void processLine(char *line) {
   if ((!strcmp(cmd,"SETHOME") || !strcmp(cmd,"SETZERO")) && !args) { reject(id,F("USE_HOME")); return; }
   if (!strcmp(cmd,"ON") && !args) { powerOn(); activeId=id; acknowledge(id); complete(); return; }
   if (!strcmp(cmd,"RELEASE") && !args) { powerOff(); activeId=id; acknowledge(id); complete(); return; }
+  if (!strcmp(cmd,"TONE") && (args==2 || args==3)) {
+    long f, ms, mask=3;
+    if (parseLong(tokens[p],f) && parseLong(tokens[p+1],ms) && (args==2 || parseLong(tokens[p+2],mask))) { startTone(id,f,ms,mask); return; }
+  }
   long x,y,speed;
   if (!strcmp(cmd,"S") && args==1 && parseLong(tokens[p],speed) && speed>=20 && speed<=1500) {
     currentSpeed=speed; activeId=id; acknowledge(id); complete(); return;
@@ -274,8 +308,10 @@ void loop() {
       pathStepper.run();
       if (!pathStepper.isRunning()) complete();
     }
-  } else if (phase!=IDLE) runHoming();
+  } else if (phase==TONE) runTone();
+  else if (phase!=IDLE) runHoming();
   // Keep idle motors cool; homed and the step counters are untouched.
   if (phase==IDLE && !coilsOff && millis()-idleSince>=IDLE_RELEASE_MS) powerOff();
-  if (phase!=IDLE && millis()-lastTelemetry>=250) { lastTelemetry=millis(); reportPosition(); }
+  // No telemetry while buzzing: serial writes would put a stutter into the tone.
+  if (phase!=IDLE && phase!=TONE && millis()-lastTelemetry>=250) { lastTelemetry=millis(); reportPosition(); }
 }

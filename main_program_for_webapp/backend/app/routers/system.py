@@ -45,6 +45,7 @@ class SettingsUpdateRequest(BaseModel):
     stabilize_enabled: Optional[bool] = None
     board_align_enabled: Optional[bool] = None
     camera_rotate_deg: Optional[float] = Field(None, ge=-15, le=15)
+    stage_sound_enabled: Optional[bool] = None
     board_align_max_deg: Optional[float] = Field(None, gt=0, le=45)
     board_align_max_mm: Optional[float] = Field(None, gt=0, le=100)
     stabilize_max_wait_sec: Optional[float] = Field(None, ge=0.1, le=10)

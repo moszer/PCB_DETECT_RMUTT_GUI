@@ -58,6 +58,9 @@ class MotionClient:
         self.soft_limits = None
         self.pending = None
         self.sequence = 0
+        # Commands the firmware lists in its HELP line (asked after READY): optional extras
+        # such as TONE are only sent when present — an unknown command faults the link.
+        self.capabilities: set = set()
         self.buffer = bytearray()
         self.events = []
         self.started = self.last_rx = self.last_ping = clock()
@@ -82,8 +85,10 @@ class MotionClient:
     def command(self, kind: str, x: int = 0, y: int = 0, speed: int = 800) -> int:
         if self.closed or not self.ready:
             raise ValueError("Connect and wait for firmware v2 first.")
-        if kind not in ("MOVE", "HOME", "STOP", "OFF"):
+        if kind not in ("MOVE", "HOME", "STOP", "OFF", "TONE"):
             raise ValueError("Unsupported motion command")
+        if kind == "TONE" and "TONE" not in self.capabilities:
+            raise ValueError("This firmware cannot play tones (flash firmware/cnc).")
         if self.pending and kind not in ("STOP", "OFF"):
             raise ValueError("Wait for the current motion to finish.")
         if kind == "MOVE":
@@ -93,15 +98,19 @@ class MotionClient:
             max_y = min(self.limits[1], self.soft_limits[1]) if self.soft_limits else self.limits[1]
             if not all(isinstance(v, int) for v in (x, y, speed)) or not (0 <= x <= max_x and 0 <= y <= max_y and 20 <= speed <= 1500):
                 raise ValueError("Move is outside travel or speed limits.")
+        if kind == "TONE" and not (50 <= x <= 4000 and 5 <= y <= 5000 and 1 <= speed <= 3):
+            raise ValueError("Tone: 50-4000 Hz, 5-5000 ms, motors mask 1-3.")
         self.sequence += 1
         timeout = 540 if kind == "HOME" else (
-            max(abs(x - self.position[0]), abs(y - self.position[1])) / speed + 15 if kind == "MOVE" else 5
+            max(abs(x - self.position[0]), abs(y - self.position[1])) / speed + 15 if kind == "MOVE"
+            else y / 1000 + 5 if kind == "TONE" else 5
         )
         self.pending = (self.sequence, kind, self.clock() + timeout, (x, y))
         if kind in ("HOME", "OFF"):
             self.homed = False
             self.home_verified = False
-        self._write(f"@{self.sequence} {kind}" + (f" {x} {y} {speed}" if kind == "MOVE" else ""))
+        # TONE reuses the three numbers: frequency (Hz), duration (ms), motors mask.
+        self._write(f"@{self.sequence} {kind}" + (f" {x} {y} {speed}" if kind in ("MOVE", "TONE") else ""))
         return self.sequence
 
     def _fault(self, message: str):
@@ -140,6 +149,7 @@ class MotionClient:
                 self.limits, self.position = (mx, my), (x, y)
                 self.ready, self.homed = True, False
                 self._emit("ready", None)
+                self._write("HELP")  # capabilities; older firmware answers it too
             elif tag in ("[POS]", "[DONE]", "[ERR]"):
                 ident = int(parts[1])
                 fields = parts[3:] if tag == "[ERR]" else parts[2:]
@@ -161,6 +171,9 @@ class MotionClient:
                         raise ValueError("HOME did not complete")
                     self.pending = None
                     self._emit("done", kind)
+            elif tag == "CNC" and len(parts) > 1 and parts[1] == "v2:":
+                self.capabilities = {p.upper() for p in parts[2:]}
+                return
             elif tag == "[ACK]":
                 if len(parts) != 2:
                     raise ValueError("Malformed acknowledgement")
@@ -235,7 +248,13 @@ class SimulatedTransport:
             return len(data)
         ident = int(parts.pop(0)[1:]) if parts[0].startswith("@") else 0
         kind = parts[0]
-        if kind == "HELLO":
+        if kind == "HELP":
+            self.emit("CNC v2: HOME AUTOCAL MOVE x y speed X/Y/XY/XD/YD/XR/YR S STOP OFF ON RELEASE TONE POS")
+        elif kind == "TONE":
+            ms = int(parts[2]) if len(parts) > 2 else 100
+            self.job = (self.clock() + ms / 1000.0, ident, kind, self.position)
+            self.emit(f"[ACK] {ident}")
+        elif kind == "HELLO":
             self.emit(f"[READY] 2 {self.position[0]} {self.position[1]} 21167 20446 {int(self.homed)}")
         elif kind == "POS":
             self.emit(f"[POS] {self.job[1] if self.job else 0} {self.position[0]} {self.position[1]} {int(self.homed)}")

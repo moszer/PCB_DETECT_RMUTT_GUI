@@ -135,6 +135,7 @@ class StageCalibrationService:
             RESULT_FILE.parent.mkdir(parents=True, exist_ok=True)
             RESULT_FILE.write_text(json.dumps(result, ensure_ascii=False, indent=2))
             self._set(state="done", message="เสร็จแล้ว", finished=time.time())
+            machine_service.play("done")
         except CalibrationCancelled:
             self._set(state="cancelled", message="ยกเลิกแล้ว")
         except Exception as exc:  # report every failure to the UI instead of dying silently

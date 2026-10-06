@@ -317,6 +317,11 @@ class AOIScanService:
     ):
         try:
             self._do_scan(report, points, run_folder, ref_profile, conf_thresh, match_dist, fail_on_extra, imgsz, multiframe_enabled, target_frames, pass_ratio, refs)
+            # The machine itself says how it went (heard without the web page open).
+            if report.status == "complete":
+                machine_service.play("pass" if report.overall_verdict == "PASS" else "fail")
+            elif report.status == "error":
+                machine_service.play("error")
         finally:
             with self._lock:
                 if self._worker_thread is threading.current_thread():
