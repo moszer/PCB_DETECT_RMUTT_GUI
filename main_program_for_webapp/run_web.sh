@@ -37,6 +37,7 @@ PY="$PROJECT_DIR/backend/venv/bin/python"
 CONSOLE="$PROJECT_DIR/scripts/console.py"
 BACKEND_PID=""
 FRONTEND_PID=""
+BUILD_PID=""
 UPDATES_FILE=""
 UPDATES_PID=""
 
@@ -44,6 +45,24 @@ if [[ -t 1 && -z "${NO_COLOR:-}" ]] || [[ "${PCB_FORCE_COLOR:-}" == "1" ]]; then
     B=$'\e[1m'; D=$'\e[2m'; G=$'\e[32m'; Y=$'\e[33m'; R=$'\e[31m'; C=$'\e[36m'; N=$'\e[0m'
 else B=; D=; G=; Y=; R=; C=; N=; fi
 section() { echo; echo "${B}${C}▸ $*${N}"; }
+# Spinners only on a real terminal (not in .cache/run_web.log); PCB_NO_ANIM=1 turns them off.
+ANIM=0
+if [[ -t 1 && -z "${NO_COLOR:-}" && -z "${PCB_NO_ANIM:-}" ]]; then ANIM=1; fi
+SPIN=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
+spin_frame() {  # tick, label, [detail]
+    [[ $ANIM -eq 1 ]] || return 0
+    local cols detail="${3:-}"
+    cols=$(tput cols 2>/dev/null || echo 100)
+    if [[ -n "$detail" ]]; then
+        detail="${detail//$'\r'/}"
+        local room=$(( cols - ${#2} - 16 ))
+        (( room > 8 )) && detail=" ${D}${detail:0:$room}${N}" || detail=""
+    fi
+    printf '\r\033[K  %s%s%s %s %s%ss%s%s' "$C" "${SPIN[$(( $1 % 10 ))]}" "$N" "$2" "$D" "$(( $1 / 10 ))" "$N" "$detail"
+}
+spin_clear() { [[ $ANIM -eq 1 ]] && printf '\r\033[K' || true; }
+# Background service output: clear the spinner line first so both stay readable.
+tidy() { if [[ $ANIM -eq 1 ]]; then while IFS= read -r line; do printf '\r\033[K%s\n' "$line"; done; else cat; fi; }
 ok()   { echo "  ${G}✓${N} $*"; }
 warn() { echo "  ${Y}!${N} $*"; }
 fail() { echo "  ${R}✗${N} $*" >&2; }
@@ -51,7 +70,8 @@ fail() { echo "  ${R}✗${N} $*" >&2; }
 cleanup() {
     code=$?
     trap - EXIT INT TERM
-    for pid in "$FRONTEND_PID" "$BACKEND_PID"; do
+    spin_clear
+    for pid in "$BUILD_PID" "$FRONTEND_PID" "$BACKEND_PID"; do
         if [[ -n "$pid" ]]; then kill "$pid" 2>/dev/null || true; fi
     done
     [[ -n "$UPDATES_FILE" ]] && rm -f "$UPDATES_FILE"
@@ -129,28 +149,33 @@ for port in sys.argv[1:]:
 PY
 ok "Ports $BACKEND_PORT (backend) and $FRONTEND_PORT (frontend) are free"
 
-wait_ready() {
-    local pid="$1" url="$2" service="$3"
-    for ((i=0; i<180; i++)); do
+READY_SECS=0
+wait_ready() {  # pid, url, service name, spinner label
+    local pid="$1" url="$2" service="$3" label="${4:-$3 starting}"
+    for ((i=0; i<1800; i++)); do  # 0.1 s ticks, 3 min
         if ! kill -0 "$pid" 2>/dev/null; then
-            fail "$service exited before becoming ready."
+            spin_clear; fail "$service exited before becoming ready."
             return 1
         fi
-        if curl --fail --silent --max-time 2 "$url" >/dev/null 2>&1; then return 0; fi
-        sleep 1
+        if (( i % 10 == 0 )) && curl --fail --silent --max-time 2 "$url" >/dev/null 2>&1; then
+            spin_clear; READY_SECS=$(( i / 10 )); return 0
+        fi
+        spin_frame "$i" "$label"
+        sleep 0.1
     done
-    fail "$service startup timed out."
+    spin_clear; fail "$service startup timed out."
     return 1
 }
+took() { (( $1 > 0 )) && echo " ${D}· ${1}s${N}" || true; }
 
 # ── start ─────────────────────────────────────────────────────────────────────
 section "Starting"
-echo "  ${D}…${N} backend  (FastAPI + YOLO) on port $BACKEND_PORT"
+[[ $ANIM -eq 1 ]] || echo "  ${D}…${N} backend  (FastAPI + YOLO) on port $BACKEND_PORT"
 cd "$PROJECT_DIR/backend"
-venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" --log-level warning &
+venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" --log-level warning > >(tidy) 2>&1 &
 BACKEND_PID=$!
-wait_ready "$BACKEND_PID" "http://127.0.0.1:$BACKEND_PORT/api/system/status" Backend
-ok "backend ready (pid $BACKEND_PID)"
+wait_ready "$BACKEND_PID" "http://127.0.0.1:$BACKEND_PORT/api/system/status" Backend "backend (FastAPI + YOLO) starting on port $BACKEND_PORT"
+ok "backend ready (pid $BACKEND_PID)$(took $READY_SECS)"
 
 cd "$PROJECT_DIR/frontend"
 export BACKEND_URL="http://127.0.0.1:$BACKEND_PORT"
@@ -158,20 +183,38 @@ if [[ "$MODE" == "prod" ]]; then
     # Rebuild when the source is newer than the last build (rewrites bake BACKEND_URL in at build time).
     if [[ ! -f .next/BUILD_ID ]] || [[ -n "$(find src public next.config.ts package.json -newer .next/BUILD_ID -print -quit 2>/dev/null)" ]] \
         || [[ "$(cat .next/.backend-url 2>/dev/null)" != "$BACKEND_URL" ]]; then
-        echo "  ${D}…${N} building the frontend (first run or source changed)"
-        node node_modules/next/dist/bin/next build >/dev/null
+        BUILD_LOG="$PROJECT_DIR/.cache/frontend-build.log"
+        [[ $ANIM -eq 1 ]] || echo "  ${D}…${N} building the frontend (first run or source changed)"
+        node node_modules/next/dist/bin/next build > "$BUILD_LOG" 2>&1 &
+        BUILD_PID=$!
+        tick=0
+        while kill -0 "$BUILD_PID" 2>/dev/null; do
+            # The build's latest step, without its colours.
+            spin_frame "$tick" "building the frontend" "$(tail -n 1 "$BUILD_LOG" 2>/dev/null | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g')"
+            sleep 0.1; tick=$(( tick + 1 ))
+        done
+        spin_clear
+        if ! wait "$BUILD_PID"; then
+            BUILD_PID=""
+            fail "frontend build failed — last lines of $BUILD_LOG:"
+            tail -n 25 "$BUILD_LOG" | sed 's/^/    /' >&2
+            exit 1
+        fi
+        BUILD_PID=""
         echo "$BACKEND_URL" > .next/.backend-url
-        ok "frontend built"
+        ok "frontend built$(took $(( tick / 10 )))"
     fi
-    echo "  ${D}…${N} frontend (Next.js production) on port $FRONTEND_PORT"
-    node node_modules/next/dist/bin/next start -p "$FRONTEND_PORT" &
+    [[ $ANIM -eq 1 ]] || echo "  ${D}…${N} frontend (Next.js production) on port $FRONTEND_PORT"
+    node node_modules/next/dist/bin/next start -p "$FRONTEND_PORT" > >(tidy) 2>&1 &
+    FRONTEND_LABEL="frontend (Next.js production) starting on port $FRONTEND_PORT"
 else
-    echo "  ${D}…${N} frontend (Next.js dev server) on port $FRONTEND_PORT"
-    node node_modules/next/dist/bin/next dev -p "$FRONTEND_PORT" &
+    [[ $ANIM -eq 1 ]] || echo "  ${D}…${N} frontend (Next.js dev server) on port $FRONTEND_PORT"
+    node node_modules/next/dist/bin/next dev -p "$FRONTEND_PORT" > >(tidy) 2>&1 &
+    FRONTEND_LABEL="frontend (Next.js dev server) starting on port $FRONTEND_PORT"
 fi
 FRONTEND_PID=$!
-wait_ready "$FRONTEND_PID" "http://127.0.0.1:$FRONTEND_PORT" Frontend
-ok "frontend ready (pid $FRONTEND_PID)"
+wait_ready "$FRONTEND_PID" "http://127.0.0.1:$FRONTEND_PORT" Frontend "$FRONTEND_LABEL"
+ok "frontend ready (pid $FRONTEND_PID)$(took $READY_SECS)"
 
 # ── what is running ───────────────────────────────────────────────────────────
 "$PY" "$CONSOLE" status --backend-port "$BACKEND_PORT" --frontend-port "$FRONTEND_PORT" --mode "$MODE" \

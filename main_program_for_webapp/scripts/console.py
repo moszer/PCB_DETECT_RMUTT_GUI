@@ -32,6 +32,7 @@ CACHE_TTL = 24 * 3600
 
 COLOR = (sys.stdout.isatty() and "NO_COLOR" not in os.environ) or os.environ.get("PCB_FORCE_COLOR") == "1"
 TRUECOLOR = os.environ.get("COLORTERM", "").lower() in ("truecolor", "24bit")
+ANIMATE = sys.stdout.isatty() and "NO_COLOR" not in os.environ and not os.environ.get("PCB_NO_ANIM")
 
 
 def c(code: str, text: str) -> str:
@@ -98,11 +99,16 @@ def cmd_banner(_args) -> int:
         print("\n".join(f"  {ln}" for ln in lines))
         return 0
     top = max(0, (len(logo) - len(lines)) // 2)
-    for i in range(max(len(logo), top + len(lines))):
+    rows = max(len(logo), top + len(lines))
+    # On a terminal the seal is drawn in top to bottom (~0.5 s); logs get it at once.
+    delay = 0.5 / rows if ANIMATE else 0.0
+    for i in range(rows):
         left = logo[i][0] if i < len(logo) else ""
         pad = " " * (width - (len(re.sub(r"\033\[[0-9;]*m", "", left))))
         right = lines[i - top] if 0 <= i - top < len(lines) else ""
-        print(f"  {left}{pad}   {right}")
+        print(f"  {left}{pad}   {right}", flush=True)
+        if delay:
+            time.sleep(delay)
     return 0
 
 
