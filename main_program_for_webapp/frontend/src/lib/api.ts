@@ -213,7 +213,7 @@ export const api = {
     list: () => request<{ boards: BoardSummary[] }>("/api/boards").then((r) => r.boards),
     get: (id: string) => request<BoardDetail>(`/api/boards/${encodeURIComponent(id)}`),
     thumb: (id: string, index: number, w: 240 | 480 | 960 = 480, updated = 0) =>
-      `${API_BASE}/api/boards/${encodeURIComponent(id)}/points/${index}/thumb.jpg?w=${w}&v=${Math.round(updated)}`,
+      `${API_BASE}/api/boards/${encodeURIComponent(id)}/points/${index}/thumb.jpg?w=${w}&v=${Math.round(updated)}&r=2`,
     exportUrl: (id: string) => `${API_BASE}/api/boards/${encodeURIComponent(id)}/export`,
     duplicate: (id: string, name?: string) => post<PointSetMeta>(`/api/boards/${encodeURIComponent(id)}/duplicate`, { name }),
     importBoard: (body: unknown) => post<PointSetMeta>("/api/boards/import", body),
