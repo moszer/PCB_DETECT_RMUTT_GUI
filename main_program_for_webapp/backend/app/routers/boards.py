@@ -207,7 +207,7 @@ def point_thumb(board_id: str, index: int, w: int = Query(480), boxes: bool = Tr
     meta = next((m for m in point_set_store.list_sets() if m["id"] == board_id), None)
     if not meta:
         raise HTTPException(404, "ไม่พบบอร์ดนี้")
-    key = hashlib.sha1(f"board|{board_id}|{meta['updated_at']}|{index}|{w}|{boxes}".encode()).hexdigest()
+    key = hashlib.sha1(f"board2|{board_id}|{meta['updated_at']}|{index}|{w}|{boxes}".encode()).hexdigest()
     out = THUMB_DIR / key[:2] / f"{key}.jpg"
     if not out.is_file():
         full = point_set_store.get_set(board_id) or {"points": []}
@@ -226,7 +226,7 @@ def point_thumb(board_id: str, index: int, w: int = Query(480), boxes: bool = Tr
                 if not b or len(b) != 4:
                     continue
                 color = class_color(str(c.get("name", "")))
-                cv2.rectangle(img, (int(b[0] * ww), int(b[1] * h)), (int(b[2] * ww), int(b[3] * h)), color, max(1, w // 320), cv2.LINE_AA)
+                cv2.rectangle(img, (int(b[0] * ww), int(b[1] * h)), (int(b[2] * ww), int(b[3] * h)), color, max(2, w // 200), cv2.LINE_AA)
         out.parent.mkdir(parents=True, exist_ok=True)
         tmp = out.with_name(out.stem + ".tmp.jpg")
         cv2.imwrite(str(tmp), img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])

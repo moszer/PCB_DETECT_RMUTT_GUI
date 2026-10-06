@@ -207,7 +207,7 @@ export function BoardsView({
               <>
                 <Card>
                   <div className="p-4 flex flex-wrap items-start gap-3">
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-[16rem]">
                       {renaming !== null ? (
                         <form
                           className="flex gap-2"
@@ -348,7 +348,10 @@ export function BoardsView({
                   <div className="p-4 grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
                     {current.points.map((p) => (
                       <div key={p.id} className={cx("rounded-lg border overflow-hidden bg-surface", p.issues.length ? "border-review/50" : "border-line")}>
-                        <div className="relative aspect-video bg-viewport">
+                        <div
+                          className="relative bg-viewport"
+                          style={{ aspectRatio: p.reference_size ? `${p.reference_size[0]} / ${p.reference_size[1]}` : "16 / 9" }}
+                        >
                           {p.has_reference ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img src={api.boards.thumb(current.id, p.index, 480, current.updated_at)} alt={p.name} loading="lazy" className="absolute inset-0 size-full object-contain" />
