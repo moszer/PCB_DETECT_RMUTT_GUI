@@ -154,3 +154,46 @@ def stop_camera():
     camera_service.stop()
     return {"success": True, "message": "Camera stopped."}
 
+
+
+# ── straightening (camera mounted a little turned) ──
+
+@router.get("/straighten/detect")
+def detect_straighten():
+    """Suggested settings.camera_rotate_deg: levels the board's lines in the current picture."""
+    from ..config import settings
+    from ..core.straighten import estimate_skew_deg
+
+    if not camera_service.is_active:
+        raise HTTPException(status_code=503, detail="Camera is not active")
+    _, frame = camera_service.get_fresh_frame(time.monotonic(), timeout_sec=3.0, raw=True)
+    skew = estimate_skew_deg(frame)
+    if skew is None:
+        raise HTTPException(status_code=422, detail="หาแนวเส้นของบอร์ดในภาพไม่ได้ — วางบอร์ดใต้กล้องให้เต็มภาพ")
+    return {"angle_deg": round(skew, 2), "current_deg": settings.camera_rotate_deg}
+
+
+@router.get("/straighten/preview")
+def straighten_preview(angle: float = 0.0, grid: int = 12):
+    """The current picture rotated by `angle` with level guide lines (JPEG), to check by eye."""
+    import cv2
+    from fastapi.responses import Response
+
+    from ..core.straighten import rotate
+
+    if not camera_service.is_active:
+        raise HTTPException(status_code=503, detail="Camera is not active")
+    if not -15 <= angle <= 15 or not 2 <= grid <= 40:
+        raise HTTPException(status_code=400, detail="angle -15..15, grid 2..40")
+    _, frame = camera_service.get_fresh_frame(time.monotonic(), timeout_sec=3.0, raw=True)
+    h, w = frame.shape[:2]
+    k = min(1.0, 1280 / max(h, w))
+    small = cv2.resize(frame, (int(w * k), int(h * k)), interpolation=cv2.INTER_AREA) if k < 1 else frame
+    out = rotate(small, angle)
+    sh, sw = out.shape[:2]
+    for i in range(1, grid):
+        y, x = int(sh * i / grid), int(sw * i / grid)
+        cv2.line(out, (0, y), (sw, y), (255, 210, 0), 1, cv2.LINE_AA)
+        cv2.line(out, (x, 0), (x, sh), (255, 210, 0), 1, cv2.LINE_AA)
+    ok, jpg = cv2.imencode(".jpg", out, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+    return Response(jpg.tobytes(), media_type="image/jpeg", headers={"Cache-Control": "no-store"})

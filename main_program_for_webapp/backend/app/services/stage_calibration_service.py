@@ -194,6 +194,8 @@ class StageCalibrationService:
             "steps_per_mm": machine_service.steps_per_mm,
             "approach_mm_during_test": settings.stage_approach_mm,
             "image_size": [int(ref.shape[1]), int(ref.shape[0])],
+            # Frames were straightened by this much while measuring (see stage_matrix).
+            "image_rotation_deg": settings.camera_rotate_deg,
             "checkerboard": list(checkerboard) if checkerboard else None,
             "square_mm": square_mm,
         })
@@ -240,3 +242,25 @@ class StageCalibrationService:
 
 
 stage_calibration_service = StageCalibrationService()
+
+
+def stage_matrix(frame_shape, zoom: float = 1.0, scale: float = 1.0) -> Optional[np.ndarray]:
+    """Stage mm -> image px for frames of this size/zoom, from the last calibration.
+
+    Capture modes are crops of one sensor (px per mm follows the image height), digital zoom
+    and a later resize (`scale`) magnify, and a change of the straightening angle since the
+    calibration turns the image motion with the picture.
+    """
+    from ..core.straighten import rotate_vectors
+
+    cal = stage_calibration_service.last_result()
+    try:
+        m = np.asarray(cal["stage_to_image"], np.float64).reshape(2, 2)
+        cal_h = int(cal["image_size"][1])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if cal_h <= 0 or abs(np.linalg.det(m)) < 1e-6:
+        return None
+    m = m * (int(frame_shape[0]) / cal_h) * max(1.0, float(zoom or 1.0)) * scale
+    turn = float(settings.camera_rotate_deg or 0.0) - float(cal.get("image_rotation_deg") or 0.0)
+    return rotate_vectors(m, turn) if turn else m

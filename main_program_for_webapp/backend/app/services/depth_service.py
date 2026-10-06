@@ -120,17 +120,9 @@ class DepthService:
         camera's square and wide modes are crops of one sensor (same px per mm; checked on
         2160x2160 vs 3840x2160). It only seeds the shift search, which is refined locally.
         """
-        from .stage_calibration_service import stage_calibration_service
+        from .stage_calibration_service import stage_matrix
 
-        cal = stage_calibration_service.last_result()
-        try:
-            m = np.asarray(cal["stage_to_image"], np.float64).reshape(2, 2)
-            cal_w, cal_h = (int(v) for v in cal["image_size"])
-        except (KeyError, TypeError, ValueError):
-            return None
-        if cal_h <= 0:
-            return None
-        return m * (int(shape[0]) / cal_h)
+        return stage_matrix(shape)
 
     def _travel(self) -> Tuple[float, float]:
         state = machine_service.get_state()

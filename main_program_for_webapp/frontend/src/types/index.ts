@@ -612,6 +612,7 @@ export interface StationSettings {
   stabilize_max_wait_sec: number;
   stabilize_threshold_px: number;
   board_align_enabled: boolean;
+  camera_rotate_deg: number;
   board_align_max_deg: number;
   board_align_max_mm: number;
   has_passcode: boolean;

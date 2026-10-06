@@ -12,11 +12,19 @@ from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, Tuple
 import cv2
 import numpy as np
 
+from ..core.straighten import rotate
+
 from ..config import settings
 
 logger = logging.getLogger("camera_service")
 
 _KEEP: Any = object()  # sentinel: keep the previous output size
+
+
+def _rotation() -> float:
+    from ..config import settings
+
+    return float(settings.camera_rotate_deg or 0.0)
 
 
 class CameraService:
@@ -36,6 +44,7 @@ class CameraService:
         self._running = False
         self._latest_frame: Optional[np.ndarray] = None
         self._latest_jpeg: Optional[bytes] = None
+        self._rotated: Optional[Tuple[float, float, np.ndarray]] = None  # (timestamp, angle, frame)
         self._latest_timestamp: float = 0.0
         self._actual_width: int = 0
         self._actual_height: int = 0
@@ -353,6 +362,9 @@ class CameraService:
                     preview = cv2.resize(frame, (1280, int(h * scale)))
                 else:
                     preview = frame
+                # The live view shows the straightened picture (cheap at preview size); the full
+                # frame is rotated only when someone asks for it (get_latest_frame).
+                preview = rotate(preview, _rotation())
 
                 ret, jpeg = cv2.imencode(".jpg", preview, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
                 jpeg_bytes = jpeg.tobytes() if ret else None
@@ -370,12 +382,27 @@ class CameraService:
                         self._fps_count = 0
                         self._fps_timer = now
 
-    def get_latest_frame(self) -> Tuple[Optional[float], Optional[np.ndarray]]:
-        """Get the most recently captured frame and its timestamp."""
+    def get_latest_frame(self, raw: bool = False) -> Tuple[Optional[float], Optional[np.ndarray]]:
+        """Get the most recently captured frame and its timestamp.
+
+        Straightened by settings.camera_rotate_deg unless `raw` (motion checks don't need it);
+        the rotated copy is cached per frame, as several callers may ask for the same one.
+        """
         with self._lock:
             if self._latest_frame is None:
                 return (None, None)
-            return (self._latest_timestamp, self._latest_frame.copy())
+            ts, frame = self._latest_timestamp, self._latest_frame
+            angle = 0.0 if raw else _rotation()
+            cached = self._rotated
+            if angle and cached and cached[0] == ts and cached[1] == angle:
+                return (ts, cached[2].copy())
+            frame = frame.copy()
+        if not angle:
+            return (ts, frame)
+        out = rotate(frame, angle)
+        with self._lock:
+            self._rotated = (ts, angle, out)
+        return (ts, out.copy())
 
     def wait_until_still(self, after_timestamp: float, should_stop=None, max_wait_sec: Optional[float] = None) -> Dict[str, Any]:
         """Anti-shake: block until the picture stops moving after a stage move (see core.stabilize).
@@ -389,14 +416,14 @@ class CameraService:
         if not settings.stabilize_enabled or self.is_mock or not self.is_active:
             return {"still": True, "waited_sec": 0.0, "frames": 0, "motion_px": 0.0, "timestamp": after_timestamp, "skipped": True}
         return wait_until_still(
-            lambda after: self.get_fresh_frame(after, timeout_sec=3.0),
+            lambda after: self.get_fresh_frame(after, timeout_sec=3.0, raw=True),
             after_timestamp,
             max_wait_sec=settings.stabilize_max_wait_sec if max_wait_sec is None else max_wait_sec,
             threshold_px=settings.stabilize_threshold_px,
             should_stop=should_stop,
         )
 
-    def get_fresh_frame(self, after_timestamp: float, timeout_sec: float = 2.5) -> Tuple[float, np.ndarray]:
+    def get_fresh_frame(self, after_timestamp: float, timeout_sec: float = 2.5, raw: bool = False) -> Tuple[float, np.ndarray]:
         """Block until a newly captured frame arriving strictly AFTER `after_timestamp` is available.
         
         Essential for AOI motion: guarantees we do not inspect a stale frame
@@ -406,7 +433,7 @@ class CameraService:
         while time.monotonic() < deadline:
             if not self.is_active:
                 raise RuntimeError("Camera stopped while waiting for a fresh frame")
-            t, frame = self.get_latest_frame()
+            t, frame = self.get_latest_frame(raw=raw)
             if t is not None and t > after_timestamp and frame is not None:
                 return (t, frame)
             time.sleep(0.015)

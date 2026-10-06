@@ -109,6 +109,9 @@ class Settings(BaseModel):
     stabilize_enabled: bool = True
     stabilize_max_wait_sec: float = Field(2.0, ge=0.1, le=10)
     stabilize_threshold_px: float = Field(1.5, gt=0, le=50)
+    # Straighten a camera mounted a little turned: every frame is rotated by this (deg,
+    # counter-clockwise positive) before use; the live view too.
+    camera_rotate_deg: float = Field(0.0, ge=-15, le=15)
     # Board alignment: find how the board is turned/shifted vs. its taught points (needs their
     # reference pictures and the stage calibration), move the scan points and deskew the frames.
     board_align_enabled: bool = True

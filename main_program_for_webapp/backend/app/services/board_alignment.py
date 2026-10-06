@@ -32,18 +32,9 @@ class BoardMisplaced(RuntimeError):
 
 def stage_matrix_for(frame_shape: Sequence[int], zoom: float) -> Optional[np.ndarray]:
     """Stage mm -> image px for a frame of this size at this digital zoom (stage calibration)."""
-    from .stage_calibration_service import stage_calibration_service
+    from .stage_calibration_service import stage_matrix
 
-    cal = stage_calibration_service.last_result()
-    try:
-        m = np.asarray(cal["stage_to_image"], np.float64).reshape(2, 2)
-        cal_h = int(cal["image_size"][1])
-    except (KeyError, TypeError, ValueError):
-        return None
-    if cal_h <= 0 or abs(np.linalg.det(m)) < 1e-6:
-        return None
-    # Capture modes are crops of one sensor (px per mm follows the height); zoom magnifies.
-    return m * (int(frame_shape[0]) / cal_h) * max(1.0, float(zoom or 1.0))
+    return stage_matrix(frame_shape, zoom)
 
 
 def pick_reference_points(points: Sequence[Any], refs: Dict[int, str]) -> List[Any]:

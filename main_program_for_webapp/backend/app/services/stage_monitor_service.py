@@ -174,18 +174,9 @@ class StageMonitorService:
 
 def _stage_matrix(frame_h: int, scale: float) -> Optional[np.ndarray]:
     """Stage mm -> px of the compared (scaled) frames, from the last stage calibration."""
-    from .stage_calibration_service import stage_calibration_service
+    from .stage_calibration_service import stage_matrix
 
-    cal = stage_calibration_service.last_result()
-    try:
-        m = np.asarray(cal["stage_to_image"], np.float64).reshape(2, 2)
-        cal_h = int(cal["image_size"][1])
-    except (KeyError, TypeError, ValueError):
-        return None
-    if cal_h <= 0 or abs(np.linalg.det(m)) < 1e-6:
-        return None
-    # The capture modes are crops of one sensor: px per mm follows the image height.
-    return m * (frame_h / cal_h) * scale
+    return stage_matrix((frame_h, 0), 1.0, scale)
 
 
 def _summary(samples: List[Dict[str, Any]]) -> Dict[str, Any]:

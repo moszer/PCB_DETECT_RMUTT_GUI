@@ -9,6 +9,7 @@ import { ModelPicker } from "./ModelPicker";
 import { AIKeyPanel } from "./AIKeyPanel";
 import { RemoteAccessPanel } from "./RemoteAccess";
 import { StageCalibrationCard } from "./StageCalibrationCard";
+import { StraightenCard } from "./StraightenCard";
 import { useSoundPrefs } from "@/hooks/useSound";
 import { sfx } from "@/lib/sound";
 import { useToast } from "./Toast";
@@ -167,6 +168,8 @@ export function SettingsView({ onRefreshStatus, isOperator }: { onRefreshStatus:
             </Field>
           </div>
         </Card>
+
+        <StraightenCard isOperator={isOperator} />
 
         <StageCalibrationCard isOperator={isOperator} />
 
