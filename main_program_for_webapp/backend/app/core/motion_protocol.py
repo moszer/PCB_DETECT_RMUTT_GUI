@@ -61,6 +61,8 @@ class MotionClient:
         # Commands the firmware lists in its HELP line (asked after READY): optional extras
         # such as TONE are only sent when present — an unknown command faults the link.
         self.capabilities: set = set()
+        # Fine-homing report of the last HOME per axis (firmware "[HOMEINFO] axis spread touches").
+        self.home_info: dict = {}
         self.buffer = bytearray()
         self.events = []
         self.started = self.last_rx = self.last_ping = clock()
@@ -109,6 +111,8 @@ class MotionClient:
         if kind in ("HOME", "OFF"):
             self.homed = False
             self.home_verified = False
+        if kind == "HOME":
+            self.home_info = {}
         # TONE reuses the numbers: frequency (Hz), duration (ms), motors mask, swing (half-steps).
         args = f" {x} {y} {speed}" if kind in ("MOVE", "TONE") else ""
         if kind == "TONE" and extra:
@@ -174,6 +178,10 @@ class MotionClient:
                         raise ValueError("HOME did not complete")
                     self.pending = None
                     self._emit("done", kind)
+            elif tag == "[HOMEINFO]":
+                if len(parts) == 4 and parts[1] in ("X", "Y"):
+                    self.home_info[parts[1]] = {"spread_steps": int(parts[2]), "touches": int(parts[3])}
+                return
             elif tag == "CNC" and len(parts) > 1 and parts[1] == "v2:":
                 self.capabilities = {p.upper() for p in parts[2:]}
                 return
@@ -234,6 +242,8 @@ class SimulatedTransport:
             self.position = target
             if kind == "HOME":
                 self.homed = True
+                self.emit("[HOMEINFO] X 2 3")  # like the fine-homing firmware
+                self.emit("[HOMEINFO] Y 1 3")
             self.job = None
             self.emit(f"[DONE] {ident} {self.position[0]} {self.position[1]} {int(self.homed)}")
         return len(self.buffer)

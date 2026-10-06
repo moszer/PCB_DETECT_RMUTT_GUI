@@ -127,6 +127,8 @@ class MachineState(BaseModel):
     last_error: Optional[str] = None
     last_event: Optional[str] = None
     rx_log: List[str] = Field(default_factory=list)
+    # Last HOME's repeated switch touches per axis: {"X": {"spread_steps": 2, "touches": 3}, ...}
+    home_info: Optional[Dict[str, Dict[str, int]]] = None
 
 
 class CustomPointRequest(BaseModel):

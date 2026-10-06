@@ -99,7 +99,8 @@ class MachineService:
                 is_moving=is_moving,
                 last_error=self._last_error,
                 last_event=self._last_event,
-                rx_log=list(self._rx_log[-30:])
+                rx_log=list(self._rx_log[-30:]),
+                home_info=dict(self._client.home_info) or None,
             )
 
     def set_soft_limits(self, limit_x_mm: float, limit_y_mm: float):

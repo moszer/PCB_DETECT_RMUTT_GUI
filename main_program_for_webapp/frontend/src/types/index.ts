@@ -69,6 +69,8 @@ export interface MachineState {
   last_error?: string | null;
   last_event?: string | null;
   rx_log: string[];
+  /** Last HOME's repeated slow switch touches per axis (spread = repeatability in steps). */
+  home_info?: Record<"X" | "Y", { spread_steps: number; touches: number }> | null;
 }
 
 export interface ControlLease {

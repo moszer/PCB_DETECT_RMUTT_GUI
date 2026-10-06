@@ -483,6 +483,10 @@ def get_motion() -> Dict[str, Any]:
         **{k: st.get(k) for k in ("connected", "mode", "port", "ready", "homed", "position_mm", "position_steps",
                                    "is_moving", "soft_limits_mm", "last_error", "last_event")},
         "steps_per_mm": machine_service.steps_per_mm,
+        # Fine HOME: how far apart the repeated slow switch touches were (switch repeatability).
+        "home_repeatability_um": {ax: round(v["spread_steps"] / machine_service.steps_per_mm * 1000, 1)
+                                  for ax, v in (st.get("home_info") or {}).items()} or None,
+        "home_touches": next((v["touches"] for v in (st.get("home_info") or {}).values()), None),
         "firmware_commands": caps or None,
         "can_play_sound": machine_service.can_play,
         "idle_coils_off_after_sec": 3 if "RELEASE" in caps else None,

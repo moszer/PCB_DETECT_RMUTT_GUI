@@ -4,6 +4,9 @@
  * Idle coils are switched off IDLE_RELEASE_MS after each command finishes (the 28BYJ-48 runs
  * hot when held); position and HOME are kept: the 1:64 gearbox holds the axis, and the next
  * MOVE re-energizes the same coil phase. OFF still clears HOME; RELEASE switches off now.
+ * HOME touches each switch several times: fast seek, then FINE_TOUCHES slow approaches from
+ * FINE_BACKOFF away; zero is the mean trigger point (+BACKOFF), and "[HOMEINFO] axis spread
+ * touches" reports how far apart the touches were (steps), i.e. the switch repeatability.
  * TONE f ms [mask] [swing]: buzz the motors at f Hz (50-4000) for ms (5-5000) by flipping the
  * coils between two steps around the current one, `swing` half-steps apart (1 = current/next,
  * 2 = -1/+1, 4 = -2/+2: wider is louder); they end on the current step, so position and HOME
@@ -44,7 +47,7 @@ const float STEPS_PER_MM=512.0, ACCEL=600.0;
 long maxX=19456, maxY=19456; // 38.00 mm @ 512 steps/mm
 float currentSpeed=1000;
 bool homed=false, coilsOff=true;
-enum Phase { IDLE, MOVING, RELEASE, SEEK, BACKING, TONE };
+enum Phase { IDLE, MOVING, RELEASE, SEEK, BACKING, TONE, FINE_BACK, FINE_SEEK };
 Phase phase=IDLE;
 bool calibrating=false, bothAxes=true;
 uint8_t homeAxis=0;
@@ -53,6 +56,12 @@ unsigned long activeId=0, phaseTime=0, lastTelemetry=0;
 unsigned long lastHostMessage=0;
 const unsigned long IDLE_RELEASE_MS=3000; // longer than a scan point's capture, so a scan keeps them on
 unsigned long idleSince=0;
+// Fine homing: slow, repeated touches of the switch from the same side.
+const uint8_t FINE_TOUCHES=3;
+const long FINE_BACKOFF=200;   // ~0.4 mm off the switch before each slow touch
+const float FINE_SPEED=150;    // steps/s for the touches (fast seek is 600)
+long fineHits[FINE_TOUCHES];
+uint8_t fineCount=0, limitStreak=0;
 unsigned long toneHalfUs=0, toneLast=0, toneEnd=0;
 uint8_t toneMask=0;
 bool toneNext=false;
@@ -80,6 +89,8 @@ bool limitX() { return digitalRead(PIN_LIMIT_X)==LOW; }
 bool limitY() { return digitalRead(PIN_LIMIT_Y)==LOW; }
 AccelStepper &axis() { return homeAxis==0 ? (AccelStepper&)stepperX : (AccelStepper&)stepperY; }
 bool axisLimit() { return homeAxis==0 ? limitX() : limitY(); }
+// The switch counts as pressed after 3 reads in a row (a bounce or a noise spike does not).
+bool axisLimitSteady() { limitStreak = axisLimit() ? (uint8_t)min(limitStreak + 1, 10) : 0; return limitStreak >= 3; }
 
 void positionFields() {
   Serial.print(stepperX.currentPosition()); Serial.print(' ');
@@ -129,7 +140,7 @@ void fail(const __FlashStringHelper *reason) {
 void startHomeAxis() {
   AccelStepper &s=axis();
   s.setCurrentPosition(s.currentPosition()); s.setMaxSpeed(800); s.setAcceleration(ACCEL);
-  phaseStart=s.currentPosition(); phaseTime=millis();
+  phaseStart=s.currentPosition(); phaseTime=millis(); limitStreak=0;
   if (axisLimit()) { phase=RELEASE; s.setSpeed(400); }
   else { phase=SEEK; s.setCurrentPosition(0); s.setSpeed(-600); }
 }
@@ -145,14 +156,43 @@ void runHoming() {
     else if (labs(s.currentPosition()-phaseStart)>=4096 || millis()-phaseTime>15000UL) { fail(F("SWITCH_STUCK")); }
     else s.runSpeed();
   } else if (phase==SEEK) {
-    if (axisLimit()) {
+    if (axisLimitSteady()) {
       long length=labs(s.currentPosition())-BACKOFF;
       if (calibrating && length<=0) { fail(F("CAL_TOO_SHORT")); return; }
       if (homeAxis==0) measuredX=length; else measuredY=length;
-      s.setCurrentPosition(0); s.setMaxSpeed(600); s.setAcceleration(ACCEL); s.moveTo(BACKOFF);
-      phase=BACKING; phaseTime=millis();
+      // Found fast; now touch it slowly several times from just off the switch.
+      s.setCurrentPosition(0); s.setMaxSpeed(600); s.setAcceleration(ACCEL); s.moveTo(FINE_BACKOFF);
+      fineCount=0; limitStreak=0; phase=FINE_BACK; phaseTime=millis();
     } else if (labs(s.currentPosition()) >= (calibrating?100000L:50000L) || millis()-phaseTime>240000UL) {
       fail(F("HOME_TIMEOUT"));
+    } else s.runSpeed();
+  } else if (phase==FINE_BACK) {
+    s.run();
+    if (millis()-phaseTime>15000UL) { fail(F("BACKOFF_TIMEOUT")); return; }
+    if (s.distanceToGo()==0 && s.speed()==0) {
+      if (axisLimit()) { fail(F("SWITCH_STUCK")); return; }
+      phaseStart=s.currentPosition(); limitStreak=0;
+      s.setSpeed(-FINE_SPEED); phase=FINE_SEEK; phaseTime=millis();
+    }
+  } else if (phase==FINE_SEEK) {
+    if (axisLimitSteady()) {
+      long hit=s.currentPosition();
+      fineHits[fineCount++]=hit;
+      if (fineCount<FINE_TOUCHES) {
+        s.setMaxSpeed(600); s.setAcceleration(ACCEL); s.moveTo(hit+FINE_BACKOFF);
+        limitStreak=0; phase=FINE_BACK; phaseTime=millis();
+        return;
+      }
+      long lo=fineHits[0], hi=fineHits[0], sum=0;
+      for (uint8_t i=0; i<FINE_TOUCHES; i++) { lo=min(lo,fineHits[i]); hi=max(hi,fineHits[i]); sum+=fineHits[i]; }
+      long mean=(sum + (sum>=0 ? FINE_TOUCHES/2 : -(long)(FINE_TOUCHES/2))) / FINE_TOUCHES;
+      s.setCurrentPosition(hit-mean);  // zero = mean trigger point
+      Serial.print(F("[HOMEINFO] ")); Serial.print(homeAxis==0?'X':'Y'); Serial.print(' ');
+      Serial.print(hi-lo); Serial.print(' '); Serial.println(FINE_TOUCHES);
+      s.setMaxSpeed(600); s.setAcceleration(ACCEL); s.moveTo(BACKOFF);
+      phase=BACKING; phaseTime=millis();
+    } else if (labs(s.currentPosition()-phaseStart) > 2*FINE_BACKOFF+200 || millis()-phaseTime>15000UL) {
+      fail(F("FINE_HOME_FAIL"));  // switch not found again where it was: loose switch or slipping
     } else s.runSpeed();
   } else if (phase==BACKING) {
     s.run();
@@ -238,7 +278,7 @@ void processLine(char *line) {
   lastHostMessage=millis();
   if (!strcmp(cmd,"PING") && !args) return;
   if ((!strcmp(cmd,"STOP") || !strcmp(cmd,"OFF")) && !args) {
-    bool interruptedHome=phase==RELEASE || phase==SEEK || phase==BACKING;
+    bool interruptedHome=phase==RELEASE || phase==SEEK || phase==BACKING || phase==FINE_BACK || phase==FINE_SEEK;
     haltMotion(); if (interruptedHome) homed=false;
     if (!strcmp(cmd,"OFF")) { powerOff(); homed=false; }
     activeId=id; acknowledge(id); complete(); return;

@@ -174,10 +174,33 @@ export function StageBar({
             loading={busy === "home"}
             disabled={scanning || machine?.is_moving || locked}
             reason={lockReason}
-            onClick={() => run("home", api.homeMachine, "HOME ไม่สำเร็จ")}
+            onClick={() =>
+              run(
+                "home",
+                async () => {
+                  const res = (await api.homeMachine()) as { state?: MachineState };
+                  const info = res?.state?.home_info;
+                  if (info) {
+                    // steps → µm with the stage's 512 steps/mm
+                    const um = (ax: "X" | "Y") => (info[ax] ? `${Math.round((info[ax].spread_steps / 512) * 1000)} µm` : "–");
+                    const n = info.X?.touches ?? info.Y?.touches;
+                    toast.info("HOME ละเอียดเสร็จ", `แตะ limit ${n} ครั้งต่อแกน · ต่างกัน X ${um("X")} · Y ${um("Y")}`);
+                  }
+                },
+                "HOME ไม่สำเร็จ"
+              )
+            }
           >
             HOME
           </Button>
+          {machine?.homed && machine.home_info && (
+            <span
+              className="text-[11px] text-subtle font-mono tabular"
+              title="HOME แตะ limit ช้าๆ หลายครั้งแล้วใช้ค่าเฉลี่ย — ตัวเลขคือระยะที่จุดสัมผัสแต่ละครั้งต่างกัน (ความซ้ำของสวิตช์)"
+            >
+              ±{Math.round((Math.max(machine.home_info.X?.spread_steps ?? 0, machine.home_info.Y?.spread_steps ?? 0) / 512) * 1000)} µm
+            </span>
+          )}
           <div className="h-8 px-3 rounded-lg bg-surface-2 border border-line flex items-center gap-3 font-mono tabular text-xs">
             <span>
               <span className="text-subtle">X</span> {formatMm(machine?.position_mm[0])}

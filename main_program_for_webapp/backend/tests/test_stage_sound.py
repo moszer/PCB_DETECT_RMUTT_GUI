@@ -113,3 +113,30 @@ class TuneTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FineHomeTests(unittest.TestCase):
+    def test_home_reports_the_repeated_switch_touches(self):
+        clock = Clock()
+        client = MotionClient(SimulatedTransport(clock), clock)
+        client.tick(); clock.time += 0.1; client.tick()
+        client.command("HOME")
+        clock.time += 0.25
+        client.tick()
+        self.assertTrue(client.homed)
+        self.assertEqual(client.home_info, {"X": {"spread_steps": 2, "touches": 3}, "Y": {"spread_steps": 1, "touches": 3}})
+        client.command("HOME")  # a new HOME forgets the old report until the new one arrives
+        self.assertEqual(client.home_info, {})
+
+    def test_machine_state_and_agent_show_it(self):
+        from app.services import agent_service
+
+        machine_service.connect(mode="simulation")
+        try:
+            machine_service.home()
+            st = machine_service.get_state()
+            self.assertEqual(st.home_info["X"]["touches"], 3)
+            m = agent_service.get_motion()
+            self.assertAlmostEqual(m["home_repeatability_um"]["X"], 2 / machine_service.steps_per_mm * 1000, places=1)
+        finally:
+            machine_service.disconnect()
