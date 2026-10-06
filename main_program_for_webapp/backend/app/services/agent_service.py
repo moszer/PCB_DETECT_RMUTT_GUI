@@ -44,6 +44,9 @@ SYSTEM_PROMPT = f"""คุณคือผู้ช่วย AI ของสถ�
 - ถามเบอร์/ยี่ห้อของ IC หรือตัวอักษรบนชิ้น ให้เรียก list_scan_runs แล้ว read_part_markings (ต้องระบุ run_id; ถ้าผู้ใช้ไม่ระบุรอบ ใช้รอบล่าสุด) แล้วสรุปเบอร์ที่อ่านได้พร้อมบอกว่าชิปนั้นคืออะไรจากความรู้ของคุณ บอกด้วยว่า OCR อาจผิดบางตัวอักษร
 - "บอร์ด" ที่บันทึกไว้คือชุดจุดตรวจที่ตั้งชื่อในหน้าสแกน AOI (list_boards / get_board) — การเปิดบอร์ดหรือแก้บอร์ดต้องทำเองที่หน้า aoi
 - ถ้าผู้ใช้ขอให้ไป/เปิดหน้าใด หรือคำตอบจะดูต่อได้ดีที่หน้าใด ให้เรียก navigate
+- ถ้าถูกขอให้สรุปภาพรวม/ทุกอย่าง/สถานะเครื่อง ให้เรียก get_full_snapshot ครั้งเดียวก่อน แล้วสรุปเป็นหมวด (สถานะ สแกน สเตจ กล้อง ความแม่นยำราง ฮาร์ดแวร์ การตั้งค่าสำคัญ ปัญหาที่ควรแก้) ชี้จุดผิดปกติให้ชัด เช่น ยังไม่ HOME, backlash สูงแต่ยังไม่เปิดชดเชย, ไม่มีผล calibrate, คำเตือน GPU/หน่วยความจำ, อุณหภูมิสูง
+- อธิบายการตั้งค่าด้วยความหมายที่ get_settings ให้มา (ไม่ใช่ชื่อตัวแปร)
+- ถามว่าเกิดอะไรขึ้น/ทำไม error ให้ดู get_recent_events
 - คุณอ่านข้อมูลได้อย่างเดียว สั่งเครื่อง/สแกน/แก้การตั้งค่าไม่ได้ ถ้าถูกขอให้บอกว่าต้องทำที่หน้าไหน
 - เวลาเป็นเวลาท้องถิ่นของสถานี ตอบสรุปเป็นข้อๆ หรือตารางเมื่อเหมาะสม"""
 
@@ -317,14 +320,238 @@ def list_models() -> Dict[str, Any]:
     return {"current_model": _parent_run_name(res.get("current_model")), "count": len(models), "models": models[:40]}
 
 
+# What every setting means (Thai), grouped as on the settings page: the agent explains values.
+SETTINGS_GLOSSARY: Dict[str, Dict[str, str]] = {
+    "สถานี": {
+        "station_name": "ชื่อสถานี", "default_operator": "ชื่อผู้ควบคุมเริ่มต้น",
+        "has_passcode": "ตั้งรหัสผ่านสำหรับขอสิทธิ์ควบคุมไว้หรือไม่", "lease_ttl_seconds": "สิทธิ์ควบคุมหมดอายุถ้าไม่ต่อภายใน (วินาที)",
+    },
+    "โมเดลและการตรวจ": {
+        "default_model": "โมเดล YOLO ที่โหลดตอนเปิดเครื่อง", "device_preference": "ฮาร์ดแวร์ประมวลผลที่เลือก (auto/cuda/mps/cpu)",
+        "inference_half": "ใช้ FP16 บน GPU (ประหยัดหน่วยความจำ เร็วขึ้น ผลเท่าเดิม)",
+        "default_conf": "ความมั่นใจขั้นต่ำเริ่มต้น (0-1)", "default_match_dist": "ระยะจับคู่กับจุดอ้างอิงเริ่มต้น (px)",
+        "default_fail_on_extra": "ตัดสิน FAIL เมื่อเจอชิ้นเกินหรือไม่",
+    },
+    "กล้อง": {
+        "camera_index": "หมายเลขกล้อง", "camera_device_name": "ชื่อกล้อง", "camera_backend": "ไดรเวอร์กล้อง",
+        "camera_width": "ความกว้างที่ถ่ายจากเซนเซอร์ (px)", "camera_height": "ความสูงที่ถ่ายจากเซนเซอร์ (px)", "camera_fps": "FPS ที่ขอ",
+        "camera_output_width": "ความกว้างภาพที่ใช้งาน (px)", "camera_output_height": "ความสูงภาพที่ใช้งาน (px)",
+        "camera_output_mode": "วิธีได้ขนาดภาพใช้งาน: crop = ตัดกลางภาพ 1:1, fit = ตัดสัดส่วนแล้วย่อ",
+        "camera_rotate_deg": "หมุนภาพกล้องให้ตรง (องศา + = ทวนเข็ม) ใช้กับทุกภาพรวมภาพสด",
+    },
+    "สเตจ XY": {
+        "steps_per_mm": "สเต็ปต่อ mm ของมอเตอร์", "default_speed": "ความเร็วเคลื่อนที่เริ่มต้น (steps/s)",
+        "default_settle_sec": "รอให้นิ่งหลังเคลื่อนที่ขั้นต่ำ (วินาที)", "soft_limit_x_mm": "ระยะเคลื่อนที่สูงสุดแกน X (mm)",
+        "soft_limit_y_mm": "ระยะเคลื่อนที่สูงสุดแกน Y (mm)", "firmware_baud": "ความเร็ว serial ของ Nano", "serial_startup_delay": "รอ Nano บูตหลังเปิดพอร์ต (วินาที)",
+        "stage_approach_mm": "ชดเชย backlash: ระยะเลยเป้าก่อนเข้าเป้าจากทิศ + (0 = ปิด)",
+        "stage_monitor_enabled": "วัดความคลาดเคลื่อนของรางด้วยกล้องทุกครั้งที่เคลื่อนที่ (realtime)",
+        "stage_sound_enabled": "ให้มอเตอร์ส่งเสียงเมื่อสแกน/HOME/calibrate เสร็จ",
+    },
+    "กันสั่นและชดเชยบอร์ด": {
+        "stabilize_enabled": "รอภาพนิ่งก่อนถ่าย และถ่ายเฟรมที่สั่นใหม่", "stabilize_max_wait_sec": "รอภาพนิ่งนานสุด (วินาที)",
+        "stabilize_threshold_px": "ถือว่านิ่งเมื่อภาพขยับไม่เกิน (px)",
+        "board_align_enabled": "ชดเชยบอร์ดที่วางเอียง/เลื่อนจากตอนสอนจุด", "board_align_max_deg": "เอียงได้ไม่เกิน (องศา) เกินนี้หยุดสแกน",
+        "board_align_max_mm": "เลื่อนได้ไม่เกิน (mm) เกินนี้หยุดสแกน",
+    },
+    "วัดความสูง 3D": {
+        "depth_camera_distance_mm": "ระยะเลนส์ถึงผิวบอร์ด (mm) ใช้คำนวณความสูง", "depth_baseline_mm": "ระยะเลื่อนสเตจต่อภาพตอนวัด 3D (mm)",
+        "depth_views": "จำนวนทิศที่เลื่อนไปถ่ายตอนวัด 3D",
+    },
+}
+
+
 def get_settings() -> Dict[str, Any]:
+    """Every setting with its value and meaning, grouped like the settings page."""
     from ..routers.system import get_settings as settings_dict
 
-    s = dict(settings_dict())
-    for k in ("cors_origins", "host", "port", "model_search_dirs"):
-        s.pop(k, None)
-    s["default_model"] = _parent_run_name(s.get("default_model"))
-    return s
+    raw = dict(settings_dict())
+    raw["default_model"] = _parent_run_name(raw.get("default_model"))
+    out: Dict[str, Any] = {}
+    seen = set()
+    for group, keys in SETTINGS_GLOSSARY.items():
+        out[group] = {k: {"value": raw.get(k), "meaning": meaning} for k, meaning in keys.items() if k in raw}
+        seen.update(keys)
+    hidden = {"cors_origins", "host", "port", "model_search_dirs"}
+    rest = {k: v for k, v in raw.items() if k not in seen and k not in hidden}
+    if rest:
+        out["อื่นๆ"] = rest
+    return out
+
+
+def _calibration_summary(cal: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not cal:
+        return None
+    um = lambda v: None if v is None else round(v * 1000, 1)  # noqa: E731
+    rep = cal.get("repeatability") or {}
+    axis = lambda a: {  # noqa: E731
+        "backlash_um": um(a.get("backlash_mm")), "linearity_um": um(a.get("linearity_mm")),
+        "straightness_um": um(a.get("straightness_mm")), "px_per_mm": a.get("px_per_mm"),
+        "scale_error_pct": a.get("scale_error_pct"), "suggested_steps_per_mm": a.get("suggested_steps_per_mm"),
+    }
+    return {
+        "measured": _time(cal.get("time")), "center_mm": cal.get("center_mm"), "range_mm": cal.get("range_mm"),
+        "x": axis(cal.get("x") or {}), "y": axis(cal.get("y") or {}),
+        "squareness_error_deg": cal.get("squareness_deg"), "camera_rotation_vs_stage_x_deg": cal.get("camera_rotation_deg"),
+        "y_scale_vs_x": cal.get("xy_scale_ratio"),
+        "repeat_same_direction_rms_um": um(max((rep.get(k) or {}).get("rms_mm", 0) for k in ("plus", "minus"))),
+        "direction_gap_um": [um(v) for v in rep.get("direction_gap_mm", [])] or None,
+        "with_compensation_worst_um": um((rep.get("compensated") or {}).get("worst_pair_mm")),
+        "suggested_backlash_compensation_mm": cal.get("suggested_approach_mm"),
+        "absolute_scale_measured": bool(cal.get("mm_per_px")),
+        "frames_rotated_deg_while_measuring": cal.get("image_rotation_deg"),
+    }
+
+
+def get_stage_calibration() -> Dict[str, Any]:
+    """Stage accuracy (camera calibration): backlash, linearity, squareness, repeatability."""
+    from ..config import settings
+    from .stage_calibration_service import stage_calibration_service
+
+    st = stage_calibration_service.status()
+    return {
+        "job": {k: st.get(k) for k in ("state", "step", "total", "message")},
+        "last_result": _calibration_summary(st.get("last")) or "ยังไม่เคย calibrate",
+        "backlash_compensation_mm_now": settings.stage_approach_mm,
+    }
+
+
+def get_stage_errors() -> Dict[str, Any]:
+    """Live positioning error of the latest moves (camera-measured)."""
+    from .stage_monitor_service import stage_monitor_service
+
+    snap = stage_monitor_service.snapshot()
+    rows = [{"time": _time(x["time"]), "move_mm": x["move_mm"], "error_um": [round(v * 1000, 1) for v in x["error_mm"]],
+             "total_um": x["error_um"]} for x in snap["samples"][-12:]]
+    return {"enabled": snap["enabled"], "status": snap["status"], "summary": snap["summary"], "latest_moves": rows}
+
+
+def _point_brief(p: Dict[str, Any]) -> Dict[str, Any]:
+    mf = p.get("multiframe_info") or {}
+    out = {"index": p.get("point_index"), "name": p.get("name"), "verdict": p.get("verdict"), "reason": p.get("reason")}
+    if mf.get("stabilize"):
+        out["waited_still_sec"] = mf["stabilize"].get("waited_sec")
+        out["shaken_frames"] = mf["stabilize"].get("shaken_frames")
+    if mf.get("alignment"):
+        a = mf["alignment"]
+        out["image_aligned"] = {k: a.get(k) for k in ("applied", "angle_deg", "shift_px", "reason") if a.get(k) is not None}
+    if mf.get("max_offset_px") is not None:
+        out["frame_offset_px"] = mf["max_offset_px"]
+    return out
+
+
+def get_scan_progress() -> Dict[str, Any]:
+    """The scan running now (or the last one this session): progress, board alignment, points so far."""
+    from .aoi_scan_service import aoi_scan_service
+
+    r = aoi_scan_service.current_run
+    if not r:
+        return {"running": False, "note": "ยังไม่มีการสแกนตั้งแต่เปิดสถานี — ดูรอบเก่าด้วย list_scan_runs"}
+    d = r.model_dump()
+    return {
+        "running": aoi_scan_service.is_running, "id": d["id"], "status": d["status"], "golden": d["is_golden_scan"],
+        "started": _time(d["created_at"]), "finished": _time(d["completed_at"]),
+        "point": f"{min(d['current_point_index'] + 1, d['total_points'])}/{d['total_points']}",
+        "counts": {k: d[k] for k in ("pass_count", "fail_count", "review_count", "error_count")},
+        "overall_verdict": d["overall_verdict"], "error": d.get("error_message"),
+        "board_alignment": {k: v for k, v in (d.get("board_alignment") or {}).items() if k != "measured"} or None,
+        "points": [_point_brief(p) for p in d["results"][-20:]],
+    }
+
+
+def get_camera() -> Dict[str, Any]:
+    """Camera: device, capture/output size and mode, real FPS, straightening angle, viewers."""
+    from ..config import settings
+    from .camera_service import camera_service
+
+    return {
+        "active": camera_service.is_active, "simulated": camera_service.is_mock, "device": settings.camera_device_name,
+        "index": camera_service.device_index, "capture_size": camera_service.capture_resolution if camera_service.is_active else None,
+        "output_size": camera_service.resolution if camera_service.is_active else None, "output_mode": camera_service.output_mode,
+        "fps_measured": round(camera_service.fps, 1), "rotate_deg": settings.camera_rotate_deg,
+        "live_viewers": camera_service.stream_count,
+    }
+
+
+def get_motion() -> Dict[str, Any]:
+    """Stage controller: connection, HOME, position, firmware abilities, compensation and recent wire log."""
+    from ..config import settings
+    from .machine_service import machine_service
+
+    st = machine_service.get_state().model_dump()
+    caps = sorted(getattr(machine_service._client, "capabilities", set()) or []) if machine_service._client else []
+    return {
+        **{k: st.get(k) for k in ("connected", "mode", "port", "ready", "homed", "position_mm", "position_steps",
+                                   "is_moving", "soft_limits_mm", "last_error", "last_event")},
+        "steps_per_mm": machine_service.steps_per_mm,
+        "firmware_commands": caps or None,
+        "can_play_sound": machine_service.can_play,
+        "idle_coils_off_after_sec": 3 if "RELEASE" in caps else None,
+        "backlash_compensation_mm": settings.stage_approach_mm,
+        "wire_log_tail": (st.get("rx_log") or [])[-8:],
+    }
+
+
+def get_access() -> Dict[str, Any]:
+    """Who controls the station now, passcode, connected browsers, remote access (Tailscale)."""
+    from ..config import settings
+    from ..core.security import lease_manager
+    from ..routers import ws
+    from . import tunnel_service
+
+    lease = lease_manager.get_lease_info().model_dump()
+    out = {
+        "controlled": lease.get("is_controlled"), "operator": lease.get("operator_name"),
+        "since": _time(lease.get("granted_at")), "expires": _time(lease.get("expires_at")),
+        "passcode_set": bool(settings.operator_passcode), "open_browsers": len(ws.active_connections),
+    }
+    out["default_passcode_in_use"] = settings.operator_passcode == "rmutt-aoi"
+    try:
+        t = tunnel_service.status()
+        serve = t.get("serve") or {}
+        out["remote"] = {
+            "tailscale_installed": t.get("installed"), "state": t.get("state"), "url": serve.get("url"),
+            "public_internet_funnel": serve.get("funnel"), "lan": t.get("lan"), "direct_url_in_tailnet": t.get("direct_url"),
+        }
+    except Exception as exc:
+        out["remote"] = {"error": str(exc)[:120]}
+    return out
+
+
+def get_recent_events(level: str = "INFO", limit: int = 30) -> Dict[str, Any]:
+    """The station's latest log lines (errors, warnings, scan/alignment/calibration events)."""
+    from ..core import log_buffer
+
+    lvl = level.upper() if level.upper() in ("INFO", "WARNING", "ERROR") else "INFO"
+    rows = log_buffer.recent(lvl, int(limit or 30))
+    return {"level": lvl, "count": len(rows), "events": rows}
+
+
+def get_full_snapshot() -> Dict[str, Any]:
+    """Everything at once for an overall summary; each part fails on its own."""
+    def safe(fn, *a, **k):
+        try:
+            return fn(*a, **k)
+        except Exception as exc:
+            return {"error": f"{exc.__class__.__name__}: {exc}"[:200]}
+
+    hw = safe(get_hardware)
+    hw_brief = hw if "error" in hw else {
+        "cpu_usage_pct": (hw.get("cpu") or {}).get("usage"), "memory": hw.get("memory"),
+        "temperatures": hw.get("temperatures"), **{k: hw[k] for k in ("gpu", "power", "fan", "power_mode") if k in hw},
+    }
+    return {
+        "station": safe(get_station_status),
+        "scan": safe(get_scan_progress),
+        "motion": safe(get_motion),
+        "camera": safe(get_camera),
+        "access": safe(get_access),
+        "stage_calibration": safe(get_stage_calibration),
+        "stage_errors": safe(lambda: {k: v for k, v in get_stage_errors().items() if k != "latest_moves"}),
+        "statistics": safe(get_statistics),
+        "hardware": hw_brief,
+        "settings": safe(get_settings),
+        "recent_warnings": safe(lambda: get_recent_events("WARNING", 8)["events"]),
+    }
 
 
 def get_hardware() -> Dict[str, Any]:
@@ -358,6 +585,14 @@ TOOLS: Dict[str, Callable[..., Any]] = {
     "list_models": list_models,
     "get_settings": get_settings,
     "get_hardware": get_hardware,
+    "get_full_snapshot": get_full_snapshot,
+    "get_stage_calibration": get_stage_calibration,
+    "get_stage_errors": get_stage_errors,
+    "get_scan_progress": get_scan_progress,
+    "get_camera": get_camera,
+    "get_motion": get_motion,
+    "get_access": get_access,
+    "get_recent_events": get_recent_events,
     "navigate": navigate,
 }
 
@@ -389,7 +624,17 @@ DECLARATIONS = [
     {"name": "get_dataset", "description": "รายละเอียดชุดข้อมูลหนึ่งชุด: คลาส จำนวนภาพ/กรอบ ติด label อย่างไร",
      "parameters": {"type": "object", "properties": {"dataset_id": _STR}, "required": ["dataset_id"]}},
     {"name": "list_models", "description": "โมเดล YOLO ที่มีให้เลือก (จาก runs การเทรน) และตัวที่ใช้อยู่"},
-    {"name": "get_settings", "description": "การตั้งค่าสถานี: ชื่อสถานี ค่า default ของการตรวจ กล้อง ขอบเขตสเตจ 3D"},
+    {"name": "get_settings", "description": "การตั้งค่าทั้งหมดของสถานี แยกหมวด พร้อมความหมายของแต่ละค่า: สถานี โมเดล/การตรวจ กล้อง (รวมมุมหมุนภาพ) สเตจ (ชดเชย backlash เสียง) กันสั่น ชดเชยบอร์ด 3D"},
+    {"name": "get_full_snapshot", "description": "ภาพรวมทุกอย่างในครั้งเดียว: สถานะสด สแกนที่กำลังรัน/ล่าสุด สเตจและเฟิร์มแวร์ กล้อง สิทธิ์ควบคุม ผล calibrate ราง ความคลาดเคลื่อนราง สถิติ Yield ฮาร์ดแวร์ การตั้งค่าทั้งหมด และคำเตือนล่าสุด — ใช้เมื่อถูกขอให้สรุปภาพรวม/ทุกอย่าง/สถานะเครื่อง"},
+    {"name": "get_stage_calibration", "description": "ผล calibrate ความแม่นยำราง XY: backlash, ความเป็นเชิงเส้น, ความตรงราง, มุมฉาก, กล้องเอียง, สเกล Y/X, การกลับจุดเดิม, ค่าชดเชยที่แนะนำ/ที่ใช้อยู่ และสถานะงาน calibrate"},
+    {"name": "get_stage_errors", "description": "ความคลาดเคลื่อนของรางแบบ realtime (วัดด้วยกล้องทุกครั้งที่เคลื่อนที่): ค่าล่าสุด RMS สูงสุด และการเคลื่อนที่ล่าสุด"},
+    {"name": "get_scan_progress", "description": "สแกนที่กำลังรันอยู่ (หรือรอบล่าสุดตั้งแต่เปิดเครื่อง): จุดที่เท่าไหร่ ผ่าน/ไม่ผ่าน การชดเชยการวางบอร์ด (เอียง/เลื่อน) การรอภาพนิ่ง การจัดภาพตามต้นแบบรายจุด"},
+    {"name": "get_camera", "description": "กล้อง: รุ่น ขนาดภาพที่ถ่าย/ที่ใช้ โหมด crop/fit FPS จริง มุมหมุนภาพ จำนวนผู้ดูภาพสด"},
+    {"name": "get_motion", "description": "ตัวควบคุมสเตจ: เชื่อมต่อ/HOME ตำแหน่ง ขอบเขต คำสั่งที่เฟิร์มแวร์รองรับ (เช่น TONE, RELEASE) เสียง การปิดคอยล์อัตโนมัติ การชดเชย backlash และ log การสื่อสารล่าสุด"},
+    {"name": "get_access", "description": "ใครถือสิทธิ์ควบคุมสถานีตอนนี้ หมดอายุเมื่อไหร่ ตั้งรหัสผ่านไหม มีเบราว์เซอร์เปิดอยู่กี่เครื่อง และการเข้าถึงระยะไกล (Tailscale)"},
+    {"name": "get_recent_events", "description": "log เหตุการณ์ล่าสุดของสถานี: ข้อผิดพลาด คำเตือน และเหตุการณ์สแกน/ชดเชยบอร์ด/calibrate/GPU — ใช้เมื่อถามว่าเกิดอะไรขึ้น ทำไมล้ม error อะไร",
+     "parameters": {"type": "object", "properties": {"level": {"type": "string", "enum": ["INFO", "WARNING", "ERROR"]},
+                                                     "limit": {"type": "integer", "description": "จำนวน (1-200, ค่าเริ่ม 30)"}}}},
     {"name": "get_hardware", "description": "ประสิทธิภาพเครื่องสด: การใช้งาน/ความถี่ CPU แต่ละคอร์, GPU, RAM, อุณหภูมิ, พลังงาน (W), พัดลม (%/rpm), โหมดพลังงาน Jetson, over-current — ใช้เมื่อถามว่าเครื่องร้อน/ช้า/กินไฟ/พัดลม"},
     {"name": "navigate", "description": "พาผู้ใช้ไปหน้าในเว็บแอป",
      "parameters": {"type": "object", "properties": {"page": {"type": "string", "enum": list(PAGES)}}, "required": ["page"]}},
@@ -400,6 +645,9 @@ TOOL_LABELS = {
     "get_scan_run": "ดูผลรอบสแกน", "read_part_markings": "อ่านตัวอักษรบนชิ้น (OCR)", "list_single_inspections": "ดูการตรวจภาพเดี่ยว", "list_reference_profiles": "ดูโปรไฟล์อ้างอิง",
     "get_reference_profile": "ดูรายละเอียดโปรไฟล์", "list_datasets": "ดูชุดข้อมูล", "get_dataset": "ดูรายละเอียดชุดข้อมูล",
     "list_models": "ดูรายการโมเดล", "list_boards": "ดูบอร์ดที่บันทึกไว้", "get_board": "ดูรายละเอียดบอร์ด", "get_settings": "ดูการตั้งค่า", "get_hardware": "ดูประสิทธิภาพเครื่อง", "navigate": "เปิดหน้า",
+    "get_full_snapshot": "ดูภาพรวมทั้งระบบ", "get_stage_calibration": "ดูผล calibrate ราง", "get_stage_errors": "ดูความคลาดเคลื่อนราง",
+    "get_scan_progress": "ดูความคืบหน้าสแกน", "get_camera": "ดูสถานะกล้อง", "get_motion": "ดูสถานะสเตจ/เฟิร์มแวร์",
+    "get_access": "ดูสิทธิ์ควบคุม/การเข้าถึง", "get_recent_events": "ดู log ล่าสุด",
 }
 
 

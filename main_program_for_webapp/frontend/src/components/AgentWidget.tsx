@@ -11,7 +11,7 @@ import { Button, Spinner, cx } from "./ui";
 type Step = { label: string; done: boolean };
 type Msg = { role: "user" | "assistant"; content: string; steps?: Step[]; error?: boolean };
 
-const SUGGESTIONS = ["สรุป yield ตอนนี้", "รอบสแกนล่าสุดผลเป็นยังไง", "โมเดลไหนแม่นที่สุด", "สถานะเครื่องตอนนี้พร้อมสแกนไหม"];
+const SUGGESTIONS = ["สรุปสถานะและการตั้งค่าทั้งหมดของเครื่อง", "รางแม่นแค่ไหน ควรตั้งชดเชยไหม", "รอบสแกนล่าสุดผลเป็นยังไง", "มี error อะไรล่าสุดบ้าง", "สรุป yield ตอนนี้"];
 
 /**
  * Station-wide AI assistant: a floating button on every page. It answers from live station

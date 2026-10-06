@@ -28,6 +28,9 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 logger = logging.getLogger("pcb_backend")
+from .core import log_buffer  # noqa: E402  (after basicConfig: keeps the AI agent's recent-events view)
+
+log_buffer.install()
 
 
 @asynccontextmanager
