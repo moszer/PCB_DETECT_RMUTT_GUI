@@ -235,6 +235,8 @@ class AOIRunReport(BaseModel):
     review_count: int = 0
     error_count: int = 0
     error_message: Optional[str] = None
+    # How the board was found placed vs. its taught points (angle, offset) — see board_alignment.
+    board_alignment: Optional[Dict[str, Any]] = None
 
 
 class ControlLease(BaseModel):

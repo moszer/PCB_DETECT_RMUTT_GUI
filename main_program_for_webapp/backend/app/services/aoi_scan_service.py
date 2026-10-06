@@ -12,6 +12,7 @@ import math
 
 from ..config import RUNS_DIR, settings
 from ..core.stabilize import motion_px, small_gray
+from .board_alignment import PointAligner, apply_pose, check_limits, estimate_board_pose
 from ..core.inspection import (
     digital_zoom,
     draw_annotated_image,
@@ -170,6 +171,8 @@ class AOIScanService:
                 raise RuntimeError("Cannot start production scan: real machine is connected but camera is in simulation/mock mode.")
 
             points = self.plan_scan(plan)
+            # Reference pictures stay in memory for board alignment (not in the stored plan).
+            refs = {i: cp.reference_image for i, cp in enumerate(plan.custom_points or []) if cp.reference_image}
             if plan.custom_points:
                 plan = plan.model_copy(update={
                     "custom_points": [cp.model_copy(update={"reference_image": None}) for cp in plan.custom_points]
@@ -230,7 +233,7 @@ class AOIScanService:
 
             self._worker_thread = threading.Thread(
                 target=self._scan_worker,
-                args=(report, points, run_folder, ref_profile, conf_thresh, match_dist, fail_on_extra, imgsz, multiframe_enabled, target_frames, pass_ratio),
+                args=(report, points, run_folder, ref_profile, conf_thresh, match_dist, fail_on_extra, imgsz, multiframe_enabled, target_frames, pass_ratio, refs),
                 daemon=True,
                 name="AOIScanWorker"
             )
@@ -309,10 +312,11 @@ class AOIScanService:
         imgsz: Optional[int] = None,
         multiframe_enabled: bool = True,
         target_frames: int = 10,
-        pass_ratio: float = 0.8
+        pass_ratio: float = 0.8,
+        refs: Optional[Dict[int, str]] = None,
     ):
         try:
-            self._do_scan(report, points, run_folder, ref_profile, conf_thresh, match_dist, fail_on_extra, imgsz, multiframe_enabled, target_frames, pass_ratio)
+            self._do_scan(report, points, run_folder, ref_profile, conf_thresh, match_dist, fail_on_extra, imgsz, multiframe_enabled, target_frames, pass_ratio, refs)
         finally:
             with self._lock:
                 if self._worker_thread is threading.current_thread():
@@ -321,6 +325,24 @@ class AOIScanService:
             from .inference_service import release_memory
 
             release_memory()
+
+    def _align_board(self, report: AOIRunReport, points: List[ScanPoint], refs: Dict[int, str]) -> None:
+        """Measure the board's placement, move the scan points with it (see board_alignment)."""
+        self._broadcast_progress({"event": "board_aligning", "run_id": report.id, "report": report.model_dump()})
+        try:
+            pose = estimate_board_pose(points, refs, report.plan.settle_sec, report.plan.speed, self._stop_event.is_set)
+        except RuntimeError:
+            if self._stop_event.is_set():
+                return
+            raise
+        if pose["status"] == "ok":
+            check_limits(pose)  # raises BoardMisplaced: the scan ends with that message
+            apply_pose(points, pose)
+        with self._lock:
+            report.board_alignment = pose
+            report.points = points
+        logger.info("Board alignment for %s: %s", report.id, {k: pose.get(k) for k in ("status", "angle_deg", "offset_mm", "residual_mm")})
+        self._broadcast_progress({"event": "board_aligned", "run_id": report.id, "alignment": pose, "report": report.model_dump()})
 
     def _do_scan(
         self,
@@ -334,7 +356,8 @@ class AOIScanService:
         imgsz: Optional[int] = None,
         multiframe_enabled: bool = True,
         target_frames: int = 10,
-        pass_ratio: float = 0.8
+        pass_ratio: float = 0.8,
+        refs: Optional[Dict[int, str]] = None,
     ):
 
         logger.info("AOI scan worker started for run %s (%d points)...", report.id, len(points))
@@ -343,6 +366,12 @@ class AOIScanService:
         was_controlled = lease_manager.get_lease_info().is_controlled
 
         try:
+            refs = refs or {}
+            align = settings.board_align_enabled and not report.is_golden_scan and bool(refs)
+            if align:
+                self._align_board(report, points, refs)
+                if self._stop_event.is_set():
+                    return
 
             for pt in points:
                 if self._stop_event.is_set():
@@ -400,6 +429,8 @@ class AOIScanService:
                     # A frame shifted against the point's first one was taken while the frame
                     # shook (a bump, a passing vibration): it is re-taken, at most once per frame.
                     check_shake = settings.stabilize_enabled and not camera_service.is_mock
+                    # Undo the rest of the board's misplacement in the picture (see board_alignment).
+                    aligner = PointAligner(refs.get(pt.index)) if align else None
                     first_small = None
                     shaken = 0
                     f_idx = 0
@@ -423,6 +454,8 @@ class AOIScanService:
                                 continue
 
                         cur_f = digital_zoom(cur_f, pt.zoom)
+                        if aligner is not None:
+                            cur_f = aligner(cur_f)
 
                         latest_frame = cur_f
                         h_f, w_f = cur_f.shape[:2]
@@ -486,6 +519,7 @@ class AOIScanService:
                         "max_offset_px": round(eval_res["max_offset"] * max(latest_frame.shape[:2]), 1),
                         # Anti-shake: how long the picture took to settle, and frames re-taken.
                         "stabilize": {k: stab.get(k) for k in ("still", "waited_sec", "motion_px")} | {"shaken_frames": shaken},
+                        "alignment": aligner.info if aligner is not None else None,
                     }
 
                     pt_result = AOIPointResult(

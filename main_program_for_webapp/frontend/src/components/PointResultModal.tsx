@@ -288,6 +288,13 @@ function PointResultDetail({ point, onClose }: { point: AOIPointResult; onClose:
                       {mf.stabilize.shaken_frames > 0 && ` · ถ่ายใหม่ ${mf.stabilize.shaken_frames} เฟรมที่สั่น`}
                     </span>
                   )}
+                  {mf.alignment?.applied && (
+                    <span>
+                      {" "}· จัดภาพตรงต้นแบบ (หมุน {mf.alignment.angle_deg?.toFixed(2)}° เลื่อน{" "}
+                      {Math.round(Math.hypot(...(mf.alignment.shift_px ?? [0, 0])))} px)
+                    </span>
+                  )}
+                  {mf.alignment && !mf.alignment.applied && <span className="text-review"> · {mf.alignment.reason ?? "จัดภาพตามต้นแบบไม่ได้"}</span>}
                   {mf.max_offset_px !== undefined && (
                     <span className={mf.max_offset_px > 20 ? "text-review" : undefined}>
                       {" "}· ภาพเลื่อนจากต้นแบบสูงสุด {mf.max_offset_px} px (ชดเชยแล้ว)

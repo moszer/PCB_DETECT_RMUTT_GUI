@@ -43,6 +43,9 @@ class SettingsUpdateRequest(BaseModel):
     stage_approach_mm: Optional[float] = Field(None, ge=0, le=3)
     stage_monitor_enabled: Optional[bool] = None
     stabilize_enabled: Optional[bool] = None
+    board_align_enabled: Optional[bool] = None
+    board_align_max_deg: Optional[float] = Field(None, gt=0, le=45)
+    board_align_max_mm: Optional[float] = Field(None, gt=0, le=100)
     stabilize_max_wait_sec: Optional[float] = Field(None, ge=0.1, le=10)
     stabilize_threshold_px: Optional[float] = Field(None, gt=0, le=50)
 

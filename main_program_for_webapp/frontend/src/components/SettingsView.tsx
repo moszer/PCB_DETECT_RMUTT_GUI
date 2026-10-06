@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Box, Building2, Check, Cpu, Crosshair, Save, Vibrate, Volume2 } from "lucide-react";
+import { Box, Building2, Check, Cpu, Crosshair, RotateCw, Save, Vibrate, Volume2 } from "lucide-react";
 import type { ComputeDevice } from "@/types";
 import { api } from "@/lib/api";
 import { Button, Card, CardHeader, Field, NumberInput, Segmented, Slider, Spinner, TextInput, Toggle, cx } from "./ui";
@@ -28,6 +28,9 @@ export function SettingsView({ onRefreshStatus, isOperator }: { onRefreshStatus:
   const [stabilize, setStabilize] = useState(true);
   const [stabilizeWait, setStabilizeWait] = useState(2);
   const [stabilizePx, setStabilizePx] = useState(1.5);
+  const [align, setAlign] = useState(true);
+  const [alignDeg, setAlignDeg] = useState(10);
+  const [alignMm, setAlignMm] = useState(8);
   const [saving, setSaving] = useState(false);
 
   // Compute device
@@ -49,6 +52,9 @@ export function SettingsView({ onRefreshStatus, isOperator }: { onRefreshStatus:
         setStabilize(s.stabilize_enabled ?? true);
         setStabilizeWait(s.stabilize_max_wait_sec ?? 2);
         setStabilizePx(s.stabilize_threshold_px ?? 1.5);
+        setAlign(s.board_align_enabled ?? true);
+        setAlignDeg(s.board_align_max_deg ?? 10);
+        setAlignMm(s.board_align_max_mm ?? 8);
         setDevices(d.devices);
         setActiveDevice(d.current_device);
         setPreference(d.preference);
@@ -71,6 +77,9 @@ export function SettingsView({ onRefreshStatus, isOperator }: { onRefreshStatus:
         stabilize_enabled: stabilize,
         stabilize_max_wait_sec: stabilizeWait,
         stabilize_threshold_px: stabilizePx,
+        board_align_enabled: align,
+        board_align_max_deg: alignDeg,
+        board_align_max_mm: alignMm,
       });
       toast.success("บันทึกการตั้งค่าแล้ว");
       onRefreshStatus();
@@ -160,6 +169,25 @@ export function SettingsView({ onRefreshStatus, isOperator }: { onRefreshStatus:
         </Card>
 
         <StageCalibrationCard isOperator={isOperator} />
+
+        <Card>
+          <CardHeader
+            icon={RotateCw}
+            title="ชดเชยการวางบอร์ด"
+            subtitle="ก่อนสแกน ถ่ายจุดที่สอนไว้ 2 จุดที่ห่างกันที่สุดเทียบกับภาพต้นแบบ หาว่าบอร์ดเอียง/เลื่อนเท่าไหร่ แล้วเลื่อนทุกจุดตามและหมุนภาพกลับให้ตรงกรอบ — ต้องมีภาพต้นแบบของจุด และ calibrate ราง XY แล้ว"
+          />
+          <div className="p-4 flex flex-col gap-4">
+            <Toggle checked={align} onChange={setAlign} label="ชดเชยบอร์ดที่วางเอียงหรือเลื่อน" description="ถ้ายังไม่ได้ calibrate ราง จะจัดภาพแต่ละจุดให้ตรงต้นแบบอย่างเดียว (ไม่เลื่อนตำแหน่งสเตจ)" />
+            <div className={cx("grid sm:grid-cols-2 gap-4", !align && "opacity-50 pointer-events-none")}>
+              <Field label="เอียงได้ไม่เกิน" hint="เกินนี้จะหยุดสแกนและให้วางบอร์ดใหม่">
+                <NumberInput value={alignDeg} min={0.5} max={45} step={0.5} suffix="°" onChange={setAlignDeg} />
+              </Field>
+              <Field label="เลื่อนได้ไม่เกิน" hint="ระยะห่างจากตำแหน่งตอนสอนจุด">
+                <NumberInput value={alignMm} min={0.5} max={100} step={0.5} suffix="mm" onChange={setAlignMm} />
+              </Field>
+            </div>
+          </div>
+        </Card>
 
         <Card>
           <CardHeader

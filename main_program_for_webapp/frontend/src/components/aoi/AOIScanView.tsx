@@ -92,6 +92,7 @@ function fitViewers(width: number, height: number, count: number, ratio: number)
 const stripImages = (points: CustomPointRequest[]) => points.map((p) => ({ ...p, reference_image: undefined }));
 
 const PROGRESS_TITLE: Partial<Record<ScanProgressEvent["event"], string>> = {
+  board_aligning: "กำลังหาตำแหน่งบอร์ด",
   point_start: "กำลังเคลื่อนไปยังจุดตรวจ",
   point_capturing: "รอภาพนิ่งและถ่ายภาพ",
   point_frame: "กำลังตรวจหลายเฟรม",
@@ -521,14 +522,25 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
   const capturing = scanning && (progress?.event === "point_frame" || progress?.event === "point_capturing");
   const scanningIndex = scanning ? (progress?.point_index ?? null) : null;
   let hud: FeedHud | null = null;
-  if (scanning && progress?.point_index !== undefined) {
+  const align = report?.board_alignment;
+  const alignNote =
+    align?.status === "ok"
+      ? ` · ชดเชยบอร์ด ${align.angle_deg! >= 0 ? "+" : ""}${align.angle_deg!.toFixed(2)}° X ${formatMm(align.offset_mm![0])} Y ${formatMm(align.offset_mm![1])} mm`
+      : align?.status === "no_calibration"
+        ? " · จัดภาพตามต้นแบบ (ยังไม่ calibrate ราง)"
+        : align?.status === "not_found"
+          ? " · หาบอร์ดเทียบต้นแบบไม่ได้"
+          : "";
+  if (scanning && progress?.event === "board_aligning") {
+    hud = { tone: "accent", title: "กำลังหาตำแหน่งบอร์ด", detail: "ถ่ายจุดอ้างอิงเทียบกับภาพต้นแบบ เพื่อชดเชยบอร์ดที่วางเอียงหรือเลื่อน" };
+  } else if (scanning && progress?.point_index !== undefined) {
     const frame = progress.event === "point_frame" ? ` · เฟรม ${progress.frame_index}/${progress.target_frames}` : "";
     hud = {
       tone: "accent",
       title: PROGRESS_TITLE[progress.event] ?? "กำลังสแกน",
       detail: `จุด ${progress.point_index + 1}/${progress.total_points} ${progress.name ?? ""}${
         progress.target_mm ? ` · ${formatMm(progress.target_mm[0])}, ${formatMm(progress.target_mm[1])} mm` : ""
-      }${frame}`,
+      }${frame}${alignNote}`,
     };
   } else if (movingIndex !== null && points[movingIndex]) {
     const pt = points[movingIndex];

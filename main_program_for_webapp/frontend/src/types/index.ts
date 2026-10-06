@@ -179,6 +179,8 @@ export interface MultiframeInfo {
   max_offset_px?: number;
   /** Anti-shake: time waited for a still picture, and frames re-taken because they shook. */
   stabilize?: { still: boolean | null; waited_sec: number; motion_px: number; shaken_frames: number };
+  /** The point's frames warped onto its reference picture (board alignment). */
+  alignment?: { applied: boolean; angle_deg?: number; shift_px?: [number, number]; reason?: string } | null;
 }
 
 export interface AOIPointResult {
@@ -221,6 +223,7 @@ export interface AOIRunReport {
   review_count: number;
   error_count: number;
   error_message?: string | null;
+  board_alignment?: BoardAlignment | null;
 }
 
 export interface ReferenceSummary {
@@ -270,7 +273,7 @@ export interface PointFrames {
 }
 
 export interface ScanProgressEvent {
-  event: "active_run" | "point_start" | "point_capturing" | "point_frame" | "point_complete" | "complete" | "aborted" | "error";
+  event: "active_run" | "board_aligning" | "board_aligned" | "point_start" | "point_capturing" | "point_frame" | "point_complete" | "complete" | "aborted" | "error";
   run_id?: string;
   point_index?: number;
   total_points?: number;
@@ -285,6 +288,18 @@ export interface ScanProgressEvent {
   message?: string;
   error?: string;
   report?: AOIRunReport;
+  alignment?: BoardAlignment;
+}
+
+/** How the board was found placed vs. its taught points (measured before the scan). */
+export interface BoardAlignment {
+  /** ok: points moved and frames deskewed; no_calibration: frames only; not_found: no match. */
+  status: "ok" | "no_calibration" | "not_found";
+  angle_deg?: number;
+  offset_mm?: [number, number];
+  residual_mm?: number;
+  angle_source?: "two_points" | "image";
+  measured?: { point: number; name?: string; registered: boolean; angle_deg?: number; inliers?: number }[];
 }
 
 export interface SingleInspectionRecord {
@@ -596,6 +611,9 @@ export interface StationSettings {
   stabilize_enabled: boolean;
   stabilize_max_wait_sec: number;
   stabilize_threshold_px: number;
+  board_align_enabled: boolean;
+  board_align_max_deg: number;
+  board_align_max_mm: number;
   has_passcode: boolean;
 }
 

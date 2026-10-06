@@ -109,6 +109,11 @@ class Settings(BaseModel):
     stabilize_enabled: bool = True
     stabilize_max_wait_sec: float = Field(2.0, ge=0.1, le=10)
     stabilize_threshold_px: float = Field(1.5, gt=0, le=50)
+    # Board alignment: find how the board is turned/shifted vs. its taught points (needs their
+    # reference pictures and the stage calibration), move the scan points and deskew the frames.
+    board_align_enabled: bool = True
+    board_align_max_deg: float = Field(10.0, gt=0, le=45)
+    board_align_max_mm: float = Field(8.0, gt=0, le=100)
     # Measure each move's positioning error with the camera and show it live (needs a stage calibration).
     stage_monitor_enabled: bool = True
     # FP16 inference on CUDA (Jetson): half the GPU memory and time, same detections.
