@@ -297,3 +297,29 @@ class SendHistoryTests(unittest.TestCase):
         self.assertIn("get_notifications", agent_service.TOOLS)
         self.assertIn("ส่งเข้า Telegram", agent_service.SYSTEM_PROMPT)
         self.assertIn("telegram_ready", agent_service.get_notifications())
+
+
+class SecretLogTests(unittest.TestCase):
+    def test_bot_tokens_never_reach_the_log(self):
+        import io
+        import logging
+        import os
+
+        from app.core import log_buffer
+
+        stream = io.StringIO()
+        h = logging.StreamHandler(stream)
+        root = logging.getLogger()
+        root.addHandler(h)
+        os.environ["GEMINI_API_KEY"] = "AIzaSECRETVALUE12345"
+        try:
+            log_buffer.install()
+            logging.getLogger("app.test").warning("POST https://api.telegram.org/bot1234567890:FAKEfakeFAKEfakeFAKEfake-0000/sendPhoto key=%s", "AIzaSECRETVALUE12345")
+            out = stream.getvalue()
+            self.assertNotIn("FAKEfakeFAKEfakeFAKEfake", out)
+            self.assertNotIn("AIzaSECRETVALUE12345", out)
+            self.assertIn("bot***", out)
+            self.assertGreaterEqual(logging.getLogger("httpx").level, logging.WARNING)
+        finally:
+            root.removeHandler(h)
+            os.environ.pop("GEMINI_API_KEY", None)

@@ -155,6 +155,9 @@ def _send(text: str, photo: Optional[str] = None, details: Optional[Dict[str, An
             problems.append(f"Webhook: {exc}")
     if not (token and chat) and not hook:
         problems.append("ยังไม่ได้ตั้งค่าช่องทาง (Telegram bot + chat ID หรือ webhook)")
+    from ..core.log_buffer import redact
+
+    problems = [redact(p) for p in problems]
     for p in problems:
         logger.warning("Notification not sent: %s", p)
     return problems
@@ -183,7 +186,9 @@ def _send_file(name: str, content: bytes, caption: str, mime: str = "text/csv") 
             problems.append(f"Webhook: {exc}")
     if not (token and chat) and not hook:
         problems.append("ยังไม่ได้ตั้งค่าช่องทาง (Telegram bot + chat ID หรือ webhook)")
-    return problems
+    from ..core.log_buffer import redact
+
+    return [redact(p) for p in problems]
 
 
 def history_summary() -> str:

@@ -87,10 +87,18 @@ station_pids() {  # run_web.sh processes of this folder
         local cwd=""
         if [[ -d "/proc/$pid" ]]; then cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"  # Linux; empty if hidden
         else cwd="$(lsof -a -d cwd -p "$pid" -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)"; fi
-        if [[ "$cwd" == "$PROJECT_DIR" ]]; then found+="$pid "
+        # run_web.sh cds into frontend/ to start Next, so its folder can be a subfolder.
+        if [[ "$cwd" == "$PROJECT_DIR" || "$cwd" == "$PROJECT_DIR"/* ]]; then found+="$pid "
         elif [[ -z "$cwd" ]]; then hidden+="$pid "; fi
     done
     if [[ -n "$found" ]]; then echo "$found"; return 0; fi
+    # 3) no run_web.sh found, but this folder's backend still holds its port (orphaned or
+    #    started by hand): still a running station that needs the restart.
+    for pid in $(lsof -t -iTCP:"$BACKEND_PORT" -sTCP:LISTEN 2>/dev/null || ss -ltnpH "sport = :$BACKEND_PORT" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2); do
+        local pcwd=""
+        [[ -d "/proc/$pid" ]] && pcwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
+        if [[ "$pcwd" == "$PROJECT_DIR" || "$pcwd" == "$PROJECT_DIR"/* ]]; then echo "$pid"; return 0; fi
+    done
     if [[ $(wc -w <<<"$hidden") -eq 1 ]] && curl -s -m 3 -o /dev/null "http://127.0.0.1:$BACKEND_PORT/api/health"; then echo "$hidden"; fi
     return 0
 }

@@ -54,6 +54,12 @@ find_pids() {
     for port in "$BACKEND_PORT" "$FRONTEND_PORT"; do
         for pid in $(port_pids "$port"); do ours "$pid" && found+=" $pid"; done
     done
+    # Orphans (parent gone, port already released) of this folder: a next-server or backend
+    # left behind by a run_web.sh that was killed keeps its memory forever.
+    for pid in $(pgrep -f "next-server|uvicorn app.main:app|next start|next dev" 2>/dev/null); do
+        [[ "$pid" == "$$" ]] && continue
+        ours "$pid" && found+=" $pid"
+    done
     local all="$found"
     for pid in $found; do all+=" $(descendants "$pid" | tr '\n' ' ')"; done
     tr ' ' '\n' <<<"$all" | grep -E '^[0-9]+$' | sort -un
