@@ -6,6 +6,7 @@ import numpy as np
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.core.security import lease_manager
 from app.services.inference_service import inference_service
 
 
@@ -42,14 +43,19 @@ class ApiIntegrationTests(unittest.TestCase):
         self.assertIn("current_index", data)
 
         # Switch camera to index 0
-        res_switch = self.client.post("/api/camera/start", json={
-            "device_index": 0,
-            "width": 1280,
-            "height": 720,
-            "fps": 30
-        })
-        self.assertEqual(res_switch.status_code, 200)
-        self.assertTrue(res_switch.json()["success"])
+        ok, token, _ = lease_manager.acquire_lease("camera test", "local", force=True)
+        self.assertTrue(ok)
+        try:
+            res_switch = self.client.post("/api/camera/start", json={
+                "device_index": 0,
+                "width": 1280,
+                "height": 720,
+                "fps": 30
+            }, headers={"X-Operator-Token": token})
+            self.assertEqual(res_switch.status_code, 200)
+            self.assertTrue(res_switch.json()["success"])
+        finally:
+            lease_manager.release_lease(token)
 
     def test_lease_acquire_and_release(self):
         # 1. Attempt acquire without passcode should fail with 403

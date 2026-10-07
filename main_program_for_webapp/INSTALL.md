@@ -159,7 +159,7 @@ docker compose -f docker-compose.yml -f docker-compose.hardware.yml -f docker-co
 - **ตั้งค่าสถานี → เข้าใช้งานจากที่อื่น**:
   - **เชื่อมต่อ Tailscale**: ถ้ายังไม่ล็อกอิน ระบบแสดงลิงก์และ QR code ให้ล็อกอินจากมือถือ
   - **เปิด HTTPS ใน tailnet** (`tailscale serve`): เปิดสถานีด้วย `https://<ชื่อเครื่อง>.ts.net` ได้จากอุปกรณ์ในบัญชี Tailscale เดียวกันเท่านั้น
-  - **เปิดสู่อินเทอร์เน็ต** (`tailscale funnel`): ใครมีลิงก์ก็เปิดดูได้ ต้องเปลี่ยนรหัสผ่านสถานีก่อน (ระบบไม่ยอมเปิดถ้ายังใช้ `rmutt-aoi`) ปิดได้ด้วยปุ่ม "ปิดอุโมงค์"
+  - **เปิดสู่อินเทอร์เน็ต** (`tailscale funnel`): ใครมีลิงก์ก็เปิดดูได้ ควรใช้รหัสผ่านสถานีที่เก็บเป็นความลับ ปิดได้ด้วยปุ่ม "ปิดอุโมงค์"
   - ระบบเพิ่ม/ลบเฉพาะรายการของสถานีเอง (ใช้พอร์ต 443 ถ้าว่าง ไม่งั้น 8443 หรือ 10000) บริการ Tailscale อื่นบนเครื่องไม่ถูกแตะ
 - `./install.sh` **ติดตั้ง Tailscale ให้เอง** (Linux/Jetson ใช้ตัวติดตั้งทางการของ Tailscale, macOS ใช้ `brew install --cask tailscale`) และให้สิทธิ์ผู้ใช้ของสถานีตั้งค่าอุโมงค์จากหน้าเว็บได้ (`tailscale set --operator`) ไม่ต้องการก็ใส่ `--no-tailscale` หลังติดตั้งแล้วกด "เชื่อมต่อ Tailscale" ในหน้าเว็บเพื่อล็อกอิน
 - ถ้าเปิด HTTPS ไม่ได้ ให้เปิด HTTPS ของ tailnet ที่ login.tailscale.com/admin/dns ก่อน หรือใช้ลิงก์ Tailscale IP (`http://100.x.x.x:3001`) ซึ่งไม่ต้องตั้งค่าเพิ่ม
@@ -179,11 +179,15 @@ docker compose -f docker-compose.yml -f docker-compose.hardware.yml -f docker-co
 ## 7. ตั้งค่าหลังติดตั้ง (`backend/.env`)
 
 ```bash
-PCB_OPERATOR_PASSCODE=รหัสของคุณ     # รหัสขอสิทธิ์ควบคุม (ค่าเริ่มต้น rmutt-aoi — ควรเปลี่ยน)
+PCB_OPERATOR_PASSCODE=รหัสของคุณ     # ถ้าไม่ตั้ง ระบบจะสุ่มรหัสใน backend/data/.operator-passcode
 AI_PROVIDER=gemini
 GEMINI_API_KEY=...                   # https://aistudio.google.com/apikey (ผู้ช่วย AI / ถามเรื่องบอร์ด)
 ```
 แก้แล้วรีสตาร์ท `./run_web.sh` ไฟล์นี้ไม่ขึ้น git ห้ามส่ง key ให้ใคร
+
+ก่อนสแกนด้วยราง Serial ต้องรับรองโมเดลด้วยชุดภาพ `test` ที่ติดป้ายกำกับแล้ว
+ระบบจะปฏิเสธการเริ่มสแกนหากยังไม่มีผลรับรองของไฟล์โมเดลนั้น ดูขั้นตอน
+**Accept a model for hardware scans** ใน `backend/README.md` (โหมดจำลองยังใช้ได้)
 
 **ใส่ AI key จากหน้าเว็บก็ได้:** ตั้งค่าสถานี → **ผู้ช่วย AI** → เลือก Gemini หรือ OpenRouter → วาง key → "ทดสอบ key" → "บันทึก" มีผลทันทีไม่ต้องรีสตาร์ท ระบบเขียน key ลง `backend/.env` ให้ (สิทธิ์ไฟล์ 600) และหน้าเว็บจะแสดงแค่ตัวย่อ เช่น `AIza…x9Qk` ไม่ส่ง key กลับมาที่เบราว์เซอร์ ต้องกด "ขอสิทธิ์ควบคุม" ด้วยรหัสผ่านสถานีก่อนจึงแก้ได้
 

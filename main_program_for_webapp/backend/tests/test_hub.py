@@ -165,15 +165,17 @@ class HubApiTests(unittest.TestCase):
         self.assertIn("cannot reach", res.json()["detail"])
 
     def test_download_rejects_path_tricks_and_returns_saved_path(self):
-        res = self.client.post("/api/system/models/hub/download", json={"file": "../x.pt"})
-        self.assertEqual(res.status_code, 502)
-        saved = Path(self.tmp.name) / "m.pt"
-        saved.write_bytes(b"x" * 2048)
-        with mock.patch.object(hub, "download", return_value=saved) as dl:
-            res = self.client.post("/api/system/models/hub/download", json={"file": "run_a/weights/best.pt"})
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.json()["path"], str(saved))
-        self.assertTrue(str(dl.call_args.args[1]).endswith("run_a__best.pt"))
+        from conftest import operator_headers
+        with operator_headers() as headers:
+            res = self.client.post("/api/system/models/hub/download", json={"file": "../x.pt"}, headers=headers)
+            self.assertEqual(res.status_code, 502)
+            saved = Path(self.tmp.name) / "m.pt"
+            saved.write_bytes(b"x" * 2048)
+            with mock.patch.object(hub, "download", return_value=saved) as dl:
+                res = self.client.post("/api/system/models/hub/download", json={"file": "run_a/weights/best.pt"}, headers=headers)
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(res.json()["path"], str(saved))
+            self.assertTrue(str(dl.call_args.args[1]).endswith("run_a__best.pt"))
 
 
 if __name__ == "__main__":

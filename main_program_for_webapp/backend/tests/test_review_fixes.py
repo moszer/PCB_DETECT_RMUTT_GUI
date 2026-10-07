@@ -268,9 +268,11 @@ class CameraOutputSizeTests(unittest.TestCase):
         self.assertIs(CameraService._fit_output(frame, None), frame)
 
     def test_start_reports_output_size_as_resolution(self):
+        from conftest import operator_headers
         client = TestClient(app)
         camera_service.stop()
-        res = client.post("/api/camera/start", json={"device_index": 0, "width": 1920, "height": 1080, "output_width": 640, "output_height": 640})
+        with operator_headers() as headers:
+            res = client.post("/api/camera/start", json={"device_index": 0, "width": 1920, "height": 1080, "output_width": 640, "output_height": 640}, headers=headers)
         self.assertEqual(res.status_code, 200, res.text)
         self.assertEqual(res.json()["resolution"], [640, 640])
         _, frame = camera_service.get_fresh_frame(0.0)
@@ -340,10 +342,11 @@ class CameraCropModeTests(unittest.TestCase):
         self.assertEqual(CameraService._fit_output(frame, (640, 640), "crop").shape, (640, 640, 3))
 
     def test_api_reports_capture_and_mode(self):
+        from conftest import operator_headers
         client = TestClient(app)
         camera_service.stop()
-        with patch("app.services.camera_service.cv2.VideoCapture", return_value=MagicMock(isOpened=MagicMock(return_value=False))):
-            res = client.post("/api/camera/start", json={"width": 3840, "height": 2160, "output_width": 640, "output_height": 640, "output_mode": "crop"})
+        with operator_headers() as headers, patch("app.services.camera_service.cv2.VideoCapture", return_value=MagicMock(isOpened=MagicMock(return_value=False))):
+            res = client.post("/api/camera/start", json={"width": 3840, "height": 2160, "output_width": 640, "output_height": 640, "output_mode": "crop"}, headers=headers)
             self.assertEqual(res.status_code, 200, res.text)
             body = client.get("/api/camera/devices").json()
             self.assertEqual((body["resolution"], body["capture_resolution"], body["output_mode"]), ([640, 640], [3840, 2160], "crop"))
@@ -414,9 +417,11 @@ class CameraOutputSizeTests(unittest.TestCase):
         self.assertIs(CameraService._fit_output(frame, None), frame)
 
     def test_start_reports_output_size_as_resolution(self):
+        from conftest import operator_headers
         client = TestClient(app)
         camera_service.stop()
-        res = client.post("/api/camera/start", json={"device_index": 0, "width": 1920, "height": 1080, "output_width": 640, "output_height": 640})
+        with operator_headers() as headers:
+            res = client.post("/api/camera/start", json={"device_index": 0, "width": 1920, "height": 1080, "output_width": 640, "output_height": 640}, headers=headers)
         self.assertEqual(res.status_code, 200, res.text)
         self.assertEqual(res.json()["resolution"], [640, 640])
         _, frame = camera_service.get_fresh_frame(0.0)
@@ -486,10 +491,11 @@ class CameraCropModeTests(unittest.TestCase):
         self.assertEqual(CameraService._fit_output(frame, (640, 640), "crop").shape, (640, 640, 3))
 
     def test_api_reports_capture_and_mode(self):
+        from conftest import operator_headers
         client = TestClient(app)
         camera_service.stop()
-        with patch("app.services.camera_service.cv2.VideoCapture", return_value=MagicMock(isOpened=MagicMock(return_value=False))):
-            res = client.post("/api/camera/start", json={"width": 3840, "height": 2160, "output_width": 640, "output_height": 640, "output_mode": "crop"})
+        with operator_headers() as headers, patch("app.services.camera_service.cv2.VideoCapture", return_value=MagicMock(isOpened=MagicMock(return_value=False))):
+            res = client.post("/api/camera/start", json={"width": 3840, "height": 2160, "output_width": 640, "output_height": 640, "output_mode": "crop"}, headers=headers)
             self.assertEqual(res.status_code, 200, res.text)
             body = client.get("/api/camera/devices").json()
             self.assertEqual((body["resolution"], body["capture_resolution"], body["output_mode"]), ([640, 640], [3840, 2160], "crop"))

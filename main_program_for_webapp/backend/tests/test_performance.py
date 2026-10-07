@@ -68,8 +68,10 @@ class LogAndApiTests(unittest.TestCase):
             perf_log.record("scan", {"inference": 1.0})  # must not raise
 
     def test_ground_truth_endpoint_and_report(self):
+        from conftest import operator_headers
         client = TestClient(app)
-        self.assertEqual(client.put("/api/history/runs/nope/ground-truth", json={"truth": "good"}).status_code, 404)
+        with operator_headers() as headers:
+            self.assertEqual(client.put("/api/history/runs/nope/ground-truth", json={"truth": "good"}, headers=headers).status_code, 404)
         self.assertEqual(client.put("/api/history/runs/x/ground-truth", json={"truth": "maybe"}).status_code, 422)
         rep = client.get("/api/history/performance").json()
         self.assertEqual(len(rep["table"]), 13)

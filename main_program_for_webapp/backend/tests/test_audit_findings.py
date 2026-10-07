@@ -226,13 +226,18 @@ class AuditFindingsTests(unittest.TestCase):
 
     def test_f10_f11_camera_mock_flag_and_resolution_switch(self):
         """F10 & F11: Camera reports is_mock accurately and reopens on resolution change."""
+        from conftest import operator_headers
+        with operator_headers() as headers:
+            self._check_camera_resolution_switch(headers)
+
+    def _check_camera_resolution_switch(self, headers):
         # 1. Start 1080p
         res1 = self.client.post("/api/camera/start", json={
             "device_index": 0,
             "width": 1920,
             "height": 1080,
             "fps": 30
-        })
+        }, headers=headers)
         self.assertEqual(res1.status_code, 200)
         data1 = res1.json()
         self.assertTrue(data1["success"])
@@ -244,7 +249,7 @@ class AuditFindingsTests(unittest.TestCase):
             "width": 3840,
             "height": 2160,
             "fps": 30
-        })
+        }, headers=headers)
         self.assertEqual(res2.status_code, 200)
         data2 = res2.json()
         self.assertTrue(data2["success"])

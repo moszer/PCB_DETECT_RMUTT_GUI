@@ -116,8 +116,7 @@ def update_settings(
     x_operator_id: Optional[str] = Header(None, alias="X-Operator-Id")
 ):
     token = x_operator_token or x_operator_id
-    lease = lease_manager.get_lease_info()
-    if lease.is_controlled and not lease_manager.is_operator(token):
+    if not lease_manager.is_operator(token):
         raise HTTPException(status_code=403, detail="Active operator token required to modify settings.")
 
     if aoi_scan_service.is_running:
@@ -187,8 +186,7 @@ def set_device_preference(
     x_operator_id: Optional[str] = Header(None, alias="X-Operator-Id")
 ):
     token = x_operator_token or x_operator_id
-    lease = lease_manager.get_lease_info()
-    if lease.is_controlled and not lease_manager.is_operator(token):
+    if not lease_manager.is_operator(token):
         raise HTTPException(status_code=403, detail="Active operator token required.")
 
     if aoi_scan_service.is_running:
@@ -212,8 +210,7 @@ def load_model(
     x_operator_id: Optional[str] = Header(None, alias="X-Operator-Id")
 ):
     token = x_operator_token or x_operator_id
-    lease = lease_manager.get_lease_info()
-    if lease.is_controlled and not lease_manager.is_operator(token):
+    if not lease_manager.is_operator(token):
         raise HTTPException(status_code=403, detail="Active operator token required.")
 
     if aoi_scan_service.is_running:
@@ -255,8 +252,7 @@ async def upload_model_file(
 ):
     """Upload a new .pt weights file directly to backend/data/models and return its path."""
     token = x_operator_token or x_operator_id
-    lease = lease_manager.get_lease_info()
-    if lease.is_controlled and not lease_manager.is_operator(token):
+    if not lease_manager.is_operator(token):
         raise HTTPException(status_code=403, detail="Active operator token required to upload models.")
 
     if aoi_scan_service.is_running:
@@ -340,8 +336,7 @@ async def download_hub_model(
     arbitrary repos are not accepted over the network). The file is not loaded; use /models to switch.
     """
     token = x_operator_token or x_operator_id
-    lease = lease_manager.get_lease_info()
-    if lease.is_controlled and not lease_manager.is_operator(token):
+    if not lease_manager.is_operator(token):
         raise HTTPException(status_code=403, detail="Active operator token required to download models.")
     if aoi_scan_service.is_running:
         raise HTTPException(status_code=400, detail="Cannot download models during an active AOI scan.")

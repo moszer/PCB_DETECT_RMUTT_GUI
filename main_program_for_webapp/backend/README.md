@@ -79,10 +79,13 @@ Settings come from `backend/.env`, which `install.sh` copies from `.env.example`
 
 | Variable | Purpose |
 | --- | --- |
-| `PCB_OPERATOR_PASSCODE` | Passcode for taking control (default `rmutt-aoi`; change it) |
+| `PCB_OPERATOR_PASSCODE` | Optional explicit passcode; otherwise one is generated in the station data directory |
 | `AI_PROVIDER`, `GEMINI_API_KEY`, `GEMINI_MODELS` | AI assistant via Google Gemini (models tried in order) |
 | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` | AI assistant via OpenRouter instead |
 | `PCB_DEVICE` | `auto` / `cuda:0` / `mps` / `cpu` |
+| `PCB_CORS_ORIGINS` | Comma-separated browser origins allowed to call the backend directly (the Next.js LAN proxy is same-origin) |
+| `PCB_BACKUP_INTERVAL_HOURS`, `PCB_BACKUP_KEEP` | Automatic station-data backup frequency (default 24h) and number of archives kept (default 7); set interval to `0` to disable |
+| `PCB_REQUIRE_MODEL_APPROVAL` | `1` (default) blocks serial hardware scans until the loaded model passes the quality gate; `0` is for supervised commissioning only |
 | `PCB_CAMERA_SIMULATION=1` | Software test camera (Docker, no webcam) |
 | `PCB_STORAGE_DIR` | Data folder (default `backend/data`) |
 | `PCB_MODEL_REPO`, `PCB_MODEL_FILE`, `HF_TOKEN` | Hugging Face repo with the YOLO weights, the file `install.sh` fetches (default `best.pt`), and a read token for private repos |
@@ -91,6 +94,15 @@ AI keys stay on the server and are never sent to the browser. They can be edited
 **Settings → ผู้ช่วย AI** (`GET/PUT /api/chat/config`, `POST /api/chat/config/test`).
 Writing requires the operator lease even when nobody else holds the station; values are
 validated so they cannot inject other lines into `.env`.
+
+The operator passcode is generated separately for each station on first start when
+`PCB_OPERATOR_PASSCODE` is unset. Read it locally from `backend/data/.operator-passcode` and
+keep that file private. Previously saved `rmutt-aoi` defaults are replaced automatically.
+An active operator token is required for stage motion, camera changes, station settings,
+references, datasets and benchmark writes, even when the station is otherwise idle.
+Emergency STOP and scan/capture abort remain available without a token.
+GitHub Actions runs frontend lint, typecheck and build plus the backend test suite on
+every push and pull request (`.github/workflows/aoi.yml`).
 
 ---
 
@@ -137,6 +149,50 @@ When accessed via local Wi-Fi / LAN by multiple devices (e.g., operator iPad and
 - `data/runs/`, `data/uploads/`: captured and annotated images.
 - `data/references/`, `data/datasets/`, `data/models/`: reference profiles, training datasets, uploaded weights.
 - `data/settings.json`: station settings saved from the UI.
+
+### Back up and restore
+
+The server creates a verified archive shortly after its first start and then every 24 hours
+by default. Archives are in `backend/data/backups/` and include the SQLite database,
+captured images, references, datasets, uploaded models, station settings and generated
+operator passcode. To create or verify one manually:
+
+```bash
+cd backend
+venv/bin/python -m app.backup_cli backup
+venv/bin/python -m app.backup_cli verify data/backups/station-YYYYMMDD-HHMMSS-PID.zip
+```
+
+To restore, stop the station first and restore into a **new** data directory. The command
+refuses to overwrite an existing directory. Point `PCB_STORAGE_DIR` to the restored path
+when starting the station, then verify the boards and images in the UI:
+
+```bash
+venv/bin/python -m app.backup_cli restore data/backups/station-YYYYMMDD-HHMMSS-PID.zip /path/to/new-station-data
+PCB_STORAGE_DIR=/path/to/new-station-data ../run_web.sh
+```
+
+The backups live on the station's data volume, so copy selected archives to a separate
+drive or server to survive disk failure. Back up `backend/.env` and any model weights
+outside `backend/data/` separately; they are intentionally excluded from station-data archives.
+
+### Accept a model for hardware scans
+
+Use a labeled, fixed `test` split that represents the camera, boards, defects and lighting
+used by this station. Run the benchmark from **Performance** with its `data.yaml` and
+`test` split. The report contains overall mAP50/recall, per-class recall and model hash.
+Inspect missed defects, then certify the report:
+
+```bash
+cd backend
+venv/bin/python -m app.quality_gate certify data/benchmarks/<report>.json \
+  --min-map50 85 --min-recall 90 --min-class-recall 90
+```
+
+The acceptance record is saved in `backend/data/model_approvals.json`. A serial scan
+checks the loaded model's full SHA-256 against it; changing weights requires a new
+benchmark and approval. Simulation scans still work without approval. Set thresholds
+based on the project's tolerated missed-defect rate before certifying a production model.
 
 ---
 

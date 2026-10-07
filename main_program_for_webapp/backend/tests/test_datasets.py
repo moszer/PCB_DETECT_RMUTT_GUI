@@ -35,7 +35,7 @@ class CaptureFlowTests(unittest.TestCase):
         cls.cv = patch("cv2.VideoCapture", return_value=MagicMock(isOpened=MagicMock(return_value=False)))
         cls.cv.start()
         camera_service.stop()
-        camera_service.start(width=640, height=480)
+        camera_service.start(width=640, height=480, output_size=None, output_mode="fit")
         machine_service.connect(mode="simulation")
         machine_service.home()
         cls._predict, cls._model, cls._names = inference_service.predict, inference_service._model, inference_service._model_names

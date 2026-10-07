@@ -127,7 +127,7 @@ cd "/Users/pattaraponprakodchue/Desktop/PCB Detect Defect RMUTT/defect detection
 npm run dev
 ```
 - เปิดหน้าเว็บ: `http://localhost:3001`
-- รหัสผ่านสิทธิ์ควบคุมเครื่อง (Operator Passcode): `1234`
+- รหัสผ่านสิทธิ์ควบคุมเครื่อง: ดูจาก `backend/data/.operator-passcode` บนเครื่องสถานี หรือค่าที่ตั้งใน `backend/.env`
 
 
 

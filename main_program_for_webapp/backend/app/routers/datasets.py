@@ -14,9 +14,8 @@ router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 
 
 def _require_operator(token: Optional[str]):
-    lease = lease_manager.get_lease_info()
-    if lease.is_controlled and not lease_manager.is_operator(token):
-        raise HTTPException(403, f"Station is controlled by '{lease.operator_name}'. Valid operator token required.")
+    if not lease_manager.is_operator(token):
+        raise HTTPException(403, "Active operator token required.")
 
 
 class CaptureRequest(BaseModel):

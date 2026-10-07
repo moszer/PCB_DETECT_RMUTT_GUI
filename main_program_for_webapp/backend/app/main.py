@@ -22,6 +22,7 @@ from .routers import (
     ws_router,
 )
 from .services import aoi_scan_service, camera_service, dataset_service, inference_service, machine_service
+from .services.backup_service import backup_scheduler
 
 # Configure clean logging
 logging.basicConfig(
@@ -57,6 +58,7 @@ async def lifespan(app: FastAPI):
 
     from .services.hardware_service import hardware_service
     hardware_service.resume_watchdog()
+    backup_scheduler.start()
     yield
 
     logger.info("PCB Inspection Backend shutting down...")
@@ -64,6 +66,7 @@ async def lifespan(app: FastAPI):
     dataset_service.stop_capture()
     camera_service.stop()
     machine_service.disconnect()
+    backup_scheduler.stop()
 
 
 
@@ -77,10 +80,10 @@ app = FastAPI(
 # CORS Middleware (permits local LAN access from iPad/tablet/PC)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Operator-Token", "X-Operator-Id"],
     expose_headers=["X-Frame-Timestamp", "X-Camera-Mock"],
 )
 

@@ -13,8 +13,7 @@ router = APIRouter(prefix="/api/references", tags=["references"])
 
 
 def _check_operator(token: Optional[str]):
-    lease = lease_manager.get_lease_info()
-    if lease.is_controlled and not lease_manager.is_operator(token):
+    if not lease_manager.is_operator(token):
         raise HTTPException(status_code=403, detail="Active operator token required.")
 
 
@@ -96,4 +95,3 @@ def import_desktop_reference(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to import desktop reference: {exc}")
-

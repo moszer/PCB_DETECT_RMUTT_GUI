@@ -25,18 +25,19 @@ class CameraDefaultTests(unittest.TestCase):
             self.assertEqual(cam.preferred_device_index(), 1)
 
     def test_applied_format_is_saved_for_a_real_camera_only(self):
+        from conftest import operator_headers
         client = TestClient(app)
         body = {"device_index": 1, "width": 3840, "height": 2160, "fps": 30, "output_width": 2160, "output_height": 2160, "output_mode": "crop"}
         devices = [{"index": 1, "name": "OBSBOT Meet 2 StreamCamera (Index 1)", "active": True}]
-        with patch.object(camera_service, "start", return_value=True), \
+        with operator_headers() as headers, patch.object(camera_service, "start", return_value=True), \
                 patch.object(camera_service, "list_devices", return_value=devices), \
                 patch("app.routers.camera.save_settings_to_disk") as save, \
                 patch.multiple(settings, camera_index=0, camera_device_name="x", camera_output_mode="fit"):
             with patch.object(type(camera_service), "is_mock", new_callable=PropertyMock, return_value=True):
-                client.post("/api/camera/start", json=body)
+                client.post("/api/camera/start", json=body, headers=headers)
                 save.assert_not_called()
             with patch.object(type(camera_service), "is_mock", new_callable=PropertyMock, return_value=False):
-                client.post("/api/camera/start", json=body)
+                client.post("/api/camera/start", json=body, headers=headers)
                 saved = save.call_args[0][0]
                 self.assertEqual((saved.camera_index, saved.camera_output_mode, saved.camera_device_name), (1, "crop", "OBSBOT Meet 2 StreamCamera"))
                 self.assertEqual(settings.camera_output_mode, "crop")

@@ -1,12 +1,27 @@
 """Run all tests against isolated storage and simulated hardware, never the station DB."""
 import os
 import tempfile
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 _test_storage = tempfile.TemporaryDirectory(prefix="pcb-aoi-tests-")
 os.environ["PCB_STORAGE_DIR"] = _test_storage.name
+os.environ["PCB_OPERATOR_PASSCODE"] = "rmutt-aoi"
 
 import pytest
+
+
+@contextmanager
+def operator_headers():
+    """Use a real lease for API tests that mutate station state."""
+    from app.core.security import lease_manager
+
+    ok, token, _ = lease_manager.acquire_lease("API test", "local", force=True)
+    assert ok
+    try:
+        yield {"X-Operator-Token": token}
+    finally:
+        lease_manager.release_lease(token)
 
 @pytest.fixture(scope="session", autouse=True)
 def simulated_station():

@@ -87,8 +87,7 @@ class BenchmarkRequest(BaseModel):
 
 
 def _require_lease(token: Optional[str]) -> None:
-    lease = lease_manager.get_lease_info()
-    if lease.is_controlled and not lease_manager.is_operator(token):
+    if not lease_manager.is_operator(token):
         raise HTTPException(403, "Active operator token required.")
 
 

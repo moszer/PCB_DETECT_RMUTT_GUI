@@ -79,15 +79,10 @@ def _require_operator_lease(
     token: Optional[str] = None,
     alt_token: Optional[str] = None
 ):
-    """Verify that caller holds the active operator lease if station is reserved."""
+    """Every motion or station mutation requires an active operator lease."""
     active_token = token or alt_token
-    lease = lease_manager.get_lease_info()
-    if lease.is_controlled:
-        if not active_token or not lease_manager.is_operator(active_token):
-            raise HTTPException(
-                status_code=403,
-                detail=f"Station is controlled by '{lease.operator_name}'. Valid operator token required."
-            )
+    if not lease_manager.is_operator(active_token):
+        raise HTTPException(status_code=403, detail="Active operator token required.")
 
 
 
@@ -386,6 +381,11 @@ def start_scan(
 ):
     _require_operator_lease(x_operator_token, x_operator_id)
     try:
+        if machine_service.get_state().mode == "serial":
+            from ..quality_gate import require_approved
+            from ..services.inference_service import inference_service
+
+            require_approved(inference_service.model_path)
         if dataset_service.is_running:
             raise RuntimeError("Stop the dataset capture before starting an AOI scan")
         if stage_calibration_service.is_running:

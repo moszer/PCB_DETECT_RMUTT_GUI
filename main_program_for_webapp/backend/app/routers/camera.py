@@ -1,5 +1,5 @@
 """Camera control and MJPEG streaming endpoints."""
-from fastapi import APIRouter, HTTPException, Request, Response, Query
+from fastapi import APIRouter, Header, HTTPException, Request, Response, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 import logging
@@ -10,6 +10,7 @@ import cv2
 from ..core.inspection import digital_zoom
 from ..config import save_settings_to_disk, settings
 from ..services.camera_service import camera_service
+from ..core.security import lease_manager
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,9 @@ def list_camera_devices():
 
 
 @router.post("/start")
-def start_camera(req: CameraStartRequest):
+def start_camera(req: CameraStartRequest, x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token")):
+    if not lease_manager.is_operator(x_operator_token):
+        raise HTTPException(403, "Active operator token required.")
     from ..services.aoi_scan_service import aoi_scan_service
     if aoi_scan_service.is_running:
         raise HTTPException(409, "Stop the AOI scan before changing camera settings")
@@ -147,7 +150,9 @@ def _remember_camera_format(req: CameraStartRequest) -> None:
 
 
 @router.post("/stop")
-def stop_camera():
+def stop_camera(x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token")):
+    if not lease_manager.is_operator(x_operator_token):
+        raise HTTPException(403, "Active operator token required.")
     from ..services.aoi_scan_service import aoi_scan_service
     if aoi_scan_service.is_running:
         raise HTTPException(409, "Stop the AOI scan before stopping the camera")

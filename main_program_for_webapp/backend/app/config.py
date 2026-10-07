@@ -1,6 +1,8 @@
 import json
 import os
 import logging
+import secrets
+import time
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -38,10 +40,35 @@ RUNS_DIR = STORAGE_DIR / "runs"
 REFERENCES_DIR = STORAGE_DIR / "references"
 DATASETS_DIR = STORAGE_DIR / "datasets"
 DB_PATH = STORAGE_DIR / "inspection.db"
+PASSCODE_FILE = STORAGE_DIR / ".operator-passcode"
 
 # Ensure directories exist
 for directory in (STORAGE_DIR, UPLOADS_DIR, RUNS_DIR, REFERENCES_DIR, DATASETS_DIR):
     directory.mkdir(parents=True, exist_ok=True)
+
+
+def _operator_passcode() -> str:
+    """Use an explicit secret or generate one unique to this station on first run."""
+    if value := os.environ.get("PCB_OPERATOR_PASSCODE"):
+        return value
+    if PASSCODE_FILE.is_file():
+        value = PASSCODE_FILE.read_text(encoding="utf-8").strip()
+        if value:
+            return value
+        raise RuntimeError("Station operator passcode file is empty")
+    value = secrets.token_urlsafe(15)
+    try:
+        fd = os.open(PASSCODE_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        for _ in range(20):
+            value = PASSCODE_FILE.read_text(encoding="utf-8").strip()
+            if value:
+                return value
+            time.sleep(0.05)
+        raise RuntimeError("Station operator passcode file is empty")
+    with os.fdopen(fd, "w", encoding="utf-8") as out:
+        out.write(value + "\n")
+    return value
 
 
 class Settings(BaseModel):
@@ -49,13 +76,9 @@ class Settings(BaseModel):
     # Server network settings
     host: str = "0.0.0.0"
     port: int = 8000
-    cors_origins: list[str] = Field(default_factory=lambda: [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-        "*"  # Allows access from local LAN devices (iPad/PC)
-    ])
+    # The Next.js proxy is same-origin on LAN. Add direct browser origins explicitly.
+    cors_origins: list[str] = Field(default_factory=lambda: [origin.strip() for origin in
+        os.environ.get("PCB_CORS_ORIGINS", "http://localhost:3001,http://127.0.0.1:3001").split(",") if origin.strip()])
 
     # Hardware & Model defaults
     default_model: str = DEFAULT_MODEL_PATH if Path(DEFAULT_MODEL_PATH).is_file() else (
@@ -90,7 +113,7 @@ class Settings(BaseModel):
 
     # Control Lease & Auth
     lease_ttl_seconds: float = 20.0
-    operator_passcode: str = os.environ.get("PCB_OPERATOR_PASSCODE", "rmutt-aoi")
+    operator_passcode: str = Field(default_factory=_operator_passcode)
     station_name: str = "RMUTT-AOI-01"
     # Extra folders scanned for YOLO weights (e.g. another training project's runs/).
     model_search_dirs: list[str] = Field(default_factory=list)
@@ -133,6 +156,7 @@ def save_settings_to_disk(s: Settings):
         data = s.model_dump()
         temporary = SETTINGS_FILE.with_suffix(f".{uuid.uuid4().hex}.tmp")
         temporary.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        temporary.chmod(0o600)
         temporary.replace(SETTINGS_FILE)
     except OSError as exc:
         raise RuntimeError(f"Failed to save station settings: {exc}") from exc
@@ -145,12 +169,16 @@ def load_saved_settings(s: Settings):
         data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             raise ValueError("Settings must be an object")
+        # Network access policy is deployment config, never restored from old UI settings.
+        data.pop("cors_origins", None)
         saved_model = data.get("default_model")
         if saved_model and not Path(str(saved_model)).is_file():
             candidate = next((p / Path(str(saved_model)).name for p in (REPO_ROOT, REPO_ROOT.parent) if (p / Path(str(saved_model)).name).is_file()), None)
             data["default_model"] = str(candidate) if candidate else s.default_model
-        if "PCB_OPERATOR_PASSCODE" in os.environ:
+        if os.environ.get("PCB_OPERATOR_PASSCODE"):
             data["operator_passcode"] = os.environ["PCB_OPERATOR_PASSCODE"]
+        elif data.get("operator_passcode") in (None, "", "rmutt-aoi"):
+            data["operator_passcode"] = _operator_passcode()
         validated = Settings.model_validate({**s.model_dump(), **{k:v for k,v in data.items() if v is not None}})
         for key, value in validated.model_dump().items():
             setattr(s, key, value)
@@ -160,4 +188,3 @@ def load_saved_settings(s: Settings):
 
 settings = Settings()
 load_saved_settings(settings)
-

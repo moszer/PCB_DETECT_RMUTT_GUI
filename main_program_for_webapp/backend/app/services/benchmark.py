@@ -143,6 +143,9 @@ def run(
 
 def validate(infer, data_yaml: str, split: str, imgsz: Optional[int]) -> Dict[str, Any]:
     """mAP on the dataset split with the loaded model (same weights, same device)."""
+    dataset = yaml.safe_load(Path(data_yaml).read_text(encoding="utf-8")) or {}
+    names = dataset.get("names") or []
+    expected_classes = [str(value) for value in (names.values() if isinstance(names, dict) else names)]
     with infer._lock:  # noqa: SLF001 - keep predict() calls out while the model validates
         model = infer._model  # noqa: SLF001
         device = infer.device_info.device if infer.device_info else "cpu"
@@ -154,8 +157,19 @@ def validate(infer, data_yaml: str, split: str, imgsz: Optional[int]) -> Dict[st
         except Exception as exc:  # noqa: BLE001
             raise BenchmarkError(f"คำนวณ mAP ไม่สำเร็จ: {exc}") from exc
     box = metrics.box
+    per_class = {}
+    for i, class_id in enumerate(box.ap_class_index):
+        precision, recall, ap50, ap = box.class_result(i)
+        name = metrics.names.get(int(class_id), str(class_id))
+        per_class[str(name)] = {
+            "precision": round(float(precision) * 100, 2),
+            "recall": round(float(recall) * 100, 2),
+            "map50": round(float(ap50) * 100, 2),
+            "map50_95": round(float(ap) * 100, 2),
+        }
     return {"map50": round(float(box.map50) * 100, 2), "map50_95": round(float(box.map) * 100, 2),
-            "precision": round(float(box.mp) * 100, 2), "recall": round(float(box.mr) * 100, 2), "split": split}
+            "precision": round(float(box.mp) * 100, 2), "recall": round(float(box.mr) * 100, 2),
+            "per_class": per_class, "expected_classes": expected_classes, "split": split}
 
 
 def latest() -> Optional[Dict[str, Any]]:
