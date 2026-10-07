@@ -227,3 +227,161 @@ def summarize(
     # Approach overshoot that takes up the measured backlash with some margin.
     result["suggested_approach_mm"] = round(min(2.0, max(0.1, worst * 1.5 + 0.05)), 2)
     return result
+
+
+# ── Whole-travel map ──────────────────────────────────────────────────────────
+# The axis passes above measure ±2 mm around one spot. The map visits a grid of nodes over the
+# whole travel; neighbouring nodes' pictures overlap, so the image shift between them measures
+# the move between them. Solving all those shifts together (like stitching a panorama) gives
+# where every node really is, and what is left after the best straight-line (affine) fit is the
+# rail's position error at that node: lead/rack pitch errors, pinion run-out, a bent rail.
+
+
+def measure_offset(
+    ref: np.ndarray,
+    frame: np.ndarray,
+    predicted: Tuple[float, float],
+    work_side: int = 2048,
+) -> Tuple[float, float, float]:
+    """Image shift of `frame` vs `ref` for large moves (up to ~70 % of the frame).
+
+    Only the part both pictures saw at the predicted shift is correlated, so the result stays
+    reliable when the overlap is small (measure_shift crops symmetrically, which loses most of
+    the shared area for big shifts).
+    """
+    h, w = ref.shape[:2]
+    scale = min(1.0, work_side / max(h, w))
+    a, b = _prep(ref, scale), _prep(frame, scale)
+    ph, pw = a.shape[:2]
+    px, py = int(round(predicted[0] * scale)), int(round(predicted[1] * scale))
+    x0, x1 = max(0, -px), min(pw, pw - px)
+    y0, y1 = max(0, -py), min(ph, ph - py)
+    if x1 - x0 < 0.2 * pw or y1 - y0 < 0.2 * ph:
+        return float(predicted[0]), float(predicted[1]), 0.0
+    a = a[y0:y1, x0:x1]
+    b = b[y0 + py:y1 + py, x0 + px:x1 + px]
+    window = cv2.createHanningWindow((a.shape[1], a.shape[0]), cv2.CV_32F)
+    (dx, dy), response = cv2.phaseCorrelate(a, b, window)
+    return (px + dx) / scale, (py + dy) / scale, float(response)
+
+
+def solve_grid(
+    positions_mm: Sequence[Sequence[float]],
+    edges: Sequence[Tuple[int, int, Sequence[float]]],
+) -> Dict[str, Any]:
+    """Node positions in the image from pairwise shifts, and each node's position error.
+
+    `edges` are (i, j, shift px) with shift = image motion from node i's picture to node j's.
+    Returns the solved image positions (px, node 0 at the origin; None where a node is not
+    connected to node 0), the affine stage→image fit, the per-node error in commanded mm and
+    how well the shifts agree with each other (edge residuals, mm).
+    """
+    c = np.asarray(positions_mm, np.float64)
+    n = len(c)
+    # Nodes linked to node 0 through measured edges.
+    parent = list(range(n))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i, j, _ in edges:
+        parent[find(i)] = find(j)
+    linked = np.array([find(i) == find(0) for i in range(n)])
+    if linked.sum() < 3:
+        raise ValueError("จับคู่ภาพระหว่างจุดได้น้อยเกินไป — วางบอร์ดที่มีลวดลายให้ครอบคลุมทั้งระยะเคลื่อนที่")
+    idx = {k: m for m, k in enumerate(int(i) for i in np.flatnonzero(linked) if i != 0)}
+    use = [(i, j, s) for i, j, s in edges if linked[i] and linked[j]]
+    a = np.zeros((len(use), len(idx)))
+    rhs = np.zeros((len(use), 2))
+    for e, (i, j, s) in enumerate(use):
+        if j != 0:
+            a[e, idx[j]] += 1
+        if i != 0:
+            a[e, idx[i]] -= 1
+        rhs[e] = s
+    sol, *_ = np.linalg.lstsq(a, rhs, rcond=None)
+    u = np.full((n, 2), np.nan)
+    u[0] = 0.0
+    for k, m in idx.items():
+        u[k] = sol[m]
+
+    ok = linked
+    if np.linalg.matrix_rank(np.column_stack([c[ok], np.ones(ok.sum())])) < 3:
+        raise ValueError("จุดที่จับคู่ภาพได้อยู่แนวเดียวกันหมด — วัดได้ไม่ครบทั้งสองแกน")
+    design = np.column_stack([c[ok], np.ones(ok.sum())])
+    coef, *_ = np.linalg.lstsq(design, u[ok], rcond=None)
+    m = coef[:2].T
+    if abs(np.linalg.det(m)) < 1e-6:
+        raise ValueError("ภาพไม่เลื่อนตามสเตจ — ตรวจกล้องและบอร์ด")
+    m_inv = np.linalg.inv(m)
+    err = np.full((n, 2), np.nan)
+    err[ok] = (u[ok] - design @ coef) @ m_inv.T
+    edge_res = [m_inv @ ((u[j] - u[i]) - np.asarray(s)) for i, j, s in use]
+    return {"image_px": u, "matrix": m, "linked": ok, "error_mm": err,
+            "edge_residual_mm": np.asarray(edge_res) if edge_res else np.zeros((0, 2)), "edges_used": len(use)}
+
+
+def map_summary(
+    cols: int,
+    rows: int,
+    positions_mm: Sequence[Sequence[float]],
+    edges: Sequence[Tuple[int, int, Sequence[float]]],
+    backlash_px: Sequence[Optional[Sequence[float]]],
+    failed_edges: int = 0,
+) -> Dict[str, Any]:
+    """The whole-travel accuracy map (commanded mm; µm in the figures meant for reading)."""
+    sol = solve_grid(positions_mm, edges)
+    m, m_inv = sol["matrix"], np.linalg.inv(sol["matrix"])
+    c = np.asarray(positions_mm, np.float64)
+    u = sol["image_px"]
+    # Local scale: how much farther (or shorter) each move between neighbours really went.
+    scale: Dict[Tuple[int, int], List[float]] = {}
+    for i, j, _ in edges:
+        if not (sol["linked"][i] and sol["linked"][j]):
+            continue
+        d_cmd = c[j] - c[i]
+        axis = 0 if abs(d_cmd[0]) >= abs(d_cmd[1]) else 1
+        real = (m_inv @ (u[j] - u[i]))[axis]
+        if abs(d_cmd[axis]) > 1e-6:
+            pct = (real / d_cmd[axis] - 1) * 100
+            for k in (i, j):
+                scale.setdefault((k, axis), []).append(pct)
+    nodes = []
+    for k, (x, y) in enumerate(c):
+        measured = bool(sol["linked"][k])
+        e = sol["error_mm"][k]
+        b = backlash_px[k] if k < len(backlash_px) else None
+        bmm = (m_inv @ np.asarray(b, np.float64)) if b is not None else None
+        sx, sy = scale.get((k, 0)), scale.get((k, 1))
+        nodes.append({
+            "col": k % cols if (k // cols) % 2 == 0 else cols - 1 - k % cols,
+            "row": k // cols,
+            "x_mm": round(float(x), 3), "y_mm": round(float(y), 3),
+            "measured": measured,
+            "err_mm": [round(float(e[0]), 4), round(float(e[1]), 4)] if measured else None,
+            "err_um": round(float(np.hypot(*e)) * 1000, 1) if measured else None,
+            "backlash_mm": [round(float(bmm[0]), 4), round(float(bmm[1]), 4)] if bmm is not None else None,
+            "scale_x_pct": round(float(np.mean(sx)), 3) if sx else None,
+            "scale_y_pct": round(float(np.mean(sy)), 3) if sy else None,
+        })
+    errs = np.array([n["err_um"] for n in nodes if n["err_um"] is not None])
+    res = sol["edge_residual_mm"]
+    back = np.array([n["backlash_mm"] for n in nodes if n["backlash_mm"] is not None])
+    return {
+        "mode": "map",
+        "grid": [cols, rows],
+        "xs": sorted({n["x_mm"] for n in nodes}),
+        "ys": sorted({n["y_mm"] for n in nodes}),
+        "nodes": nodes,
+        "rms_um": round(float(np.sqrt(np.mean(errs ** 2))), 1) if len(errs) else None,
+        "max_um": round(float(errs.max()), 1) if len(errs) else None,
+        # How well the pairwise measurements agree: the noise floor of this map.
+        "noise_um": round(float(np.sqrt(np.mean(np.sum(res ** 2, axis=1)))) * 1000, 1) if len(res) else None,
+        "backlash_mean_mm": [round(float(v), 4) for v in back.mean(axis=0)] if len(back) else None,
+        "stage_to_image": m.round(4).tolist(),
+        "edges": sol["edges_used"],
+        "failed_edges": int(failed_edges),
+    }

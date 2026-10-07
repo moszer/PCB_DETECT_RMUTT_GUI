@@ -1,11 +1,14 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Download, Play, Ruler, Square, Wand2 } from "lucide-react";
-import type { StageAxisCalibration, StageCalibrationResult, StageCalibrationStatus } from "@/types";
+import { Box, Download, Grid3x3, Map as MapIcon, Play, Ruler, Square, Wand2 } from "lucide-react";
+import type { StageAxisCalibration, StageCalibrationResult, StageCalibrationStatus, StageMapResult } from "@/types";
 import { API_BASE, api } from "@/lib/api";
-import { Button, Card, CardHeader, Field, NumberInput, Stat, Toggle, buttonClasses, cx } from "./ui";
+import { Button, Card, CardHeader, Field, NumberInput, Segmented, Stat, Toggle, buttonClasses, cx } from "./ui";
 import { useToast } from "./Toast";
+import { useThreePrefs } from "@/lib/three/prefs";
+import { goodBadHex } from "@/lib/three/colors";
+import { RAIL_GOOD_UM, RailMap3D, nodeText } from "./three/RailMap3D";
 
 const um = (mm: number | undefined | null) => (mm === undefined || mm === null ? "–" : `${Math.round(mm * 1000)} µm`);
 
@@ -116,6 +119,99 @@ function Results({ r }: { r: StageCalibrationResult }) {
   );
 }
 
+/** Top view of the map: one cell per node coloured by its error, an arrow for its direction. */
+function RailMap2D({ map }: { map: StageMapResult }) {
+  const [cols, rows] = map.grid;
+  const cell = 44;
+  const W = cols * cell;
+  const H = rows * cell;
+  const worst = Math.max(RAIL_GOOD_UM * 2, map.max_um ?? 0);
+  return (
+    <div className="rounded-lg border border-line bg-surface-2 p-2 overflow-x-auto">
+      <svg viewBox={`-28 -8 ${W + 36} ${H + 30}`} className="w-full max-w-xl h-auto mx-auto">
+        {map.nodes.map((n) => {
+          const x = n.col * cell;
+          const y = (rows - 1 - n.row) * cell;
+          const e = n.err_mm;
+          const len = e && n.err_um ? Math.min(cell * 0.42, 6 + (n.err_um / worst) * cell * 0.36) : 0;
+          const ang = e ? Math.atan2(-e[1], e[0]) : 0;
+          return (
+            <g key={`${n.col}-${n.row}`}>
+              <title>{nodeText(n)}</title>
+              <rect x={x + 1} y={y + 1} width={cell - 2} height={cell - 2} rx={5} fill={n.measured ? goodBadHex((n.err_um ?? 0) / worst) : "#475569"} opacity={0.85} />
+              <text x={x + cell / 2} y={y + cell - 6} textAnchor="middle" className="fill-black/70 text-[9px] font-mono">
+                {n.measured ? Math.round(n.err_um ?? 0) : "–"}
+              </text>
+              {len > 0 && (
+                <line
+                  x1={x + cell / 2}
+                  y1={y + cell / 2 - 4}
+                  x2={x + cell / 2 + Math.cos(ang) * len}
+                  y2={y + cell / 2 - 4 + Math.sin(ang) * len}
+                  stroke="white"
+                  strokeWidth={1.6}
+                  markerEnd="url(#railArrow)"
+                />
+              )}
+            </g>
+          );
+        })}
+        <defs>
+          <marker id="railArrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="4" markerHeight="4" orient="auto">
+            <path d="M0,0 L6,3 L0,6 z" fill="white" />
+          </marker>
+        </defs>
+        <text x={W / 2} y={H + 18} textAnchor="middle" className="fill-subtle text-[10px]">
+          X {map.xs[0]?.toFixed(1)} → {map.xs[map.xs.length - 1]?.toFixed(1)} mm (ตัวเลข = µm)
+        </text>
+        <text x={-10} y={H / 2} textAnchor="middle" transform={`rotate(-90 -10 ${H / 2})`} className="fill-subtle text-[10px]">
+          Y {map.ys[0]?.toFixed(1)} → {map.ys[map.ys.length - 1]?.toFixed(1)} mm
+        </text>
+      </svg>
+    </div>
+  );
+}
+
+function RailMapResults({ map }: { map: StageMapResult }) {
+  const { use3d } = useThreePrefs();
+  const [view, setView] = useState<"3d" | "2d">("3d");
+  const show3d = use3d && view === "3d";
+  const worstNode = map.nodes.filter((n) => n.measured).sort((a, b) => (b.err_um ?? 0) - (a.err_um ?? 0))[0];
+  const bl = map.backlash_mean_mm;
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <Stat label="คลาดเคลื่อนเฉลี่ย (RMS)" value={map.rms_um !== null ? `${map.rms_um} µm` : "–"} tone={(map.rms_um ?? 0) > RAIL_GOOD_UM ? "review" : "pass"} />
+        <Stat
+          label="แย่สุด"
+          value={map.max_um !== null ? `${map.max_um} µm` : "–"}
+          tone={(map.max_um ?? 0) > RAIL_GOOD_UM * 2 ? "review" : undefined}
+          hint={worstNode ? `ที่ (${worstNode.x_mm.toFixed(1)}, ${worstNode.y_mm.toFixed(1)}) mm` : undefined}
+        />
+        <Stat label="Backlash เฉลี่ย X / Y" value={bl ? `${Math.round(Math.abs(bl[0]) * 1000)} / ${Math.round(Math.abs(bl[1]) * 1000)} µm` : "–"} />
+        <Stat label="สัญญาณรบกวนการวัด" value={map.noise_um !== null ? `±${map.noise_um} µm` : "–"} hint="ค่าที่ต่ำกว่านี้แยกไม่ออกจากความคลาดเคลื่อนของการวัด" />
+      </div>
+      {use3d && (
+        <Segmented
+          size="sm"
+          className="self-start"
+          value={view}
+          onChange={setView}
+          options={[
+            { value: "3d", label: "พื้นผิว 3D", icon: Box },
+            { value: "2d", label: "ตาราง", icon: Grid3x3 },
+          ]}
+        />
+      )}
+      {show3d ? <RailMap3D map={map} className="h-[380px]" /> : <RailMap2D map={map} />}
+      <p className="text-[11px] text-subtle">
+        วัดเมื่อ {new Date(map.time * 1000).toLocaleString("th-TH")} · {map.grid[0]}×{map.grid[1]} จุด · ความคลาดเคลื่อนคือส่วนที่เหลือหลังหักเส้นตรงที่ดีที่สุดของทั้งราง (สเกลและมุมรวมของแกนแก้ได้ด้วย steps/mm และการหมุนภาพ ส่วนนี้คือความไม่สม่ำเสมอของรางและเฟือง)
+        {map.failed_edges > 0 && ` · จับคู่ภาพไม่ได้ ${map.failed_edges} คู่`}
+      </p>
+    </div>
+  );
+}
+
 /** Camera-based accuracy test of the XY stage and its backlash compensation. */
 export function StageCalibrationCard({ isOperator }: { isOperator: boolean }) {
   const toast = useToast();
@@ -125,6 +221,7 @@ export function StageCalibrationCard({ isOperator }: { isOperator: boolean }) {
   const [cols, setCols] = useState(9);
   const [rows, setRows] = useState(6);
   const [squareMm, setSquareMm] = useState(2);
+  const [density, setDensity] = useState(5);
   const [busy, setBusy] = useState(false);
 
   // Toast once when a run this page watched finishes.
@@ -157,10 +254,12 @@ export function StageCalibrationCard({ isOperator }: { isOperator: boolean }) {
     return () => window.clearInterval(id);
   }, [running, refresh]);
 
-  const start = async () => {
+  const start = async (mode: "axes" | "map" = "axes") => {
     setBusy(true);
     try {
-      const s = await api.startStageCalibration(useBoard ? { checkerboard_cols: cols, checkerboard_rows: rows, square_mm: squareMm } : {});
+      const s = await api.startStageCalibration(
+        mode === "map" ? { mode, density } : useBoard ? { checkerboard_cols: cols, checkerboard_rows: rows, square_mm: squareMm } : {}
+      );
       watched.current = s.state === "running";
       setStatus(s);
     } catch (err) {
@@ -181,7 +280,25 @@ export function StageCalibrationCard({ isOperator }: { isOperator: boolean }) {
   };
 
   const last = status?.last;
+  const lastMap = status?.last_map;
   const progress = running && status?.total ? Math.round(((status.step ?? 0) / status.total) * 100) : 0;
+  const mapRunning = running && status?.mode === "map";
+  const axesRunning = running && !mapRunning;
+  const progressBar = (
+    <div className="flex-1 min-w-0">
+      <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
+        <div className="h-full bg-accent transition-[width]" style={{ width: `${progress}%` }} />
+      </div>
+      <p className="text-[11px] text-muted mt-1 truncate">
+        {progress}% · {status?.message}
+      </p>
+    </div>
+  );
+  const stopButton = (
+    <Button icon={Square} variant="danger" onClick={() => api.stopStageCalibration().then(setStatus).catch((e) => toast.error("หยุดไม่ได้", e))}>
+      หยุด
+    </Button>
+  );
 
   return (
     <Card>
@@ -233,30 +350,60 @@ export function StageCalibrationCard({ isOperator }: { isOperator: boolean }) {
         </div>
 
         <div className="flex items-center gap-3">
-          {running ? (
-            <Button icon={Square} variant="danger" onClick={() => api.stopStageCalibration().then(setStatus).catch((e) => toast.error("หยุดไม่ได้", e))}>
-              หยุด
-            </Button>
+          {axesRunning ? (
+            stopButton
           ) : (
-            <Button icon={Play} variant="primary" onClick={start} disabled={!isOperator || busy}>
+            <Button icon={Play} variant="primary" onClick={() => start("axes")} disabled={!isOperator || busy || running}>
               เริ่ม calibrate
             </Button>
           )}
-          {running && (
-            <div className="flex-1 min-w-0">
-              <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
-                <div className="h-full bg-accent transition-[width]" style={{ width: `${progress}%` }} />
-              </div>
-              <p className="text-[11px] text-muted mt-1 truncate">
-                {progress}% · {status?.message}
-              </p>
-            </div>
-          )}
-          {!running && status?.state === "error" && <p className="text-xs text-fail min-w-0">{status.message}</p>}
+          {axesRunning && progressBar}
+          {!running && status?.state === "error" && status.mode !== "map" && <p className="text-xs text-fail min-w-0">{status.message}</p>}
           {!isOperator && <p className="text-xs text-muted">ต้องมีสิทธิ์ควบคุมสถานี</p>}
         </div>
 
         {last && <Results r={last} />}
+
+        {/* ── whole-travel map ── */}
+        <div className="rounded-lg border border-line p-3 flex flex-col gap-3">
+          <div className="flex items-start gap-2">
+            <MapIcon className="size-4 text-accent mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <div className="text-sm font-medium">แผนที่ความแม่นยำทั้งราง</div>
+              <p className="text-[11px] text-muted mt-0.5">
+                เดินเป็นตารางทั่วทั้งระยะเคลื่อนที่ ถ่ายภาพทุกจุดแล้วต่อภาพจุดข้างเคียงกัน (เหมือนต่อภาพพาโนรามา) เพื่อหาว่าแต่ละตำแหน่งบนรางไปถึงจริงคลาดไปเท่าไหร่ และ backlash
+                ที่แต่ละจุด — ต้องวางบอร์ดที่มีลวดลายให้ครอบคลุมทั้งระยะเคลื่อนที่ และต้อง calibrate แบบด้านบนก่อน ใช้เวลาราว 3–8 นาที
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Segmented
+              size="sm"
+              value={density}
+              onChange={setDensity}
+              options={[
+                { value: 5, label: "5×5 (เร็ว)" },
+                { value: 7, label: "7×7" },
+                { value: 9, label: "9×9 (ละเอียด)" },
+              ]}
+            />
+            {mapRunning ? (
+              stopButton
+            ) : (
+              <Button
+                icon={Play}
+                onClick={() => start("map")}
+                disabled={!isOperator || busy || running || !last}
+                title={!last ? "ต้อง calibrate แบบปกติก่อน" : undefined}
+              >
+                วัดทั้งราง
+              </Button>
+            )}
+            {mapRunning && progressBar}
+            {!running && status?.state === "error" && status.mode === "map" && <p className="text-xs text-fail min-w-0">{status.message}</p>}
+          </div>
+          {lastMap && <RailMapResults map={lastMap} />}
+        </div>
 
         <div className={cx("rounded-lg border p-3 flex flex-col gap-2", approach > 0 ? "border-pass/40 bg-pass-soft" : "border-line")}>
           <div className="flex items-start justify-between gap-3">

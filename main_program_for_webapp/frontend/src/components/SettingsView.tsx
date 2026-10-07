@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Box, Building2, Check, Cpu, Crosshair, RotateCw, Save, Vibrate, Volume2 } from "lucide-react";
+import { Box, Building2, Check, Cpu, Crosshair, Rotate3d, RotateCw, Save, Vibrate, Volume2 } from "lucide-react";
 import type { ComputeDevice } from "@/types";
 import { api } from "@/lib/api";
 import { Button, Card, CardHeader, Field, NumberInput, Segmented, Slider, Spinner, TextInput, Toggle, cx } from "./ui";
@@ -12,6 +12,7 @@ import { StageCalibrationCard } from "./StageCalibrationCard";
 import { StraightenCard } from "./StraightenCard";
 import { StageSoundCard } from "./StageSoundCard";
 import { useSoundPrefs } from "@/hooks/useSound";
+import { setThreePrefs, useThreePrefs, webglAvailable } from "@/lib/three/prefs";
 import { sfx } from "@/lib/sound";
 import { useToast } from "./Toast";
 
@@ -247,6 +248,8 @@ export function SettingsView({ onRefreshStatus, isOperator }: { onRefreshStatus:
 
         <SoundCard />
 
+        <ThreeCard />
+
         <StageSoundCard isOperator={isOperator} />
 
         <Card>
@@ -287,6 +290,33 @@ const SOUND_PREVIEWS: Array<{ label: string; play: () => void }> = [
 ];
 
 /** Sound preference is per browser (saved locally) and applies immediately — no Save needed. */
+function ThreeCard() {
+  const prefs = useThreePrefs();
+  const gl = webglAvailable();
+  return (
+    <Card>
+      <CardHeader icon={Rotate3d} title="ภาพ 3D" subtitle="ตั้งค่าเฉพาะเครื่องนี้ มีผลทันที — ภาพ 3D วาดเฉพาะตอนมีอะไรเปลี่ยน และหยุดเมื่อสลับแท็บหรือเลื่อนพ้นจอ" />
+      <div className="flex flex-col gap-4 p-4">
+        {!gl && <p className="text-xs text-review">เบราว์เซอร์นี้ไม่รองรับ WebGL — ทุกหน้าแสดงแบบ 2D</p>}
+        <Toggle
+          label="แสดงภาพ 3D"
+          description="Digital twin ของราง XY ในหน้าสแกน, บอร์ด 3D ในหน้าบอร์ด และพื้นผิวความแม่นยำราง — ปิดแล้วใช้มุมมอง 2D แทน (แนะนำให้ปิดบนจอที่เปิดบน Jetson เองถ้าต้องการ GPU ให้การตรวจเต็มที่)"
+          checked={prefs.enabled}
+          disabled={!gl}
+          onChange={(v) => setThreePrefs({ enabled: v })}
+        />
+        <Toggle
+          label="ภาพตกแต่ง 3D"
+          description="แผงวงจรหมุนในหน้าเปิดโปรแกรมและหน้าที่ยังไม่มีข้อมูล (ปิดเองเมื่อระบบตั้ง “ลดการเคลื่อนไหว”)"
+          checked={prefs.enabled && prefs.decor && !prefs.reducedMotion}
+          disabled={!gl || !prefs.enabled || prefs.reducedMotion}
+          onChange={(v) => setThreePrefs({ decor: v })}
+        />
+      </div>
+    </Card>
+  );
+}
+
 function SoundCard() {
   const { enabled, volume } = useSoundPrefs();
   return (

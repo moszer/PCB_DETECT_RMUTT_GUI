@@ -68,7 +68,7 @@ export function PointsPanel(p: PointsPanelProps) {
         </div>
 
         {p.points.length === 0 ? (
-          <EmptyState icon={MapPin} title="ยังไม่มีจุดตรวจ" className="rounded-lg border border-dashed border-line py-8">
+          <EmptyState pcb icon={MapPin} title="ยังไม่มีจุดตรวจ" className="rounded-lg border border-dashed border-line py-8">
             จ๊อกไปยังจุดที่ต้องการ แล้วกด “มาร์คตำแหน่งปัจจุบัน” (หรือกด M)
           </EmptyState>
         ) : (

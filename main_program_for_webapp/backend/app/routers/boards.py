@@ -93,6 +93,9 @@ def _history(runs: List[Dict[str, Any]], names: Dict[str, str]) -> Dict[str, Any
     verdicts = Counter(r["overall_verdict"] for r in done)
     point_fail: Counter = Counter()
     part_fail: Counter = Counter()
+    # Per point: how often it was scanned and with what verdict; per part: how often it failed.
+    point_stats: Dict[str, Counter] = {}
+    part_by_id: Dict[tuple, Counter] = {}
     if done:
         ids = {r["id"]: r["point_ids"] for r in done[:200]}
         marks = ",".join("?" * len(ids))
@@ -105,6 +108,8 @@ def _history(runs: List[Dict[str, Any]], names: Dict[str, str]) -> Dict[str, Any
             pid = pids[row["point_index"]] if row["point_index"] is not None and row["point_index"] < len(pids) else None
             if row["verdict"] == "FAIL" and pid:
                 point_fail[pid] += 1
+            if pid:
+                point_stats.setdefault(pid, Counter())[row["verdict"] or "?"] += 1
             try:
                 evals = (json.loads(row["details_json"] or "{}") or {}).get("component_eval") or []
             except ValueError:
@@ -113,6 +118,7 @@ def _history(runs: List[Dict[str, Any]], names: Dict[str, str]) -> Dict[str, Any
                 if c.get("status") in ("missing", "wrong") and pid:
                     exp = c.get("expected") or {}
                     part_fail[(pid, exp.get("id"), exp.get("name"), c.get("status"))] += 1
+                    part_by_id.setdefault((pid, exp.get("id")), Counter())[c.get("status")] += 1
     total = len(done)
     return {
         "runs": len(runs),
@@ -127,6 +133,10 @@ def _history(runs: List[Dict[str, Any]], names: Dict[str, str]) -> Dict[str, Any
         "top_failing_points": [{"point_id": pid, "name": names.get(pid, pid), "fails": n} for pid, n in point_fail.most_common(5)],
         "top_failing_parts": [{"point": names.get(pid, pid), "part": part, "class": cls, "status": st, "count": n}
                               for (pid, part, cls, st), n in part_fail.most_common(8)],
+        "point_stats": {pid: {"scans": sum(c.values()), "pass": c.get("PASS", 0), "fail": c.get("FAIL", 0),
+                              "review": c.get("REVIEW", 0)} for pid, c in point_stats.items()},
+        "part_fails": [{"point_id": pid, "part_id": part, "missing": c.get("missing", 0), "wrong": c.get("wrong", 0)}
+                       for (pid, part), c in part_by_id.items() if part],
     }
 
 
@@ -155,6 +165,9 @@ def _analyse(meta: Dict[str, Any]) -> Dict[str, Any]:
             "x_mm": p.get("x_mm"), "y_mm": p.get("y_mm"), "zoom": p.get("zoom") or 1,
             "has_reference": bool(p.get("reference_image")), "reference_size": size,
             "components": len(comps), "classes": dict(cls.most_common()),
+            # Taught boxes (normalised to the picture) for the 3D board's failure heatmap.
+            "parts": [{"id": c.get("id"), "name": c.get("name"), "bbox": c.get("bbox") or c.get("box")}
+                      for c in comps if (c.get("bbox") or c.get("box"))],
             "issues": _point_issues(p, size, aspect, limits),
         })
     taught = [p for p in points if p["has_reference"]]

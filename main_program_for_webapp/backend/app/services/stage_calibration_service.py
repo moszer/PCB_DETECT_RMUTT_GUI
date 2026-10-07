@@ -10,13 +10,14 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 from ..config import STORAGE_DIR, settings
-from ..core.stage_calibration import find_checkerboard, fit_axis, measure_shift, summarize
+from ..core.stage_calibration import find_checkerboard, fit_axis, map_summary, measure_offset, measure_shift, summarize
 from .camera_service import camera_service
 from .machine_service import machine_service
 
 logger = logging.getLogger(__name__)
 
 RESULT_FILE = STORAGE_DIR / "stage_calibration.json"
+MAP_FILE = STORAGE_DIR / "stage_map.json"
 # Half-range of each axis pass and the number of points in it. ±2 mm keeps the image shift
 # well inside the frame at ~130 px/mm (Jetson station camera at zoom 1).
 RANGE_MM = 2.0
@@ -25,6 +26,10 @@ POINTS = 9
 LEAD_MM = 0.6
 REPEATS = 4
 FRAMES_PER_SHOT = 2
+# Whole-travel map: neighbouring nodes must share at least ~40 % of the picture.
+MAP_MAX_SHIFT = 0.6
+MAP_MAX_NODES = 15
+MAP_WORK_SIDE = 2048
 
 
 class CalibrationCancelled(Exception):
@@ -46,6 +51,7 @@ class StageCalibrationService:
         with self._lock:
             out = dict(self._status)
         out["last"] = self.last_result()
+        out["last_map"] = self.last_map()
         return out
 
     @staticmethod
@@ -55,11 +61,19 @@ class StageCalibrationService:
         except (OSError, ValueError):
             return None
 
+    @staticmethod
+    def last_map() -> Optional[Dict[str, Any]]:
+        try:
+            return json.loads(MAP_FILE.read_text())
+        except (OSError, ValueError):
+            return None
+
     def _set(self, **kw):
         with self._lock:
             self._status.update(kw)
 
-    def start(self, checkerboard: Optional[Tuple[int, int]] = None, square_mm: Optional[float] = None) -> Dict[str, Any]:
+    def start(self, checkerboard: Optional[Tuple[int, int]] = None, square_mm: Optional[float] = None,
+              mode: str = "axes", density: int = 5) -> Dict[str, Any]:
         from .aoi_scan_service import aoi_scan_service
         from .dataset_service import dataset_service
 
@@ -74,10 +88,16 @@ class StageCalibrationService:
             if not camera_service.is_active or camera_service.is_mock:
                 raise ValueError("ต้องใช้กล้องจริง")
             self._cancel.clear()
-            self._status = {"state": "running", "step": 0, "total": self._total_steps(), "message": "เริ่ม", "started": time.time()}
-            self._thread = threading.Thread(
-                target=self._run, args=(state.position_mm, checkerboard, square_mm), name="stage-calibration", daemon=True
-            )
+            if mode == "map":
+                plan = self._map_plan(density)
+                self._status = {"state": "running", "mode": "map", "step": 0, "total": len(plan["nodes"]),
+                                "message": "เริ่มวัดทั้งราง", "started": time.time(), "grid": [plan["cols"], plan["rows"]]}
+                target, args = self._run_map, (plan,)
+            else:
+                self._status = {"state": "running", "mode": "axes", "step": 0, "total": self._total_steps(),
+                                "message": "เริ่ม", "started": time.time()}
+                target, args = self._run, (state.position_mm, checkerboard, square_mm)
+            self._thread = threading.Thread(target=target, args=args, name="stage-calibration", daemon=True)
             self._thread.start()
         return self.status()
 
@@ -201,6 +221,113 @@ class StageCalibrationService:
             "square_mm": square_mm,
         })
         return summary
+
+    # ── whole-travel map ───────────────────────────────────────────────────────
+    def _map_plan(self, density: int) -> Dict[str, Any]:
+        """Grid nodes over the whole travel, in the order they are visited (serpentine rows)."""
+        matrix = stage_matrix(self._frame_shape())
+        if matrix is None:
+            raise ValueError("ต้อง calibrate แบบปกติ (รอบจุดเดียว) ก่อน — แผนที่ทั้งรางใช้สเกลจากผลนั้นทำนายการเลื่อนของภาพ")
+        state = machine_service.get_state()
+        spm = machine_service.steps_per_mm
+        limits = (min(state.limits_steps[0] / spm, state.soft_limits_mm[0]),
+                  min(state.limits_steps[1] / spm, state.soft_limits_mm[1]))
+        margin = LEAD_MM + max(1.0, settings.stage_approach_mm)
+        h, w = self._frame_shape()[:2]
+        counts = []
+        for k, (lim, side) in enumerate(zip(limits, (w, h))):
+            span = lim - 2 * margin
+            if span < 2.0:
+                raise ValueError("ระยะเคลื่อนที่สั้นเกินไปสำหรับแผนที่ทั้งราง")
+            # Enough nodes that neighbours overlap, however coarse the chosen density.
+            per_mm = float(np.linalg.norm(matrix[:, k]))
+            need = int(np.ceil(span * per_mm / (MAP_MAX_SHIFT * side))) + 1
+            counts.append((margin, lim - margin, min(MAP_MAX_NODES, max(int(density), need, 2))))
+        (x0, x1, cols), (y0, y1, rows) = counts
+        xs, ys = np.linspace(x0, x1, cols), np.linspace(y0, y1, rows)
+        nodes = []
+        for r in range(rows):
+            for i in range(cols):
+                c = i if r % 2 == 0 else cols - 1 - i
+                nodes.append((round(float(xs[c]), 3), round(float(ys[r]), 3), c, r))
+        return {"cols": cols, "rows": rows, "nodes": nodes}
+
+    def _frame_shape(self) -> Tuple[int, ...]:
+        _, frame = camera_service.get_latest_frame()
+        if frame is None:
+            raise ValueError("ยังไม่มีภาพจากกล้อง")
+        return frame.shape
+
+    def _small(self, frame: np.ndarray) -> np.ndarray:
+        """Grey copy at most MAP_WORK_SIDE px (the map keeps two rows of node pictures)."""
+        import cv2
+
+        g = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if frame.ndim == 3 else frame
+        k = min(1.0, MAP_WORK_SIDE / max(g.shape[:2]))
+        return cv2.resize(g, (int(g.shape[1] * k), int(g.shape[0] * k)), interpolation=cv2.INTER_AREA) if k < 1 else g
+
+    def _run_map(self, plan: Dict[str, Any]) -> None:
+        try:
+            result = self._measure_map(plan)
+            MAP_FILE.parent.mkdir(parents=True, exist_ok=True)
+            MAP_FILE.write_text(json.dumps(result, ensure_ascii=False, indent=2))
+            self._set(state="done", message="เสร็จแล้ว", finished=time.time())
+            machine_service.play("done")
+        except CalibrationCancelled:
+            self._set(state="cancelled", message="ยกเลิกแล้ว")
+        except Exception as exc:
+            if self._cancel.is_set():
+                self._set(state="cancelled", message="ยกเลิกแล้ว")
+                return
+            logger.exception("Stage map failed")
+            self._set(state="error", message=str(exc))
+
+    def _measure_map(self, plan: Dict[str, Any]) -> Dict[str, Any]:
+        cols, rows, nodes = plan["cols"], plan["rows"], plan["nodes"]
+        shots: Dict[int, np.ndarray] = {}
+        where = {(c, r): k for k, (_, _, c, r) in enumerate(nodes)}
+        edges, backlash, failed = [], [], 0
+        frame_shape = self._frame_shape()
+        matrix = None
+        for k, (x, y, c, r) in enumerate(nodes):
+            # From + first (for the backlash), then the node's picture approached from -,
+            # the way every other node is approached.
+            self._move(x + LEAD_MM, y + LEAD_MM)
+            self._move(x, y)
+            from_plus = self._small(self._shot())
+            self._move(x - LEAD_MM, y - LEAD_MM)
+            self._move(x, y)
+            shot = self._small(self._shot())
+            k_px = frame_shape[0] / shot.shape[0]  # full-frame px per px of the small copy
+            if matrix is None:
+                matrix = stage_matrix(frame_shape) / k_px
+            dx, dy, resp = measure_shift(shot, from_plus, work_side=MAP_WORK_SIDE)
+            backlash.append([dx * k_px, dy * k_px] if resp >= 0.05 else None)
+            # Edges to the node before it in this row and to the one above it.
+            for nb in ((c - 1, r), (c + 1, r), (c, r - 1)):
+                j = where.get(nb)
+                if j is None or j not in shots:
+                    continue
+                pj = nodes[j]
+                predicted = matrix @ np.array([x - pj[0], y - pj[1]])
+                sx, sy, resp = measure_offset(shots[j], shot, (float(predicted[0]), float(predicted[1])), work_side=MAP_WORK_SIDE)
+                if resp < 0.05:
+                    failed += 1
+                    continue
+                edges.append((j, k, [sx * k_px, sy * k_px]))
+            shots[k] = shot
+            # Only the previous row is needed for the edges still to come.
+            for old in [i for i in shots if nodes[i][3] < r - 1]:
+                del shots[old]
+            self._advance(f"จุด {k + 1}/{len(nodes)} ({x:.1f}, {y:.1f} mm)")
+        result = map_summary(cols, rows, [(n[0], n[1]) for n in nodes], edges, backlash, failed)
+        result.update({
+            "time": time.time(),
+            "steps_per_mm": machine_service.steps_per_mm,
+            "image_size": [int(frame_shape[1]), int(frame_shape[0])],
+            "lead_mm": LEAD_MM,
+        })
+        return result
 
     @staticmethod
     def _shift(ref: np.ndarray, frame: np.ndarray, predicted: Optional[Tuple[float, float]] = None) -> Tuple[float, float]:

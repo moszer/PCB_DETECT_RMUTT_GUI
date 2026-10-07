@@ -88,6 +88,10 @@ class BoardsTests(unittest.TestCase):
         self.assertEqual(d["history"]["top_failing_points"][0]["name"], "จุด 1")
         self.assertEqual(d["history"]["top_failing_parts"][0]["class"], "resistor")
         self.assertNotIn("reference_image", json.dumps(d))  # no pictures in the JSON
+        # For the 3D board: each point's scans and verdicts, each part's failures, the taught boxes.
+        self.assertEqual(d["history"]["point_stats"][self.ids[0]], {"scans": 1, "pass": 0, "fail": 1, "review": 0})
+        self.assertEqual(d["history"]["part_fails"], [{"point_id": self.ids[0], "part_id": "P2", "missing": 1, "wrong": 0}])
+        self.assertEqual(d["points"][0]["parts"][1], {"id": "P2", "name": "resistor", "bbox": [0.5, 0.5, 0.6, 0.55]})
 
     def test_point_picture_with_boxes(self):
         res = self.client.get(f"/api/boards/{self.board['id']}/points/0/thumb.jpg", params={"w": 480})

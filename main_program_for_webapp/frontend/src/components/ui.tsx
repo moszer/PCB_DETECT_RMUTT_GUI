@@ -4,6 +4,7 @@ import React, { useEffect, useId } from "react";
 import { Loader2, Lock, X, type LucideIcon } from "lucide-react";
 import type { Verdict } from "@/types";
 import { VERDICT_LABEL, VERDICT_TONE } from "@/lib/format";
+import { DecorPcb } from "./three/DecorPcb";
 
 const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
 export { cx };
@@ -254,17 +255,23 @@ export function EmptyState({
   title,
   children,
   className,
+  pcb,
 }: {
   icon: LucideIcon;
   title: React.ReactNode;
   children?: React.ReactNode;
   className?: string;
+  /** A slowly turning 3D board instead of the icon (falls back to the icon when 3D is off). */
+  pcb?: boolean;
 }) {
+  const icon = (
+    <div className="size-10 rounded-full bg-surface-2 flex items-center justify-center">
+      <Icon className="size-5 text-subtle" />
+    </div>
+  );
   return (
     <div className={cx("flex flex-col items-center justify-center text-center gap-2 px-6 py-10", className)}>
-      <div className="size-10 rounded-full bg-surface-2 flex items-center justify-center">
-        <Icon className="size-5 text-subtle" />
-      </div>
+      {pcb ? <DecorPcb className="w-44 h-28 -my-2" fallback={icon} /> : icon}
       <div className="text-sm font-medium text-text">{title}</div>
       {children && <div className="text-xs text-muted max-w-xs leading-relaxed">{children}</div>}
     </div>

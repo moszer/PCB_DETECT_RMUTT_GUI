@@ -5,6 +5,7 @@ import { AlertTriangle, Check, Loader2, Minus } from "lucide-react";
 import { api } from "@/lib/api";
 import type { SystemStatus } from "@/types";
 import { Button, cx } from "./ui";
+import { DecorPcb } from "./three/DecorPcb";
 
 type StepState = "wait" | "ok" | "warn" | "fail";
 interface Step {
@@ -84,6 +85,10 @@ export function SplashScreen({ onDone }: { onDone: () => void }) {
       aria-live="polite"
     >
       <div className="absolute inset-0 pointer-events-none splash-glow" aria-hidden />
+      {/* A circuit board assembling itself behind the logo (2D splash when 3D is off). */}
+      <div className="absolute inset-x-0 top-1/2 -translate-y-[62%] flex justify-center opacity-45 pointer-events-none" aria-hidden>
+        <DecorPcb variant="assemble" className="w-[min(96vw,760px)] h-[min(62vh,460px)]" />
+      </div>
       <div className="relative flex flex-col items-center gap-6 px-6 text-center max-w-md w-full">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/rmutt-logo.png" alt="ตรามหาวิทยาลัยเทคโนโลยีราชมงคลธัญบุรี" className="h-44 sm:h-52 w-auto drop-shadow-xl splash-logo" draggable={false} />

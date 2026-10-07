@@ -411,7 +411,26 @@ def get_stage_calibration() -> Dict[str, Any]:
     return {
         "job": {k: st.get(k) for k in ("state", "step", "total", "message")},
         "last_result": _calibration_summary(st.get("last")) or "ยังไม่เคย calibrate",
+        "whole_travel_map": _map_summary(st.get("last_map")) or "ยังไม่เคยวัดแผนที่ทั้งราง",
         "backlash_compensation_mm_now": settings.stage_approach_mm,
+    }
+
+
+def _map_summary(m: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The whole-travel accuracy map, reduced to what a person reads: worst spots and figures."""
+    if not m:
+        return None
+    nodes = [n for n in m.get("nodes", []) if n.get("measured")]
+    worst = sorted(nodes, key=lambda n: -(n.get("err_um") or 0))[:3]
+    return {
+        "time": _time(m.get("time")),
+        "grid": m.get("grid"),
+        "position_error_rms_um": m.get("rms_um"),
+        "position_error_max_um": m.get("max_um"),
+        "measurement_noise_um": m.get("noise_um"),
+        "mean_backlash_mm": m.get("backlash_mean_mm"),
+        "worst_nodes": [{"at_mm": [n["x_mm"], n["y_mm"]], "error_um": n["err_um"]} for n in worst],
+        "unmeasured_nodes": sum(1 for n in m.get("nodes", []) if not n.get("measured")),
     }
 
 

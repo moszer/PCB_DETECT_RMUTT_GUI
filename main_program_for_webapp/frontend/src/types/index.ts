@@ -495,6 +495,10 @@ export interface BoardHistory {
   recent: { id: string; created_at: number; overall_verdict: Verdict; status: string; pass_count: number; fail_count: number; review_count: number; total_points: number }[];
   top_failing_points: { point_id: string; name: string; fails: number }[];
   top_failing_parts: { point: string; part: string; class: string; status: string; count: number }[];
+  /** Per point id: how often it was scanned and the verdicts. */
+  point_stats?: Record<string, { scans: number; pass: number; fail: number; review: number }>;
+  /** Per taught part: how often it was missing or wrong. */
+  part_fails?: { point_id: string; part_id: string; missing: number; wrong: number }[];
 }
 
 export interface BoardPoint {
@@ -509,6 +513,8 @@ export interface BoardPoint {
   components: number;
   classes: Record<string, number>;
   issues: string[];
+  /** Taught boxes, normalised to the picture. */
+  parts?: { id: string; name: string; bbox: [number, number, number, number] }[];
 }
 
 export interface BoardDetail extends BoardSummary {
@@ -626,6 +632,40 @@ export interface StageCalibrationResult {
   approach_mm_during_test: number;
   checkerboard: [number, number] | null;
   square_mm: number | null;
+  /** Frame size the matrix was measured at. */
+  image_size?: [number, number];
+}
+
+/** One grid node of the whole-travel map (commanded mm). */
+export interface StageMapNode {
+  col: number;
+  row: number;
+  x_mm: number;
+  y_mm: number;
+  measured: boolean;
+  /** Position error left after the best straight (affine) fit of the whole travel. */
+  err_mm: [number, number] | null;
+  err_um: number | null;
+  /** Where the stage stops arriving from + vs from − (lost motion) at this node. */
+  backlash_mm: [number, number] | null;
+  /** How much longer (+) or shorter the moves to the neighbouring nodes really were. */
+  scale_x_pct: number | null;
+  scale_y_pct: number | null;
+}
+
+export interface StageMapResult {
+  mode: "map";
+  grid: [number, number];
+  xs: number[];
+  ys: number[];
+  nodes: StageMapNode[];
+  rms_um: number | null;
+  max_um: number | null;
+  noise_um: number | null;
+  backlash_mean_mm: [number, number] | null;
+  edges: number;
+  failed_edges: number;
+  time: number;
 }
 
 export interface StageCalibrationStatus {
@@ -634,7 +674,10 @@ export interface StageCalibrationStatus {
   total?: number;
   message?: string;
   center_mm?: [number, number];
+  mode?: "axes" | "map";
+  grid?: [number, number];
   last: StageCalibrationResult | null;
+  last_map?: StageMapResult | null;
 }
 
 export interface StationSettings {

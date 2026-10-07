@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { AlertTriangle, CheckCircle2, ChevronDown, CircuitBoard, Copy, Download, ExternalLink, ImageOff, Pencil, Trash2, Upload } from "lucide-react";
 import type { BoardDetail, BoardSummary, ReferenceSummary } from "@/types";
 import { api, errorMessage } from "@/lib/api";
@@ -9,6 +10,10 @@ import { Badge, Button, Card, CardHeader, EmptyState, Spinner, Stat, TextInput, 
 import { ReferencesView } from "./ReferencesView";
 import { OPEN_BOARD_KEY } from "./aoi/PointSets";
 import { useToast } from "./Toast";
+import { useThreePrefs } from "@/lib/three/prefs";
+
+// three.js loads only when a board is shown in 3D.
+const Board3D = dynamic(() => import("./three/Board3D").then((m) => m.Board3D), { ssr: false });
 
 function ClassChips({ classes }: { classes: Record<string, number> }) {
   const entries = Object.entries(classes);
@@ -58,6 +63,15 @@ export function BoardsView({
   const [renaming, setRenaming] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [legacyOpen, setLegacyOpen] = useState(false);
+  const { use3d } = useThreePrefs();
+  const [flash, setFlash] = useState<number | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const goToPoint = (index: number) => {
+    document.getElementById(`board-point-${index}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setFlash(index);
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(null), 1600);
+  };
   const fileInput = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(
@@ -155,7 +169,7 @@ export function BoardsView({
                 <Spinner className="size-5" />
               </div>
             ) : boards.length === 0 ? (
-              <EmptyState icon={CircuitBoard} title="ยังไม่มีบอร์ด" className="rounded-xl border border-dashed border-line">
+              <EmptyState pcb icon={CircuitBoard} title="ยังไม่มีบอร์ด" className="rounded-xl border border-dashed border-line">
                 สร้างบอร์ดและมาร์คจุดตรวจในหน้าสแกน AOI
               </EmptyState>
             ) : (
@@ -297,6 +311,18 @@ export function BoardsView({
                   )}
                 </Card>
 
+                {use3d && current.points.length > 0 && (
+                  <Card>
+                    <CardHeader
+                      title="บอร์ด 3D"
+                      subtitle="ภาพต้นแบบวางตามพิกัดจริงบนบอร์ด · หมุดสีตาม yield ของแต่ละจุด · กล่องแดงยกสูงคือชิ้นที่ตรวจไม่ผ่านบ่อย — ลากเพื่อหมุน กดหมุดเพื่อไปที่จุดนั้น"
+                    />
+                    <div className="p-3">
+                      <Board3D board={current} onPickPoint={goToPoint} className="h-[420px]" />
+                    </div>
+                  </Card>
+                )}
+
                 <div className="grid gap-4 xl:grid-cols-2">
                   <Card>
                     <CardHeader title="รอบสแกนล่าสุด" subtitle="รอบที่ใช้จุดตรวจของบอร์ดนี้" />
@@ -347,7 +373,15 @@ export function BoardsView({
                   <CardHeader title={`จุดตรวจ (${current.points.length})`} subtitle="ภาพต้นแบบพร้อมกรอบชิ้นส่วนที่สอนไว้" />
                   <div className="p-4 grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
                     {current.points.map((p) => (
-                      <div key={p.id} className={cx("rounded-lg border overflow-hidden bg-surface", p.issues.length ? "border-review/50" : "border-line")}>
+                      <div
+                        key={p.id}
+                        id={`board-point-${p.index}`}
+                        className={cx(
+                          "rounded-lg border overflow-hidden bg-surface transition-shadow duration-500",
+                          p.issues.length ? "border-review/50" : "border-line",
+                          flash === p.index && "ring-2 ring-accent shadow-lg"
+                        )}
+                      >
                         <div
                           className="relative bg-viewport"
                           style={{ aspectRatio: p.reference_size ? `${p.reference_size[0]} / ${p.reference_size[1]}` : "16 / 9" }}

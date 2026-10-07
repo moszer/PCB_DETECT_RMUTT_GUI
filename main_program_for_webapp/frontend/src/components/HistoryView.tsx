@@ -210,7 +210,7 @@ function RunsTable({ refreshKey }: { refreshKey: number }) {
             <Spinner />
           </div>
         )}
-        {!loading && !runs.length && <EmptyState icon={History} title="ยังไม่มีประวัติการสแกน" />}
+        {!loading && !runs.length && <EmptyState pcb icon={History} title="ยังไม่มีประวัติการสแกน" />}
       </div>
 
       <Modal

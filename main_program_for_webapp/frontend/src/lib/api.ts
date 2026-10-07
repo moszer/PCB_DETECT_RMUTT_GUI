@@ -212,8 +212,8 @@ export const api = {
   boards: {
     list: () => request<{ boards: BoardSummary[] }>("/api/boards").then((r) => r.boards),
     get: (id: string) => request<BoardDetail>(`/api/boards/${encodeURIComponent(id)}`),
-    thumb: (id: string, index: number, w: 240 | 480 | 960 = 480, updated = 0) =>
-      `${API_BASE}/api/boards/${encodeURIComponent(id)}/points/${index}/thumb.jpg?w=${w}&v=${Math.round(updated)}&r=2`,
+    thumb: (id: string, index: number, w: 240 | 480 | 960 = 480, updated = 0, boxes = true) =>
+      `${API_BASE}/api/boards/${encodeURIComponent(id)}/points/${index}/thumb.jpg?w=${w}&v=${Math.round(updated)}&r=2${boxes ? "" : "&boxes=false"}`,
     exportUrl: (id: string) => `${API_BASE}/api/boards/${encodeURIComponent(id)}/export`,
     duplicate: (id: string, name?: string) => post<PointSetMeta>(`/api/boards/${encodeURIComponent(id)}/duplicate`, { name }),
     importBoard: (body: unknown) => post<PointSetMeta>("/api/boards/import", body),
@@ -232,7 +232,7 @@ export const api = {
   },
   /** Height map of one part (moves the stage aside and back; the photo pair is cached per point). */
   getStageCalibration: () => request<StageCalibrationStatus>("/api/aoi/calibration"),
-  startStageCalibration: (req: { checkerboard_cols?: number; checkerboard_rows?: number; square_mm?: number }) =>
+  startStageCalibration: (req: { checkerboard_cols?: number; checkerboard_rows?: number; square_mm?: number; mode?: "axes" | "map"; density?: number }) =>
     post<StageCalibrationStatus>("/api/aoi/calibration/start", req),
   stopStageCalibration: () => post<StageCalibrationStatus>("/api/aoi/calibration/stop"),
   measureDepth: (req: { x_mm: number; y_mm: number; zoom: number; bbox: number[]; recapture?: boolean }) =>

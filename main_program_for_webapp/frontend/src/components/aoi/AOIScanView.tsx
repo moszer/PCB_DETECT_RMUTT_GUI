@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import {
+  Box,
   Camera,
   Columns2,
   Grid3x3,
@@ -40,6 +42,10 @@ import { JogOverlay } from "./JogOverlay";
 import { WorkflowSteps, type StepKey, type WorkflowStep } from "./WorkflowSteps";
 import { OperatorPanel } from "./OperatorPanel";
 import { ShortcutHelp } from "./ShortcutHelp";
+import { useThreePrefs } from "@/lib/three/prefs";
+
+// three.js loads only when the 3D view is opened.
+const StageTwin3D = dynamic(() => import("../three/StageTwin3D").then((m) => m.StageTwin3D), { ssr: false });
 
 /** One camera frame as an object URL (for the "analyzing" view); null if unavailable. */
 async function grabFrame(): Promise<string | null> {
@@ -69,7 +75,7 @@ interface AOIScanViewProps {
 }
 
 type PanelTab = "points" | "grid" | "jog" | "params";
-type ViewMode = "live" | "output" | "split";
+type ViewMode = "live" | "output" | "split" | "twin";
 type WorkMode = "engineer" | "operator";
 
 const POINTS_KEY = "pcb_aoi_points";
@@ -321,7 +327,8 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
     try {
       setPick(null);
       await api.startScan({ ...params, plan, isGolden, referenceId });
-      setViewMode("split");
+      // Watching the scan on the 3D twin is a reason to have opened it: keep it.
+      setViewMode((m) => (m === "twin" ? m : "split"));
       onRefreshStatus();
     } catch (err) {
       toast.error("เริ่มสแกนไม่สำเร็จ", err);
@@ -373,7 +380,7 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
     const key = `snap:${Date.now()}`;
     let frozen: string | null = null;
     setSnapPending({ key, image: null, label: "ถ่ายทดสอบ" });
-    if (viewMode === "live") setViewMode("split");
+    if (viewMode === "live" || viewMode === "twin") setViewMode("split");
     // The same moment the backend captures, for the "analyzing" view (best effort).
     grabFrame().then((url) => {
       frozen = url;
@@ -384,7 +391,7 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
       const result: InspectionResult = await api.inspectLive({ ...params });
       sfx.verdict(result.verdict);
       setOutput({ kind: "snap", result });
-      if (viewMode === "live") setViewMode("split");
+      if (viewMode === "live" || viewMode === "twin") setViewMode("split");
     } catch (err) {
       toast.error("ถ่ายทดสอบไม่สำเร็จ", err);
     } finally {
@@ -580,8 +587,19 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
         }
       : null);
 
+  const { use3d } = useThreePrefs();
+  const twin = viewMode === "twin" && use3d;
   const showLive = viewMode !== "output";
-  const showOutput = viewMode !== "live";
+  const showOutput = viewMode !== "live" && !twin;
+  // Latest result of each point of this board's scan, for the 3D pins.
+  const twinStatuses = useMemo(
+    () =>
+      points.map((_, i) => {
+        if (report?.plan.plan_mode !== "custom") return null;
+        return report.results.find((r) => r.point_index === i)?.verdict ?? null;
+      }),
+    [points, report]
+  );
 
   // Viewer cards take the camera frame's aspect ratio (1:1 for a 2160x2160 crop).
   const viewArea = useRef<HTMLDivElement>(null);
@@ -594,7 +612,7 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
   // Below lg the page scrolls, so only the width limits the cards (full-width, stacked).
   const scrolls = typeof window !== "undefined" && window.innerWidth < 1024;
   const availH = scrolls ? Number.POSITIVE_INFINITY : Math.max(200, area.height - dockSpace);
-  const fit = area.width > 0 && (scrolls || area.height > 0) ? fitViewers(area.width, availH, showLive && showOutput ? 2 : 1, ratio) : null;
+  const fit = area.width > 0 && (scrolls || area.height > 0) ? fitViewers(area.width, availH, showLive && (showOutput || twin) ? 2 : 1, ratio) : null;
 
   const tourOpen = tourManual || (introReady && !tourDone);
   const closeTour = () => {
@@ -751,6 +769,7 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
                 { value: "live", label: "ภาพสด", icon: Video },
                 { value: "split", label: "คู่", icon: Columns2 },
                 { value: "output", label: "ผลตรวจ", icon: ImageIcon },
+                ...(use3d ? [{ value: "twin" as const, label: "3D", icon: Box }] : []),
               ]}
             />
             <div className="ml-auto flex items-center gap-1.5 relative">
@@ -800,6 +819,25 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
                   </LiveCameraFeed>
                 </div>
               )}
+              {twin && (
+                <div className="shrink-0" style={fit ? { width: fit.w, height: fit.h } : { width: "100%", height: 420 }}>
+                  <StageTwin3D
+                    className="size-full"
+                    machine={machine}
+                    points={points}
+                    statuses={twinStatuses}
+                    scanningIndex={report?.plan.plan_mode === "custom" ? scanningIndex : null}
+                    selected={board ? selected : null}
+                    zoom={scanZoom}
+                    cameraResolution={camRes}
+                    onPickPoint={(i) => {
+                      setSelected(i);
+                      setLiveZoom(points[i]?.zoom || 1);
+                      if (!operator) setTab("points");
+                    }}
+                  />
+                </div>
+              )}
               {showOutput && (
                 <div className="shrink-0" data-tour="output" style={fit ? { width: fit.w, height: fit.h } : { width: "100%", height: 420 }}>
                   <OutputView
@@ -823,7 +861,7 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
                 onStop={stopScan}
                 onPickResult={(pt) => {
                   setOutput({ kind: "point", point: pt });
-                  if (viewMode === "live") setViewMode("split");
+                  if (viewMode === "live" || viewMode === "twin") setViewMode("split");
                 }}
                 onPickPoint={(i) => {
                   setSelected(i);

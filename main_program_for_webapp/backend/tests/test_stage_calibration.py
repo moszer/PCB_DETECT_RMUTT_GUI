@@ -12,7 +12,9 @@ from fastapi.testclient import TestClient
 
 from app.config import settings
 from app.core.security import lease_manager
-from app.core.stage_calibration import checkerboard_image, checkerboard_mm_per_px, find_checkerboard, fit_axis, measure_shift, summarize
+from app.core.stage_calibration import (
+    checkerboard_image, checkerboard_mm_per_px, find_checkerboard, fit_axis, map_summary, measure_offset, measure_shift, solve_grid, summarize,
+)
 from app.main import app
 from app.services import stage_calibration_service as scs_module
 from app.services.machine_service import machine_service
@@ -279,6 +281,154 @@ class CalibrationJobTests(unittest.TestCase):
     def test_refuses_without_a_real_camera(self):
         res = self.client.post("/api/aoi/calibration/start", json={}, headers=self.headers)
         self.assertEqual(res.status_code, 400)
+
+
+# ── Whole-travel map ─────────────────────────────────────────────────────────
+MAP_PX_PER_MM = 40.0
+MAP_BOARD = _texture(3200, 3600, seed=5)
+
+
+def map_render(shift_px):
+    dx, dy = shift_px
+    cx, cy = MAP_BOARD.shape[1] / 2, MAP_BOARD.shape[0] / 2
+    m = np.float32([[1, 0, -(cx - FRAME_W / 2) + dx], [0, 1, -(cy - FRAME_H / 2) + dy]])
+    view = cv2.warpAffine(MAP_BOARD, m, (FRAME_W, FRAME_H), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+    return cv2.cvtColor(view, cv2.COLOR_GRAY2BGR)
+
+
+def map_shift(phys_mm):
+    x, y = phys_mm[0] - 19, phys_mm[1] - 19  # board centred at mid travel
+    c, s = math.cos(ROT), math.sin(ROT)
+    return (-MAP_PX_PER_MM * (c * x - s * y), -MAP_PX_PER_MM * (s * x + c * y))
+
+
+def rail_error(cmd):
+    """A rack with a once-per-12-mm pitch error on X and a slight bow of the Y rail."""
+    x, y = cmd
+    return (x + 0.03 * math.sin(2 * math.pi * x / 12), y + 0.02 * ((x - 19) / 19) ** 2)
+
+
+def affine_residual_mm(cmds, phys):
+    c = np.column_stack([np.asarray(cmds), np.ones(len(cmds))])
+    coef, *_ = np.linalg.lstsq(c, np.asarray(phys), rcond=None)
+    return np.asarray(phys) - c @ coef
+
+
+class MapMathTests(unittest.TestCase):
+    def test_measure_offset_handles_large_shifts(self):
+        ref = map_render((0, 0))
+        for true in [(700.4, -10.2), (-15.3, 380.7), (-820.6, -300.1)]:
+            with self.subTest(true=true):
+                dx, dy, resp = measure_offset(ref, map_render(true), (true[0] + 6, true[1] - 5))
+                self.assertAlmostEqual(dx, true[0], delta=0.2)
+                self.assertAlmostEqual(dy, true[1], delta=0.2)
+                self.assertGreater(resp, 0.1)
+
+    def test_solve_grid_recovers_the_nonlinear_part(self):
+        cols, rows = 4, 3
+        cmds = [(5 + 9 * c, 6 + 10 * r) for r in range(rows) for c in range(cols)]
+        phys = [rail_error(p) for p in cmds]
+        u = [map_shift(p) for p in phys]
+        edges = []
+        for r in range(rows):
+            for c in range(cols):
+                k = r * cols + c
+                for j in ([k - 1] if c else []) + ([k - cols] if r else []):
+                    edges.append((j, k, np.subtract(u[k], u[j])))
+        sol = solve_grid(cmds, edges)
+        np.testing.assert_allclose(sol["error_mm"], affine_residual_mm(cmds, phys), atol=1e-4)  # 0.1 µm
+        self.assertLess(np.abs(sol["edge_residual_mm"]).max(), 1e-9)
+
+    def test_disconnected_nodes_are_reported_unmeasured(self):
+        cmds = [(0, 0), (5, 0), (5, 5), (0, 5)]
+        u = [map_shift(p) for p in cmds]
+        edges = [(0, 1, np.subtract(u[1], u[0])), (1, 2, np.subtract(u[2], u[1])), (0, 2, np.subtract(u[2], u[0]))]
+        out = map_summary(2, 2, cmds, edges, [None] * 4)
+        self.assertTrue(all(n["measured"] for n in out["nodes"][:3]))
+        self.assertFalse(out["nodes"][3]["measured"])
+        self.assertIsNone(out["nodes"][3]["err_um"])
+
+
+class MapJobTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        machine_service.connect(mode="simulation")
+        machine_service.home()
+        cls.client = TestClient(app)
+        _, cls.token = lease_manager.acquire_lease("QA", "127.0.0.1", force=True)[:2]
+        cls.headers = {"X-Operator-Token": cls.token}
+
+    @classmethod
+    def tearDownClass(cls):
+        lease_manager.release_lease(cls.token)
+        machine_service.disconnect()
+
+    def setUp(self):
+        self.assertTrue(lease_manager.renew_lease(self.token))
+        self.cal = scs_module.RESULT_FILE.with_name("stage_calibration.maptest.json")
+        self.out = scs_module.MAP_FILE.with_name("stage_map.test.json")
+        self.out.unlink(missing_ok=True)
+        # The single-spot calibration the map predicts its image shifts from.
+        c, s = math.cos(ROT), math.sin(ROT)
+        m = [[-MAP_PX_PER_MM * c, MAP_PX_PER_MM * s], [-MAP_PX_PER_MM * s, -MAP_PX_PER_MM * c]]
+        import json
+
+        self.cal.write_text(json.dumps({"stage_to_image": m, "image_size": [FRAME_W, FRAME_H], "image_rotation_deg": 0}))
+
+    def tearDown(self):
+        self.cal.unlink(missing_ok=True)
+        self.out.unlink(missing_ok=True)
+
+    def test_map_over_the_whole_travel(self):
+        carriage = Carriage(backlash=(0.05, 0.08), scale_err=(0, 0))
+        physical = carriage.physical
+        carriage.frame = lambda: map_render(map_shift(rail_error(physical())))
+        camera = MagicMock(is_active=True, is_mock=False)
+        camera.get_latest_frame.return_value = (0.0, map_render((0, 0)))
+        spm = machine_service.steps_per_mm
+        machine_service.move_to_steps(int(10 * spm), int(10 * spm), compensate=False)
+        with patch.object(machine_service, "_move_raw", side_effect=carriage.wrap(machine_service._move_raw)), \
+             patch.object(stage_calibration_service, "_fresh_frame", side_effect=lambda: carriage.frame()), \
+             patch.object(scs_module, "camera_service", camera), \
+             patch.object(scs_module, "RESULT_FILE", self.cal), \
+             patch.object(scs_module, "MAP_FILE", self.out), \
+             patch.object(settings, "stage_approach_mm", 0.0), \
+             patch.object(scs_module, "time", SimpleNamespace(time=time.time, monotonic=time.monotonic, sleep=lambda _s: None)):
+            carriage.cmd = list(machine_service.get_state().position_mm)
+            res = self.client.post("/api/aoi/calibration/start", json={"mode": "map", "density": 4}, headers=self.headers)
+            self.assertEqual(res.status_code, 200, res.text)
+            self.assertEqual(res.json()["mode"], "map")
+            deadline = time.monotonic() + 180
+            while stage_calibration_service.is_running and time.monotonic() < deadline:
+                lease_manager.renew_lease(self.token)
+                time.sleep(0.05)
+            status = self.client.get("/api/aoi/calibration").json()
+        self.assertEqual(status["state"], "done", status.get("message"))
+        r = status["last_map"]
+        cols, rows = r["grid"]
+        self.assertGreaterEqual(cols, 4)
+        self.assertGreaterEqual(rows, 4)  # raised so 720 px tall pictures still overlap
+        self.assertEqual(r["failed_edges"], 0)
+        nodes = r["nodes"]
+        self.assertTrue(all(n["measured"] for n in nodes))
+        cmds = [(n["x_mm"], n["y_mm"]) for n in nodes]
+        want = affine_residual_mm(cmds, [rail_error(p) for p in cmds])
+        got = np.array([n["err_mm"] for n in nodes])
+        self.assertLess(np.abs(got - want).max(), 0.004)
+        self.assertAlmostEqual(r["max_um"], float(np.hypot(want[:, 0], want[:, 1]).max() * 1000), delta=4)
+        self.assertAlmostEqual(r["backlash_mean_mm"][0], 0.05, delta=0.005)
+        self.assertAlmostEqual(r["backlash_mean_mm"][1], 0.08, delta=0.005)
+        # Every node is in the grid once.
+        self.assertEqual(sorted((n["col"], n["row"]) for n in nodes), [(c, rr) for c in range(cols) for rr in range(rows)])
+
+    def test_map_needs_a_calibration_first(self):
+        self.cal.unlink()
+        camera = MagicMock(is_active=True, is_mock=False)
+        camera.get_latest_frame.return_value = (0.0, map_render((0, 0)))
+        with patch.object(scs_module, "camera_service", camera), patch.object(scs_module, "RESULT_FILE", self.cal):
+            res = self.client.post("/api/aoi/calibration/start", json={"mode": "map"}, headers=self.headers)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("calibrate", res.json()["detail"])
 
 
 if __name__ == "__main__":

@@ -56,6 +56,10 @@ class CalibrationRequest(BaseModel):
     checkerboard_cols: Optional[int] = Field(None, ge=3, le=40)
     checkerboard_rows: Optional[int] = Field(None, ge=3, le=40)
     square_mm: Optional[float] = Field(None, gt=0, le=50)
+    # "axes": ±2 mm passes around the current spot; "map": a grid over the whole travel.
+    mode: Literal["axes", "map"] = "axes"
+    # Map nodes per axis (raised automatically so neighbouring pictures overlap).
+    density: int = Field(5, ge=3, le=15)
 
 
 class StartScanRequest(BaseModel):
@@ -329,7 +333,7 @@ def start_calibration(
     if req.checkerboard_cols and req.checkerboard_rows and req.square_mm:
         board = (req.checkerboard_cols, req.checkerboard_rows)
     try:
-        return stage_calibration_service.start(board, req.square_mm if board else None)
+        return stage_calibration_service.start(board, req.square_mm if board else None, mode=req.mode, density=req.density)
     except (ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

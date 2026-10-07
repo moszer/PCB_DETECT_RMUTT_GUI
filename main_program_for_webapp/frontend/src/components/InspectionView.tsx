@@ -225,7 +225,7 @@ export function InspectionView({ references, params, setParams, status }: Inspec
       {/* ── Results ── */}
       <aside className="border-t xl:border-t-0 xl:border-l border-line bg-surface lg:col-span-2 xl:col-span-1 xl:overflow-y-auto">
         {!result ? (
-          <EmptyState icon={ScanSearch} title="ยังไม่มีผลตรวจ" className="h-full">
+          <EmptyState pcb icon={ScanSearch} title="ยังไม่มีผลตรวจ" className="h-full">
             {source === "camera" ? "จัดบอร์ดให้อยู่ในกรอบแล้วกด “ถ่ายภาพและตรวจ”" : "เลือกภาพแล้วกด “ตรวจภาพนี้”"}
           </EmptyState>
         ) : (
