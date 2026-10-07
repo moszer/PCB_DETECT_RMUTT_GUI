@@ -34,6 +34,7 @@ PAGES = {
     "history": "ประวัติ & Yield",
     "settings": "ตั้งค่าสถานี (โมเดล ฮาร์ดแวร์ กล้อง 3D เสียง)",
     "hardware": "ประสิทธิภาพ (CPU/GPU แต่ละคอร์ อุณหภูมิ พลังงาน พัดลม โหมดพลังงาน Jetson)",
+    "libraries": "ไลบรารี (Python / JavaScript / ระบบ ที่ใช้ เวอร์ชัน และเช็กอัปเดต)",
 }
 
 SYSTEM_PROMPT = f"""คุณคือผู้ช่วย AI ของสถานีตรวจ PCB (AOI) ของ RMUTT อยู่ในเว็บแอปนี้ทุกหน้า
@@ -586,6 +587,27 @@ def get_hardware() -> Dict[str, Any]:
     return d
 
 
+def get_libraries() -> Dict[str, Any]:
+    """Libraries the station runs on: versions, and newer releases from the last check."""
+    from .library_service import library_service
+
+    c = library_service.catalog()
+    def updates(rows):
+        return [{"name": r["name"], "current": r["version"], "latest": r["latest"], "kind": r["update"],
+                 **({"pinned": r["pinned"]} if r.get("pinned") else {})}
+                for r in rows if r.get("update")]
+    return {
+        "checked_at": _time(c["checked_at"]) if c["checked_at"] else "ยังไม่เคยเช็ก (กดเช็กอัปเดตในหน้าไลบรารี)",
+        "summary": c["summary"],
+        "python_direct": [{"name": r["name"], "version": r["version"], "requires": r["spec"]} for r in c["python"] if r["direct"]],
+        "javascript_direct": [{"name": r["name"], "version": r["version"]} for r in c["node"] if r["direct"]],
+        "system": [{"name": r["name"], "version": r["version"], "detail": r["detail"]} for r in c["system"]],
+        "updates_python": updates(c["python"]),
+        "updates_javascript": updates(c["node"]),
+        "how_to_update": "./run_web.sh --update (ไม่อัปเดต PyTorch และไม่ข้าม major version ของ JS อัตโนมัติ)",
+    }
+
+
 def navigate(page: str) -> Dict[str, Any]:
     if page not in PAGES:
         return {"ok": False, "error": f"unknown page; use one of {list(PAGES)}"}
@@ -608,6 +630,7 @@ TOOLS: Dict[str, Callable[..., Any]] = {
     "list_models": list_models,
     "get_settings": get_settings,
     "get_hardware": get_hardware,
+    "get_libraries": get_libraries,
     "get_full_snapshot": get_full_snapshot,
     "get_stage_calibration": get_stage_calibration,
     "get_stage_errors": get_stage_errors,
@@ -659,6 +682,7 @@ DECLARATIONS = [
      "parameters": {"type": "object", "properties": {"level": {"type": "string", "enum": ["INFO", "WARNING", "ERROR"]},
                                                      "limit": {"type": "integer", "description": "จำนวน (1-200, ค่าเริ่ม 30)"}}}},
     {"name": "get_hardware", "description": "ประสิทธิภาพเครื่องสด: การใช้งาน/ความถี่ CPU แต่ละคอร์, GPU, RAM, อุณหภูมิ, พลังงาน (W), พัดลม (%/rpm), โหมดพลังงาน Jetson, over-current — ใช้เมื่อถามว่าเครื่องร้อน/ช้า/กินไฟ/พัดลม"},
+    {"name": "get_libraries", "description": "ไลบรารีทั้งหมดที่สถานีใช้ (Python, JavaScript, ระบบ: CUDA/cuDNN/OpenCV/Node ฯลฯ) พร้อมเวอร์ชัน และรุ่นใหม่ที่มีจากการเช็กล่าสุด — ใช้เมื่อถามเวอร์ชัน/ต้องอัปเดตไหม"},
     {"name": "navigate", "description": "พาผู้ใช้ไปหน้าในเว็บแอป",
      "parameters": {"type": "object", "properties": {"page": {"type": "string", "enum": list(PAGES)}}, "required": ["page"]}},
 ]
@@ -667,7 +691,7 @@ TOOL_LABELS = {
     "get_station_status": "ดูสถานะสถานี", "get_statistics": "ดูสถิติ Yield", "list_scan_runs": "ดูรายการรอบสแกน",
     "get_scan_run": "ดูผลรอบสแกน", "read_part_markings": "อ่านตัวอักษรบนชิ้น (OCR)", "list_single_inspections": "ดูการตรวจภาพเดี่ยว", "list_reference_profiles": "ดูโปรไฟล์อ้างอิง",
     "get_reference_profile": "ดูรายละเอียดโปรไฟล์", "list_datasets": "ดูชุดข้อมูล", "get_dataset": "ดูรายละเอียดชุดข้อมูล",
-    "list_models": "ดูรายการโมเดล", "list_boards": "ดูบอร์ดที่บันทึกไว้", "get_board": "ดูรายละเอียดบอร์ด", "get_settings": "ดูการตั้งค่า", "get_hardware": "ดูประสิทธิภาพเครื่อง", "navigate": "เปิดหน้า",
+    "list_models": "ดูรายการโมเดล", "list_boards": "ดูบอร์ดที่บันทึกไว้", "get_board": "ดูรายละเอียดบอร์ด", "get_settings": "ดูการตั้งค่า", "get_hardware": "ดูประสิทธิภาพเครื่อง", "get_libraries": "ดูไลบรารีและอัปเดต", "navigate": "เปิดหน้า",
     "get_full_snapshot": "ดูภาพรวมทั้งระบบ", "get_stage_calibration": "ดูผล calibrate ราง", "get_stage_errors": "ดูความคลาดเคลื่อนราง",
     "get_scan_progress": "ดูความคืบหน้าสแกน", "get_camera": "ดูสถานะกล้อง", "get_motion": "ดูสถานะสเตจ/เฟิร์มแวร์",
     "get_access": "ดูสิทธิ์ควบคุม/การเข้าถึง", "get_recent_events": "ดู log ล่าสุด",

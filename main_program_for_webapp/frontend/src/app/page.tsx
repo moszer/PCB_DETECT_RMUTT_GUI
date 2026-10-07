@@ -11,6 +11,7 @@ import { BoardsView } from "@/components/BoardsView";
 import { HistoryView } from "@/components/HistoryView";
 import { SettingsView } from "@/components/SettingsView";
 import { HardwareView } from "@/components/HardwareView";
+import { LibrariesView } from "@/components/LibrariesView";
 import { DatasetView } from "@/components/dataset/DatasetView";
 import { useStationSocket } from "@/hooks/useStationSocket";
 import { useIsClient, usePersistentState } from "@/hooks/usePersistentState";
@@ -195,6 +196,7 @@ function Station() {
           )}
           {tab === "history" && <HistoryView />}
           {tab === "hardware" && <HardwareView isOperator={lease.isMine} />}
+          {tab === "libraries" && <LibrariesView />}
           {tab === "settings" && <SettingsView onRefreshStatus={refreshStatus} isOperator={lease.isMine} />}
         </div>
       </AppShell>

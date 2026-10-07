@@ -35,6 +35,8 @@ import type {
   StationSettings,
   Statistics,
   SystemStatus,
+  LibraryCatalog,
+  LibraryCheckJob,
 } from "@/types";
 
 export const API_BASE = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
@@ -138,6 +140,11 @@ export const api = {
     unserve: () => request<RemoteAccess>("/api/system/remote-access/serve", { method: "DELETE" }),
   },
   qrUrl: (text: string) => `${API_BASE}/api/system/qr?text=${encodeURIComponent(text)}`,
+  libraries: {
+    get: () => request<LibraryCatalog>("/api/system/libraries"),
+    check: () => post<LibraryCheckJob>("/api/system/libraries/check"),
+    job: () => request<LibraryCheckJob>("/api/system/libraries/check"),
+  },
   hardware: {
     get: () => request<HardwareSnapshot>("/api/system/hardware"),
     powerMode: (mode_id: number) => post<{ hardware: HardwareSnapshot }>("/api/system/hardware/power-mode", { mode_id }),

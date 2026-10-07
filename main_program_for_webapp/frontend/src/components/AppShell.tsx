@@ -14,6 +14,7 @@ import {
   LogOut,
   Moon,
   OctagonX,
+  Package,
   ScanLine,
   Settings,
   ShieldCheck,
@@ -35,7 +36,7 @@ import { Button, Checkbox, Field, Modal, StatusDot, TextInput, cx } from "./ui";
 import { useToast } from "./Toast";
 import { OpenOnPhoneButton } from "./RemoteAccess";
 
-export type TabId = "aoi" | "inspect" | "dataset" | "references" | "history" | "hardware" | "settings";
+export type TabId = "aoi" | "inspect" | "dataset" | "references" | "history" | "hardware" | "libraries" | "settings";
 
 export const NAV: Array<{ id: TabId; label: string; short: string; icon: LucideIcon; description: string }> = [
   { id: "aoi", label: "สแกน AOI", short: "AOI", icon: ScanLine, description: "มาร์คจุด สอนต้นแบบ และสแกนบอร์ดอัตโนมัติด้วยสเตจ XY" },
@@ -44,6 +45,7 @@ export const NAV: Array<{ id: TabId; label: string; short: string; icon: LucideI
   { id: "references", label: "บอร์ด", short: "บอร์ด", icon: BookMarked, description: "บอร์ดที่สอนไว้: ภาพต้นแบบ ความพร้อมก่อนสแกน ประวัติและ yield ของแต่ละบอร์ด" },
   { id: "history", label: "ประวัติ & Yield", short: "ประวัติ", icon: BarChart3, description: "ผลการตรวจย้อนหลังและอัตราผ่านการผลิต" },
   { id: "hardware", label: "ประสิทธิภาพเครื่อง", short: "เครื่อง", icon: Gauge, description: "CPU/GPU แต่ละคอร์ อุณหภูมิ พลังงาน พัดลม และโหมดพลังงาน Jetson แบบสด" },
+  { id: "libraries", label: "ไลบรารี", short: "ไลบรารี", icon: Package, description: "ไลบรารี Python / JavaScript / ระบบ ที่สถานีใช้ เวอร์ชัน และเช็กอัปเดตจาก PyPI และ npm" },
   { id: "settings", label: "ตั้งค่าสถานี", short: "ตั้งค่า", icon: Settings, description: "โมเดล ฮาร์ดแวร์ประมวลผล ขอบเขตสเตจ และข้อมูลสถานี" },
 ];
 
@@ -129,7 +131,7 @@ export function AppShell({ tab, onTab, status, socketConnected, onRefreshStatus,
       </div>
 
       {/* Bottom nav (mobile / tablet portrait) */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 h-16 grid grid-cols-7 border-t border-line bg-surface">
+      <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 h-16 grid grid-cols-8 border-t border-line bg-surface">
         {NAV.map((item) => {
           const active = item.id === tab;
           const Icon = item.icon;

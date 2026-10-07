@@ -767,3 +767,73 @@ export interface DatasetProgressEvent {
   target_mm?: [number, number];
   image?: DatasetImage;
 }
+
+/* ── Libraries page ── */
+
+export type UpdateKind = "major" | "minor" | "patch";
+
+export interface PythonLibrary {
+  name: string;
+  version: string | null;
+  summary: string | null;
+  license: string | null;
+  homepage: string | null;
+  /** Asked for by requirements.txt (the others come in with those). */
+  direct: boolean;
+  spec: string | null;
+  note?: string | null;
+  satisfies: boolean | null;
+  needed_by: string[];
+  pinned?: string | null;
+  missing?: boolean;
+  latest?: string | null;
+  released?: number | null;
+  update?: UpdateKind | null;
+  /** The newest release still fits requirements.txt (so --update would take it). */
+  latest_in_spec?: boolean | null;
+}
+
+export interface NodeLibrary {
+  name: string;
+  version: string | null;
+  dev: boolean;
+  direct: boolean;
+  spec: string | null;
+  license: string | null;
+  summary?: string | null;
+  homepage?: string | null;
+  missing?: boolean;
+  latest?: string | null;
+  update?: UpdateKind | null;
+}
+
+export interface SystemComponent {
+  name: string;
+  version: string | null;
+  detail: string | null;
+  kind: string;
+}
+
+export interface LibraryCheckJob {
+  state: "idle" | "running" | "done" | "error";
+  done?: number;
+  total?: number;
+  started?: number;
+  finished?: number;
+  failed?: number;
+  message?: string;
+}
+
+export interface LibraryCatalog {
+  python: PythonLibrary[];
+  node: NodeLibrary[];
+  system: SystemComponent[];
+  checked_at: number | null;
+  stale: boolean;
+  failed: string[];
+  job: LibraryCheckJob;
+  summary: {
+    python: { installed: number; direct: number; updates: Record<UpdateKind, number>; mismatched: string[] };
+    node: { installed: number; direct: number; updates: Record<UpdateKind, number> };
+  };
+}

@@ -461,3 +461,26 @@ def qr_code(text: str = Query(..., min_length=8, max_length=512)):
     buf = io.BytesIO()
     segno.make(text, error="m").save(buf, kind="svg", scale=8, border=2, dark="#000000", light="#ffffff", xmldecl=False)
     return Response(content=buf.getvalue(), media_type="image/svg+xml", headers={"Cache-Control": "max-age=3600"})
+
+
+@router.get("/libraries")
+def libraries():
+    """Every Python / JavaScript / system library the station runs on, with the last update check."""
+    from ..services.library_service import library_service
+
+    return library_service.catalog()
+
+
+@router.post("/libraries/check")
+def check_libraries():
+    """Ask PyPI and npm for newer releases (background job; read-only, nothing is installed)."""
+    from ..services.library_service import library_service
+
+    return library_service.check()
+
+
+@router.get("/libraries/check")
+def library_check_status():
+    from ..services.library_service import library_service
+
+    return library_service.job()
