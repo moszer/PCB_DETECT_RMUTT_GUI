@@ -526,7 +526,9 @@ class CameraService:
         interval = 1.0 / max_fps
         sent_ts, sent_at = None, 0.0
 
-        while not flag["stop"]:
+        from ..core.shutdown import shutting_down
+
+        while not flag["stop"] and not shutting_down.is_set():
             if not self._running:
                 # Wait briefly during camera switch / restart before exiting
                 await asyncio.sleep(0.3)

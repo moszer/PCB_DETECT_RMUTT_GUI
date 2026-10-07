@@ -231,3 +231,36 @@ class NotifyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ShutdownTests(unittest.TestCase):
+    def test_stop_signal_ends_live_streams_and_reaches_the_server(self):
+        import signal
+
+        from app.core import shutdown
+
+        saved = {s: signal.getsignal(s) for s in (signal.SIGTERM, signal.SIGINT)}
+        calls = []
+        try:
+            signal.signal(signal.SIGTERM, lambda s, f: calls.append(s))  # stands in for uvicorn
+            shutdown._installed = False
+            shutdown.install()
+            cam = CameraService()
+            cam._running = True
+            cam._latest_jpeg, cam._latest_timestamp = b"A", 1.0
+
+            async def run():
+                g = cam.generate_mjpeg_stream(max_fps=200, client="c")
+                await anext(g)
+                signal.raise_signal(signal.SIGTERM)
+                with self.assertRaises(StopAsyncIteration):
+                    await asyncio.wait_for(anext(g), 1)
+
+            asyncio.run(run())
+            self.assertTrue(shutdown.shutting_down.is_set())
+            self.assertEqual(calls, [signal.SIGTERM])  # uvicorn still gets its signal
+        finally:
+            for s, h in saved.items():
+                signal.signal(s, h)
+            shutdown.shutting_down.clear()
+            shutdown._installed = False

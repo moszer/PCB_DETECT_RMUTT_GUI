@@ -39,6 +39,10 @@ log_buffer.install()
 async def lifespan(app: FastAPI):
     """Application startup and graceful shutdown."""
     logger.info("PCB Inspection Backend starting up...")
+    # After uvicorn's own signal handlers: live streams end as soon as a stop is asked for.
+    from .core import shutdown
+
+    shutdown.install()
 
     # Initialize model if weights exist
     if Path(settings.default_model).is_file():

@@ -160,8 +160,10 @@ async def with_heartbeat(stream, interval: float = HEARTBEAT_SEC):
     """Pass NDJSON lines through, adding a ping while the agent waits (keeps proxies from timing out)."""
     it = stream.__aiter__()
     pending = asyncio.ensure_future(it.__anext__())
+    from ..core.shutdown import shutting_down
+
     try:
-        while True:
+        while not shutting_down.is_set():
             done, _ = await asyncio.wait({pending}, timeout=interval)
             if not done:
                 yield json.dumps({"type": "ping"}) + "\n"
