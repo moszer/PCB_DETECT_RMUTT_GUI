@@ -5,7 +5,6 @@ import { AlertTriangle, Check, Loader2, Minus } from "lucide-react";
 import { api } from "@/lib/api";
 import type { SystemStatus } from "@/types";
 import { Button, cx } from "./ui";
-import { DecorPcb } from "./three/DecorPcb";
 
 type StepState = "wait" | "ok" | "warn" | "fail";
 interface Step {
@@ -74,61 +73,67 @@ export function SplashScreen({ onDone }: { onDone: () => void }) {
   }, [onDone]);
 
   const done = steps.filter((s) => s.state !== "wait").length;
+  const progress = Math.round((done / steps.length) * 100);
 
   return (
     <div
-      className={cx(
-        "fixed inset-0 z-[100] grid place-items-center bg-bg transition-opacity duration-500",
-        leaving ? "opacity-0 pointer-events-none" : "opacity-100"
-      )}
+      className={cx("splash-screen fixed inset-0 z-[100] grid place-items-center transition-opacity duration-500", leaving ? "opacity-0 pointer-events-none" : "opacity-100")}
       role="status"
       aria-live="polite"
     >
-      <div className="absolute inset-0 pointer-events-none splash-glow" aria-hidden />
-      {/* A circuit board assembling itself behind the logo (2D splash when 3D is off). */}
-      <div className="absolute inset-x-0 top-1/2 -translate-y-[62%] flex justify-center opacity-45 pointer-events-none" aria-hidden>
-        <DecorPcb variant="assemble" className="w-[min(96vw,760px)] h-[min(62vh,460px)]" />
-      </div>
-      <div className="relative flex flex-col items-center gap-6 px-6 text-center max-w-md w-full">
+      <svg className="splash-circuits" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <g id="splash-circuit-left" className="splash-circuit-side">
+          <path d="M0 125h145l145 140h205l155 155" />
+          <path d="M0 205h110l170 165h265l100 100" />
+          <path d="M0 285h185l130 115h180l130 130" />
+          <path d="M0 400h215l100 85h225l75 75" />
+          <path d="M0 520h185l165 95h235" />
+          <path d="M0 645h170l135-95h215l115-90" />
+          <path d="M0 755h150l145-120h175l165-135" />
+          <path d="M0 840h160l155-135h245l110-100" />
+          <circle cx="495" cy="265" r="6" /><circle cx="545" cy="370" r="6" />
+          <circle cx="495" cy="400" r="6" /><circle cx="540" cy="485" r="6" />
+          <circle cx="585" cy="615" r="6" /><circle cx="520" cy="550" r="6" />
+          <circle cx="470" cy="635" r="6" /><circle cx="560" cy="705" r="6" />
+        </g>
+        <use href="#splash-circuit-left" transform="translate(1600 0) scale(-1 1)" />
+      </svg>
+      <div className="relative flex w-full max-w-[860px] flex-col items-center px-6 py-8 text-center sm:px-10">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/rmutt-logo.png" alt="ตรามหาวิทยาลัยเทคโนโลยีราชมงคลธัญบุรี" className="h-44 sm:h-52 w-auto drop-shadow-xl splash-logo" draggable={false} />
+        <img src="/rmutt-logo.png" alt="ตรามหาวิทยาลัยเทคโนโลยีราชมงคลธัญบุรี" className="splash-logo h-40 w-auto sm:h-52 lg:h-64" draggable={false} />
 
-        <div className="flex flex-col gap-1 splash-rise" style={{ animationDelay: "250ms" }}>
-          <h1 className="text-lg sm:text-xl font-semibold text-text">มหาวิทยาลัยเทคโนโลยีราชมงคลธัญบุรี</h1>
-          <p className="text-xs sm:text-sm text-muted tracking-wide">Rajamangala University of Technology Thanyaburi</p>
+        <div className="splash-rise mt-5 flex flex-col items-center" style={{ animationDelay: "180ms" }}>
+          <h1 className="splash-title">RMUTT AOI</h1>
+          <p className="splash-kicker">PCB INSPECTION STATION</p>
+          <p className="splash-university">มหาวิทยาลัยเทคโนโลยีราชมงคลธัญบุรี</p>
         </div>
 
-        <div className="flex flex-col items-center gap-1 splash-rise" style={{ animationDelay: "450ms" }}>
-          <span className="text-sm font-semibold text-accent">RMUTT AOI · PCB Inspection Station</span>
-          <span className="text-[11px] text-subtle">ระบบตรวจสอบแผงวงจรอัตโนมัติด้วย AI</span>
-        </div>
-
-        <div className="w-full flex flex-col gap-3 splash-rise" style={{ animationDelay: "600ms" }}>
-          <div className="h-1 rounded-full bg-surface-3 overflow-hidden">
-            <div className="h-full rounded-full bg-accent transition-[width] duration-500 ease-out" style={{ width: `${Math.max(8, (done / steps.length) * 100)}%` }} />
-          </div>
-          <ul className="flex flex-col gap-1.5 text-left">
+        <div className="splash-rise mt-7 w-full sm:mt-10" style={{ animationDelay: "360ms" }}>
+          <ul className="splash-steps">
             {steps.map((s) => (
-              <li key={s.label} className="flex items-center gap-2 text-xs">
-                <span className="size-4 grid place-items-center shrink-0">
+              <li key={s.label} className="splash-step" title={s.detail}>
+                <span className={cx("splash-step-icon", `splash-step-${s.state}`)}>
                   {s.state === "wait" ? (
-                    <Loader2 className="size-3.5 animate-spin text-accent" />
+                    <Loader2 className="size-4 animate-spin" />
                   ) : s.state === "ok" ? (
-                    <Check className="size-3.5 text-pass" />
+                    <Check className="size-4" />
                   ) : s.state === "warn" ? (
-                    <Minus className="size-3.5 text-review" />
+                    <Minus className="size-4" />
                   ) : (
-                    <AlertTriangle className="size-3.5 text-fail" />
+                    <AlertTriangle className="size-4" />
                   )}
                 </span>
-                <span className={s.state === "wait" ? "text-muted" : "text-text"}>{s.label}</span>
-                {s.detail && <span className={cx("ml-auto truncate", s.state === "fail" ? "text-fail" : "text-subtle")}>{s.detail}</span>}
+                <span>{s.label}</span>
               </li>
             ))}
           </ul>
+          <div className="splash-progress" role="progressbar" aria-label="ความคืบหน้าการเตรียมระบบ" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}>
+            <div className="splash-progress-fill" style={{ width: `${progress}%` }} />
+          </div>
+          <p className="splash-message">{failed ? "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้" : done === steps.length ? "เตรียมระบบเสร็จแล้ว" : "กำลังเตรียมระบบตรวจสอบแผงวงจร"}</p>
           {failed && (
-            <div className="flex flex-col items-center gap-2 pt-1">
-              <p className="text-xs text-fail">เชื่อมต่อ backend ไม่ได้ — ตรวจว่ารัน ./run_web.sh อยู่</p>
+            <div className="flex flex-col items-center gap-3 pt-4">
+              <p className="text-xs text-red-600">ตรวจว่ารัน ./run_web.sh อยู่ แล้วลองใหม่</p>
               <div className="flex gap-2">
                 <Button size="sm" onClick={() => window.location.reload()}>
                   ลองใหม่
