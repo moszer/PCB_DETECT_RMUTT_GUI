@@ -1,53 +1,76 @@
 "use client";
 
 import type * as T from "three";
-import type { Three } from "./stage";
-
-export type StagePart = "carriage" | "rail" | "pinion" | "mount";
-const PARTS: StagePart[] = ["carriage", "rail", "pinion", "mount"];
-
-let cache: Promise<Record<StagePart, T.BufferGeometry> | null> | null = null;
 
 /**
- * The XY stage's CAD parts (converted from the STEP files, simplified, mm, Z up), loaded once:
- * carriage, 250 mm rack rail, 14-tooth pinion and the rail mount. Null if the file is missing.
+ * The whole station from its CAD (full_machine_pcb_detect.step, tessellated by FreeCAD at
+ * 0.18 mm, meshopt-compressed: 5.7 MB → 0.65 MB). Units mm, web convention Y up, origin at the
+ * middle of the base: X across, Z front (+) to back (−).
+ *
+ * It is a gantry: the two Y rails and the frame are fixed, the cross rail with its sliders and
+ * drive covers moves along Y (toward the back = −Z), and the camera head moves along X on it.
+ * The board lies still on the base plate (top at Y = 5).
  */
-export function loadStageParts(THREE: Three): Promise<Record<StagePart, T.BufferGeometry> | null> {
+export type MachineGroup = "rails" | "gantry" | "head" | "top" | "enclosure" | "base" | "frame";
+
+export const MACHINE_PARTS: Record<string, { title: string; group: MachineGroup }> = {
+  "part-00": { title: "รางแกน Y ขวา", group: "rails" },
+  "part-01": { title: "รางแกน Y ซ้าย", group: "rails" },
+  "part-02": { title: "รางขวางแกน X", group: "gantry" },
+  "part-03": { title: "ชุดเลื่อนฝั่งซ้าย", group: "gantry" },
+  "part-04": { title: "ชุดเลื่อนฝั่งขวา", group: "gantry" },
+  "part-05": { title: "ฝาครอบชุดขับขวา", group: "gantry" },
+  "part-06": { title: "ฝาครอบหัวเลื่อน", group: "head" },
+  "part-07": { title: "ฝาครอบชุดขับซ้าย", group: "gantry" },
+  "part-08": { title: "แผ่นสี่เหลี่ยมด้านบน", group: "top" },
+  "part-09": { title: "แผ่นบนเครื่อง", group: "top" },
+  "part-10": { title: "แผงหลัง", group: "enclosure" },
+  "part-11": { title: "แผงหน้า", group: "enclosure" },
+  "part-12": { title: "แผงขวา", group: "enclosure" },
+  "part-13": { title: "แผงซ้าย", group: "enclosure" },
+  "part-14": { title: "แผ่นฐาน", group: "base" },
+  "part-15": { title: "กรอบฐานด้านใน", group: "base" },
+  "part-16": { title: "เสามุมหน้าขวา", group: "frame" },
+  "part-17": { title: "เสามุมหลังขวา", group: "frame" },
+  "part-18": { title: "เสามุมหลังซ้าย", group: "frame" },
+  "part-19": { title: "เสามุมหน้าซ้าย", group: "frame" },
+  "part-20": { title: "คานหน้ารองราง", group: "frame" },
+  "part-21": { title: "คานหลังรองราง", group: "frame" },
+  "part-22": { title: "ขายึดรางซ้ายหน้า", group: "frame" },
+  "part-23": { title: "ขายึดรางซ้ายหลัง", group: "frame" },
+  "part-24": { title: "ขายึดรางขวาหลัง", group: "frame" },
+  "part-25": { title: "ขายึดรางขวาหน้า", group: "frame" },
+  "part-26": { title: "ชุดหัวเลื่อนด้านใน", group: "head" },
+};
+
+/** Where things are in the CAD assembly (web coordinates, mm). */
+export const MACHINE = {
+  /** Camera head centre in the assembly, taken as the HOME position (front left). */
+  headX: -103,
+  headZ: 94,
+  /** Bottom of the camera head, where the lens looks down from. */
+  lensY: 146,
+  /** Top of the base plate, where the board lies. */
+  baseTopY: 5,
+};
+
+let cache: Promise<T.Object3D | null> | null = null;
+
+/** The machine's scene (loaded once; every call returns a copy sharing the geometry). */
+export async function loadMachine(): Promise<T.Object3D | null> {
   if (!cache) {
-    cache = import("three/examples/jsm/loaders/GLTFLoader.js")
-      .then(({ GLTFLoader }) => new GLTFLoader().loadAsync("/models/stage.glb"))
-      .then((gltf) => {
-        const out: Partial<Record<StagePart, T.BufferGeometry>> = {};
-        gltf.scene.updateMatrixWorld(true);
-        gltf.scene.traverse((o) => {
-          const mesh = o as T.Mesh;
-          if (!mesh.isMesh) return;
-          // Quantized files name the node above the mesh (the mesh itself gets "mesh_N").
-          let node: T.Object3D | null = mesh;
-          while (node && !PARTS.includes(node.name as StagePart)) node = node.parent;
-          if (!node) return;
-          const name = node.name as StagePart;
-          const g = mesh.geometry.clone();
-          // The file is quantized (16-bit, KHR_mesh_quantization): back to floats before the
-          // node's dequantizing transform is baked in, or the mm values would clip.
-          for (const [key, attr] of Object.entries(g.attributes)) {
-            const a = attr as T.BufferAttribute;
-            if (a.array instanceof Float32Array && !(a as unknown as { isInterleavedBufferAttribute?: boolean }).isInterleavedBufferAttribute) continue;
-            const buf = new Float32Array(a.count * a.itemSize);
-            const get = [a.getX, a.getY, a.getZ, a.getW];
-            for (let i = 0; i < a.count; i++) for (let c = 0; c < a.itemSize; c++) buf[i * a.itemSize + c] = get[c].call(a, i);
-            g.setAttribute(key, new THREE.BufferAttribute(buf, a.itemSize));
-          }
-          g.applyMatrix4(mesh.matrixWorld);
-          if (!g.getAttribute("normal")) g.computeVertexNormals();
-          out[name] = g;
-        });
-        return out.carriage && out.rail && out.pinion && out.mount ? (out as Record<StagePart, T.BufferGeometry>) : null;
+    cache = Promise.all([import("three/examples/jsm/loaders/GLTFLoader.js"), import("three/examples/jsm/libs/meshopt_decoder.module.js")])
+      .then(([{ GLTFLoader }, { MeshoptDecoder }]) => {
+        const loader = new GLTFLoader();
+        loader.setMeshoptDecoder(MeshoptDecoder);
+        return loader.loadAsync("/models/machine.glb");
       })
+      .then((gltf) => (gltf.scene.getObjectByName("part-02") ? gltf.scene : null))
       .catch(() => {
         cache = null;
         return null;
       });
   }
-  return cache;
+  const scene = await cache;
+  return scene ? scene.clone(true) : null;
 }

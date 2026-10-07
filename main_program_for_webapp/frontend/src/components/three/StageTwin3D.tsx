@@ -2,25 +2,24 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type * as T from "three";
-import { Home, RotateCcw } from "lucide-react";
+import { Box, Home, RotateCcw } from "lucide-react";
 import type { CustomPointRequest, MachineState, Verdict } from "@/types";
 import { fovMm, pictureQuad, type StageCal } from "@/lib/three/boardMap";
 import { getStageCal } from "@/lib/three/calibration";
 import { addBoardSurface, makeLabel, makePin, surfaceBounds, type SurfaceItem } from "@/lib/three/boardSurface";
-import { loadStageParts } from "@/lib/three/models";
+import { MACHINE, MACHINE_PARTS, loadMachine, type MachineGroup } from "@/lib/three/models";
 import { createThreeStage, disposeObject, type ThreeStage } from "@/lib/three/stage";
 import { cx } from "../ui";
 
 export type PointStatus = Verdict | "pending" | "error";
 
 /**
- * The CAD parts are real millimetres; positions from the controller are commanded mm. On this
- * station one commanded mm moves the rack-and-pinion about 4.7 mm (38 mm commanded ≈ the
- * rail's ~180 mm of travel), so the twin draws commanded mm that much larger. Pictures, points
- * and the camera's view are all in commanded mm, so they line up with each other exactly.
+ * The CAD is real millimetres; positions from the controller are commanded mm. On this station
+ * one commanded mm moves the gantry about 4.7 mm (38 mm commanded ≈ the ~180 mm the rails
+ * allow), so the twin draws commanded mm that much larger. Pictures, points and the camera's
+ * view are all in commanded mm, so they line up with each other exactly.
  */
 const REAL_MM_PER_CMD = 4.7;
-const CAMERA_HEIGHT = 200;
 
 const STATUS_COLOR: Record<PointStatus, number> = {
   PASS: 0x22c55e,
@@ -30,6 +29,9 @@ const STATUS_COLOR: Record<PointStatus, number> = {
   error: 0x8b5cf6,
   pending: 0x94a3b8,
 };
+const STATUS_LABEL: Record<PointStatus, string> = { PASS: "ผ่าน", FAIL: "ไม่ผ่าน", REVIEW: "ตรวจซ้ำ", ERROR: "ผิดพลาด", error: "ผิดพลาด", pending: "ยังไม่ตรวจ" };
+
+type Covers = "ghost" | "hidden";
 
 interface TwinProps {
   machine: MachineState | null;
@@ -43,11 +45,14 @@ interface TwinProps {
   className?: string;
 }
 
+type Latest = Omit<TwinProps, "className"> & { covers: Covers };
+
 interface TwinApi {
-  setPosition: (p: [number, number], immediate?: boolean) => void;
+  setPosition: (p: [number, number]) => void;
   setPins: (statuses: Array<PointStatus | null>, selected: number | null, scanning: number | null) => void;
   setHoming: (on: boolean) => void;
   setFov: (zoom: number) => void;
+  setCovers: (c: Covers) => void;
   resetView: () => void;
 }
 
@@ -57,22 +62,25 @@ function signature(points: CustomPointRequest[], limits: [number, number] | unde
 }
 
 /**
- * Digital twin of the XY stage: the CAD carriage, racks, pinions and mount; the board (with each
- * point's taught picture) riding on it to the live position; scan points as pins coloured by
- * their latest result (the one being scanned blinks), the scan path, the camera and its view on
- * the board, and the limit switches lighting up while homing. Drawn only when something moves.
+ * Digital twin of the station from its CAD: frame, Y rails, the gantry (cross rail, sliders,
+ * drive covers) and the camera head moving to the live position over the board, which lies on
+ * the base with each point's taught picture. Scan points are pins coloured by their latest
+ * result (the one being scanned blinks), with the scan path, the camera's view on the board and
+ * the head lighting up while homing. Drawn only when something moves.
  */
 export function StageTwin3D({ machine, points, statuses, scanningIndex, selected, zoom, cameraResolution, onPickPoint, className }: TwinProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<TwinApi | null>(null);
   const [cal, setCal] = useState<StageCal | null | undefined>(undefined);
   const [failed, setFailed] = useState(false);
+  const [covers, setCovers] = useState<Covers>("ghost");
+  const [hover, setHover] = useState<{ x: number; y: number; text: string } | null>(null);
   const limits = machine?.soft_limits_mm;
   const sig = useMemo(() => signature(points, limits), [points, limits]);
   const homing = Boolean(machine?.connected && machine.is_moving && !machine.homed);
-  const latest = useRef({ machine, points, statuses, scanningIndex, selected, zoom, cameraResolution, onPickPoint, homing });
+  const latest = useRef<Latest>({ machine, points, statuses, scanningIndex, selected, zoom, cameraResolution, onPickPoint, covers });
   useEffect(() => {
-    latest.current = { machine, points, statuses, scanningIndex, selected, zoom, cameraResolution, onPickPoint, homing };
+    latest.current = { machine, points, statuses, scanningIndex, selected, zoom, cameraResolution, onPickPoint, covers };
   });
 
   useEffect(() => {
@@ -93,9 +101,9 @@ export function StageTwin3D({ machine, points, statuses, scanningIndex, selected
       stage = await createThreeStage(el, { controls: true, fov: 34 });
       if (!stage) return setFailed(true);
       if (disposed) return stage.dispose();
-      const parts = await loadStageParts(stage.THREE);
+      const model = await loadMachine();
       if (disposed) return;
-      view.current = buildTwin(stage, parts, cal, latest);
+      view.current = buildTwin(stage, model, cal, latest, setHover);
     })();
     return () => {
       disposed = true;
@@ -117,6 +125,9 @@ export function StageTwin3D({ machine, points, statuses, scanningIndex, selected
   useEffect(() => {
     view.current?.setFov(zoom);
   }, [zoom]);
+  useEffect(() => {
+    view.current?.setCovers(covers);
+  }, [covers]);
 
   const counts = useMemo(() => {
     const c = { PASS: 0, FAIL: 0, REVIEW: 0 } as Record<string, number>;
@@ -128,6 +139,11 @@ export function StageTwin3D({ machine, points, statuses, scanningIndex, selected
     <div className={cx("relative rounded-xl overflow-hidden border border-line bg-viewport", className)}>
       <div ref={host} className="absolute inset-0 cursor-grab active:cursor-grabbing" />
       {failed && <p className="absolute inset-0 grid place-items-center text-sm text-white/60">เบราว์เซอร์นี้แสดง 3D (WebGL) ไม่ได้</p>}
+      {hover && (
+        <div className="absolute z-10 pointer-events-none px-2 py-1 rounded-md bg-black/80 text-[11px] text-white whitespace-pre" style={{ left: hover.x + 12, top: hover.y + 12 }}>
+          {hover.text}
+        </div>
+      )}
       <div className="absolute top-2 left-2 flex flex-col gap-1 pointer-events-none">
         <span className="h-6 px-2 rounded-md bg-black/60 text-[11px] text-white flex items-center gap-1.5 font-mono tabular-nums">
           {machine?.connected ? `X ${machine.position_mm[0].toFixed(2)} · Y ${machine.position_mm[1].toFixed(2)} mm` : "สเตจยังไม่เชื่อมต่อ"}
@@ -146,14 +162,24 @@ export function StageTwin3D({ machine, points, statuses, scanningIndex, selected
         <Legend color="#94a3b8" label="ยังไม่ตรวจ" />
         <span className="hidden sm:inline text-white/60">· กดหมุดเพื่อเลือกจุด</span>
       </div>
-      <button
-        type="button"
-        onClick={() => view.current?.resetView()}
-        className="absolute top-2 right-2 size-7 rounded-md bg-black/60 text-white grid place-items-center hover:bg-black/80"
-        title="มุมมองเริ่มต้น"
-      >
-        <RotateCcw className="size-3.5" />
-      </button>
+      <div className="absolute top-2 right-2 flex gap-1">
+        <button
+          type="button"
+          onClick={() => setCovers((c) => (c === "ghost" ? "hidden" : "ghost"))}
+          className={cx("h-7 px-2 rounded-md text-white text-[11px] flex items-center gap-1 hover:bg-black/80", covers === "hidden" ? "bg-accent/80" : "bg-black/60")}
+          title="ฝาครอบและแผ่นบน: โปร่งใส / ซ่อน"
+        >
+          <Box className="size-3.5" /> {covers === "ghost" ? "ฝาครอบโปร่ง" : "ซ่อนฝาครอบ"}
+        </button>
+        <button
+          type="button"
+          onClick={() => view.current?.resetView()}
+          className="size-7 rounded-md bg-black/60 text-white grid place-items-center hover:bg-black/80"
+          title="มุมมองเริ่มต้น"
+        >
+          <RotateCcw className="size-3.5" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -167,173 +193,111 @@ function Legend({ color, label }: { color: string; label: string }) {
   );
 }
 
+/*
+ * Frames: the CAD is Y-up ("web"); the scene is Z-up. The machine is turned so that
+ * web (x, y, z) → scene (x, −z, y): front of the machine toward −y, height up.
+ *
+ * Stage positions: HOME (0, 0) is the head's place in the assembly (front left). +X moves the
+ * head right, +Y moves the gantry toward the back — the way the camera image moves (the
+ * stage→image matrix: +X shifts the picture left, +Y shifts it down). A board point d (stage
+ * mm, see boardMap) is under the camera when the stage is at d, so it lies at
+ * HOME + k·d on the base.
+ */
 function buildTwin(
   stage: ThreeStage,
-  parts: Awaited<ReturnType<typeof loadStageParts>>,
+  model: T.Object3D | null,
   cal: StageCal | null,
-  props: React.RefObject<{
-    machine: MachineState | null;
-    points: CustomPointRequest[];
-    statuses: Array<PointStatus | null>;
-    scanningIndex: number | null;
-    selected: number | null;
-    zoom: number;
-    cameraResolution: [number, number] | null | undefined;
-    onPickPoint?: (i: number) => void;
-  }>
+  props: React.RefObject<Latest>,
+  setHover: (h: { x: number; y: number; text: string } | null) => void
 ): TwinApi {
   const init = props.current;
-  const { THREE, scene, camera, controls, invalidate } = stage;
+  const { THREE, scene, camera, controls, invalidate, canvas } = stage;
   const k = REAL_MM_PER_CMD;
   const [Lx, Ly] = init.machine?.soft_limits_mm ?? [38, 38];
   const frame: [number, number] = init.cameraResolution && init.cameraResolution[0] > 0 ? init.cameraResolution : [3840, 3840];
   const fov = fovMm(cal, frame, 1);
+  const homeX = MACHINE.headX;
+  const homeY = -MACHINE.headZ;
+  const boardZ = MACHINE.baseTopY + 1.6;
 
-  const items: SurfaceItem[] = init.points.map((p) => ({ x_mm: p.x_mm, y_mm: p.y_mm, zoom: p.zoom, size: null, image: p.reference_image ?? null }));
-  // Picture sizes are only known once decoded; until then a camera view around each point.
-  const b = items.length ? surfaceBounds(cal, items, fov) : { minX: -fov[0] / 2, maxX: Lx + fov[0] / 2, minY: -fov[1] / 2, maxY: Ly + fov[1] / 2 };
-  const dc: [number, number] = [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2];
-
-  // ── materials ──
-  const alu = new THREE.MeshStandardMaterial({ color: 0xb9c2cf, metalness: 0.65, roughness: 0.35 });
-  const plastic = new THREE.MeshStandardMaterial({ color: 0x3b82f6, metalness: 0.05, roughness: 0.55 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x3f4654, metalness: 0.3, roughness: 0.6 });
-  const nylon = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, metalness: 0, roughness: 0.5 });
-  const sw = new THREE.MeshStandardMaterial({ color: 0x7f1d1d, emissive: 0xef4444, emissiveIntensity: 0.15, roughness: 0.5 });
-
-  const root = new THREE.Group();
-  scene.add(root);
   scene.add(new THREE.HemisphereLight(0xe6eeff, 0x202633, 1.15));
-  const sun = new THREE.DirectionalLight(0xffffff, 2.0);
-  sun.position.set(-300, -400, 700);
-  scene.add(sun);
-  const fill = new THREE.DirectionalLight(0x9db8ff, 0.7);
-  fill.position.set(400, 300, 200);
-  scene.add(fill);
-
-  // ── moving stages: X carries the Y axis, Y carries the bed and the board ──
-  const xStage = new THREE.Group();
-  const yStage = new THREE.Group();
-  xStage.add(yStage);
-  root.add(xStage);
-
-  const board = new THREE.Group();
-  board.scale.set(k, k, 1);
-  yStage.add(board);
-  const surface = addBoardSurface(stage, board, cal, items, fov, { maxSide: 384, margin: 3 });
-  const [bw, bh] = surface.size;
-
-  const bed = new THREE.Mesh(new THREE.BoxGeometry(bw * k + 16, bh * k + 16, 4.4), alu);
-  bed.position.set(dc[0] * k, dc[1] * k, -1.6 - 2.2);
-  yStage.add(bed);
-
-  const cx0 = dc[0] * k;
-  const cy0 = dc[1] * k;
-  const travelX = Lx * k;
-  const travelY = Ly * k;
-  const yRail0 = cy0 - travelY - 40;
-  const yMid = yRail0 + 125;
-  const xRail0 = cx0 - travelX - 45;
-
-  if (parts) {
-    const add = (g: T.BufferGeometry, mat: T.Material, parent: T.Object3D, x: number, y: number, z: number, rz = 0) => {
-      const m = new THREE.Mesh(g, mat);
-      m.position.set(x, y, z);
-      m.rotation.z = rz;
-      parent.add(m);
-      return m;
-    };
-    // Y axis: carriage under the bed, riding a rack rail fixed on the X carriage.
-    add(parts.carriage, plastic, yStage, cx0, cy0, -16.6, Math.PI / 2);
-    add(parts.rail, alu, xStage, cx0, yRail0, -29.1);
-    // X axis: carriage under the Y rail, riding the X rack rail on the fixed mount.
-    add(parts.carriage, plastic, xStage, cx0, yMid, -39.7);
-    add(parts.rail, alu, root, xRail0, yMid, -52.2, -Math.PI / 2);
-    add(parts.mount, dark, root, xRail0 + 125 - 169.5, yMid - 3.5, -80.2);
-  } else {
-    // No CAD file: plain bars in their place.
-    const bar = (w: number, h: number, d: number, mat: T.Material, parent: T.Object3D, x: number, y: number, z: number) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
-      m.position.set(x, y, z);
-      parent.add(m);
-    };
-    bar(33, 45, 10.6, plastic, yStage, cx0, cy0, -11.3);
-    bar(28, 250, 12.5, alu, xStage, cx0, yRail0 + 125, -22.85);
-    bar(45, 33, 10.6, plastic, xStage, cx0, yMid, -34.4);
-    bar(250, 28, 12.5, alu, root, xRail0 + 125, yMid, -45.95);
-    bar(383, 33, 23, dark, root, xRail0 + 125, yMid, -63.7);
+  for (const [x, y, z, power] of [
+    [300, -450, 700, 1.9],
+    [-500, 100, 250, 1.0],
+    [150, 500, 100, 0.8],
+  ]) {
+    const l = new THREE.DirectionalLight(0xffffff, power);
+    l.position.set(x, y, z);
+    scene.add(l);
   }
 
-  // Pinions turn with the travel (14 teeth, ~7.2 mm pitch radius).
-  const pinion = (parent: T.Object3D, x: number, y: number, z: number, axis: "x" | "y") => {
-    const g = new THREE.Group();
-    const m = parts ? new THREE.Mesh(parts.pinion, nylon) : new THREE.Mesh(new THREE.CylinderGeometry(7.2, 7.2, 6.5, 14).rotateX(Math.PI / 2), nylon);
-    m.position.z = -3.25;
-    if (axis === "y") m.rotation.x = Math.PI / 2;
-    else m.rotation.y = Math.PI / 2;
-    g.add(m);
-    g.position.set(x, y, z);
-    parent.add(g);
-    return g;
-  };
-  const pinionX = pinion(xStage, cx0, yMid - 22, -46, "y");
-  const pinionY = pinion(yStage, cx0 + 22, cy0, -22.8, "x");
-
-  // Limit switches at the HOME end of each axis.
-  const swGeo = new THREE.BoxGeometry(8, 12, 8);
-  const swX = new THREE.Mesh(swGeo, sw);
-  swX.position.set(cx0 + 30, yMid, -44);
-  root.add(swX);
-  const swY = new THREE.Mesh(swGeo, sw);
-  swY.position.set(cx0, cy0 + 30, -22.8);
-  xStage.add(swY);
-
-  // Base plate.
-  const base = new THREE.Mesh(
-    new THREE.BoxGeometry(travelX + 260, travelY + 300, 6),
-    new THREE.MeshStandardMaterial({ color: 0x1e2430, roughness: 0.9 })
-  );
-  base.position.set(cx0 - travelX / 2, cy0 - travelY / 2, -84);
-  root.add(base);
-
-  // ── camera (fixed) on a post behind the stage ──
-  const postY = b.maxY * k + 70;
-  const post = new THREE.Mesh(new THREE.BoxGeometry(20, 20, CAMERA_HEIGHT + 115), dark);
-  post.position.set(0, postY, (CAMERA_HEIGHT + 115) / 2 - 84);
-  const arm = new THREE.Mesh(new THREE.BoxGeometry(20, postY, 14), dark);
-  arm.position.set(0, postY / 2, CAMERA_HEIGHT + 28);
-  const body = new THREE.Mesh(new THREE.BoxGeometry(34, 34, 26), new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.4, metalness: 0.3 }));
-  body.position.set(0, 0, CAMERA_HEIGHT + 20);
-  const lens = new THREE.Mesh(new THREE.CylinderGeometry(9, 10, 14, 28).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x0b0f17, roughness: 0.2, metalness: 0.6 }));
-  lens.position.set(0, 0, CAMERA_HEIGHT);
-  root.add(post, arm, body, lens);
-
-  // The camera's view on the board: frustum lines and a translucent rectangle.
-  const fovGroup = new THREE.Group();
-  root.add(fovGroup);
-  const setFov = (z: number) => {
-    fovGroup.children.forEach((c) => disposeObject(c));
-    fovGroup.clear();
-    const { corners } = pictureQuad(cal, { x_mm: 0, y_mm: 0, zoom: z }, frame);
-    const pts = corners.map(([x, y]) => new THREE.Vector3(x * k, y * k, 0.6));
-    const fill = new THREE.Mesh(
-      new THREE.ShapeGeometry(new THREE.Shape(pts.map((p) => new THREE.Vector2(p.x, p.y)))),
-      new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide })
-    );
-    fill.position.z = 0.6;
-    const outline = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xe0f2fe }));
-    const apex = new THREE.Vector3(0, 0, CAMERA_HEIGHT - 7);
-    const rays = new THREE.LineSegments(
-      new THREE.BufferGeometry().setFromPoints(pts.flatMap((p) => [apex, p])),
-      new THREE.LineBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.45 })
-    );
-    fovGroup.add(fill, outline, rays);
+  // ── the machine ──
+  const machine = new THREE.Group();
+  machine.rotation.x = Math.PI / 2;
+  scene.add(machine);
+  const moving: Array<{ node: T.Object3D; base: T.Vector3; group: MachineGroup }> = [];
+  const covers: T.Material[] = [];
+  const headMats: T.MeshStandardMaterial[] = [];
+  const partMeshes: T.Mesh[] = [];
+  if (model) {
+    machine.add(model);
+    model.traverse((o) => {
+      const part = MACHINE_PARTS[o.name];
+      if (!part) return;
+      if (part.group === "gantry" || part.group === "head") moving.push({ node: o, base: o.position.clone(), group: part.group });
+      o.traverse((m) => {
+        const mesh = m as T.Mesh;
+        if (!mesh.isMesh) return;
+        const mat = (mesh.material as T.MeshStandardMaterial).clone();
+        mesh.material = mat;
+        mesh.userData.title = part.title;
+        partMeshes.push(mesh);
+        if (part.group === "enclosure" || part.group === "top") covers.push(mat);
+        if (part.group === "head") headMats.push(mat);
+      });
+    });
+  }
+  const setCovers = (c: Covers) => {
+    for (const m of covers) {
+      m.transparent = true;
+      m.opacity = 0.1;
+      m.depthWrite = false;
+      m.visible = c === "ghost";
+    }
     invalidate();
   };
-  setFov(init.zoom);
+  setCovers(init.covers);
 
-  // ── scan points: pins, numbers and the path between them ──
-  const pinH = Math.max(14, Math.min(40, Math.max(bw, bh) * k * 0.09));
+  // ── the board on the base: taught pictures, pins and the scan path ──
+  const items: SurfaceItem[] = init.points.map((p) => ({ x_mm: p.x_mm, y_mm: p.y_mm, zoom: p.zoom, size: null, image: p.reference_image ?? null }));
+  const b = items.length ? surfaceBounds(cal, items, fov) : { minX: 0, maxX: Lx, minY: 0, maxY: Ly };
+  const board = new THREE.Group();
+  board.position.set(homeX, homeY, boardZ);
+  board.scale.set(k, k, 1);
+  scene.add(board);
+  if (items.length) addBoardSurface(stage, board, cal, items, fov, { maxSide: 384, margin: 3 });
+  const span = Math.max(b.maxX - b.minX, b.maxY - b.minY) * k;
+
+  // Where the camera can look: the travel, drawn on the base.
+  const travel = new THREE.LineLoop(
+    new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(homeX, homeY, MACHINE.baseTopY + 0.3),
+      new THREE.Vector3(homeX + Lx * k, homeY, MACHINE.baseTopY + 0.3),
+      new THREE.Vector3(homeX + Lx * k, homeY + Ly * k, MACHINE.baseTopY + 0.3),
+      new THREE.Vector3(homeX, homeY + Ly * k, MACHINE.baseTopY + 0.3),
+    ]),
+    new THREE.LineDashedMaterial({ color: 0x64748b, dashSize: 6, gapSize: 5 })
+  );
+  travel.computeLineDistances();
+  scene.add(travel);
+  const homeMark = makeLabel(THREE, "HOME", 7);
+  homeMark.position.set(homeX - 8, homeY - 8, MACHINE.baseTopY + 4);
+  scene.add(homeMark);
+
+  const pinsGroup = new THREE.Group();
+  pinsGroup.position.set(homeX, homeY, boardZ);
+  scene.add(pinsGroup);
+  const pinH = Math.max(14, Math.min(30, (span || 100) * 0.08));
   const pins = init.points.map((p, i) => {
     const pin = makePin(THREE, pinH, STATUS_COLOR.pending);
     pin.group.position.set(p.x_mm * k, p.y_mm * k, 0);
@@ -341,7 +305,7 @@ function buildTwin(
     const label = makeLabel(THREE, String(i + 1), pinH * 0.42);
     label.position.set(0, 0, pinH * 1.5);
     pin.group.add(label);
-    yStage.add(pin.group);
+    pinsGroup.add(pin.group);
     return pin;
   });
   if (init.points.length > 1) {
@@ -350,11 +314,37 @@ function buildTwin(
       new THREE.LineDashedMaterial({ color: 0xfbbf24, dashSize: 6, gapSize: 4 })
     );
     path.computeLineDistances();
-    yStage.add(path);
+    pinsGroup.add(path);
   }
 
+  // ── the camera's view: moves with the head ──
+  const camGroup = new THREE.Group();
+  scene.add(camGroup);
+  const setFov = (z: number) => {
+    camGroup.children.forEach((c) => disposeObject(c));
+    camGroup.clear();
+    const { corners } = pictureQuad(cal, { x_mm: 0, y_mm: 0, zoom: z }, frame);
+    const pts = corners.map(([x, y]) => new THREE.Vector3(homeX + x * k, homeY + y * k, boardZ + 0.6));
+    const fill = new THREE.Mesh(
+      new THREE.ShapeGeometry(new THREE.Shape(pts.map((p) => new THREE.Vector2(p.x, p.y)))),
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide })
+    );
+    fill.position.z = boardZ + 0.6;
+    const outline = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xe0f2fe }));
+    const apex = new THREE.Vector3(homeX, homeY, MACHINE.lensY);
+    const rays = new THREE.LineSegments(
+      new THREE.BufferGeometry().setFromPoints(pts.flatMap((p) => [apex, p])),
+      new THREE.LineBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.5 })
+    );
+    camGroup.add(fill, outline, rays);
+    invalidate();
+  };
+  setFov(init.zoom);
+
   let blinkStop: (() => void) | null = null;
+  let pinStatus: Array<PointStatus | null> = init.statuses;
   const setPins = (statuses: Array<PointStatus | null>, selected: number | null, scanning: number | null) => {
+    pinStatus = statuses;
     pins.forEach((pin, i) => {
       const c = STATUS_COLOR[statuses[i] ?? "pending"] ?? STATUS_COLOR.pending;
       pin.material.color.setHex(c);
@@ -377,24 +367,20 @@ function buildTwin(
   };
   setPins(init.statuses, init.selected, init.scanningIndex);
 
-  // ── live position, eased; the pinions turn with it ──
+  // ── live position, eased ──
   const target = new THREE.Vector2(...(init.machine?.position_mm ?? [0, 0]));
   const now = target.clone();
   const apply = () => {
-    xStage.position.x = -now.x * k;
-    yStage.position.y = -now.y * k;
-    pinionX.rotation.y = (now.x * k) / 7.2;
-    pinionY.rotation.x = (-now.y * k) / 7.2;
+    const dx = now.x * k;
+    const dy = now.y * k;
+    // Web offsets (the machine group turns them): +X right, +Y toward the back (−Z).
+    for (const m of moving) m.node.position.set(m.base.x + (m.group === "head" ? dx : 0), m.base.y, m.base.z - dy);
+    camGroup.position.set(dx, dy, 0);
   };
   apply();
   let gliding = false;
-  const setPosition = (p: [number, number], immediate = false) => {
+  const setPosition = (p: [number, number]) => {
     target.set(p[0], p[1]);
-    if (immediate) {
-      now.copy(target);
-      apply();
-      return invalidate();
-    }
     if (gliding) return;
     gliding = true;
     stage.animate((_t, dt) => {
@@ -410,49 +396,81 @@ function buildTwin(
   const setHoming = (on: boolean) => {
     homeStop?.();
     homeStop = null;
-    sw.emissiveIntensity = 0.15;
-    if (on) homeStop = stage.animate((t) => void (sw.emissiveIntensity = 0.2 + 1.3 * (0.5 + 0.5 * Math.sin(t * 9))));
+    for (const m of headMats) m.emissive.setHex(on ? 0xf59e0b : 0x000000);
+    if (on)
+      homeStop = stage.animate((t) => {
+        for (const m of headMats) m.emissiveIntensity = 0.15 + 0.6 * (0.5 + 0.5 * Math.sin(t * 9));
+      });
     invalidate();
   };
 
   // ── view ──
-  const center = new THREE.Vector3(cx0 - travelX / 2, cy0 - travelY / 2, 30);
-  const span = Math.max(travelX, travelY) + Math.max(bw, bh) * k;
+  const center = new THREE.Vector3(homeX + (Lx * k) / 2, homeY + (Ly * k) / 2, 70);
+  const reach = 520;
   const resetView = () => {
     camera.near = 2;
-    camera.far = span * 20;
+    camera.far = 8000;
     camera.updateProjectionMatrix();
-    camera.position.set(center.x + span * 0.6, center.y - span * 1.25, center.z + span * 1.05);
+    camera.position.set(center.x + reach * 0.55, center.y - reach * 1.05, center.z + reach * 0.8);
     controls?.target.copy(center);
     controls?.update();
     invalidate();
   };
   if (controls) {
-    controls.maxPolarAngle = Math.PI * 0.495;
-    controls.minDistance = 60;
-    controls.maxDistance = span * 4;
+    controls.maxPolarAngle = Math.PI * 0.6;
+    controls.minDistance = 40;
+    controls.maxDistance = 2400;
   }
   resetView();
 
-  // Click a pin to select its point (a drag orbits instead).
+  // Pins: click to select the point; hover a pin or a part for its name.
   const ray = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
+  const heads = pins.map((p) => p.head);
+  const pick = (e: PointerEvent) => {
+    const r = canvas.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const pin = ray.intersectObjects(heads)[0]?.object;
+    if (pin) return { r, pin, text: pinText(pin.userData.index as number) };
+    const part = ray.intersectObjects(partMeshes.filter((m) => (m.material as T.Material).visible && (m.material as T.Material).opacity > 0.2))[0]?.object;
+    return { r, pin: null, text: (part?.userData.title as string) ?? "" };
+  };
+  const pinText = (i: number) => {
+    const p = props.current.points[i];
+    const s = pinStatus[i] ?? "pending";
+    return `จุด ${i + 1}${p?.name ? ` · ${p.name}` : ""}\n${p ? `(${p.x_mm.toFixed(2)}, ${p.y_mm.toFixed(2)}) mm · ` : ""}${STATUS_LABEL[s]}`;
+  };
   let down: [number, number] | null = null;
+  let last = "";
   const onDown = (e: PointerEvent) => void (down = [e.clientX, e.clientY]);
   const onUp = (e: PointerEvent) => {
     if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) return;
-    const r = stage.canvas.getBoundingClientRect();
-    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-    ray.setFromCamera(ndc, camera);
-    const hit = ray.intersectObjects(pins.map((p) => p.head))[0];
-    if (hit) props.current.onPickPoint?.(hit.object.userData.index as number);
+    const { pin } = pick(e);
+    if (pin) props.current.onPickPoint?.(pin.userData.index as number);
   };
-  stage.canvas.addEventListener("pointerdown", onDown);
-  stage.canvas.addEventListener("pointerup", onUp);
+  const onMove = (e: PointerEvent) => {
+    if (e.buttons) return;
+    const { r, text } = pick(e);
+    if (!text) {
+      if (last) setHover(null);
+      last = "";
+      return;
+    }
+    last = text;
+    setHover({ x: e.clientX - r.left, y: e.clientY - r.top, text });
+  };
+  const onLeave = () => setHover(null);
+  canvas.addEventListener("pointerdown", onDown);
+  canvas.addEventListener("pointerup", onUp);
+  canvas.addEventListener("pointermove", onMove);
+  canvas.addEventListener("pointerleave", onLeave);
   stage.onDispose(() => {
-    stage.canvas.removeEventListener("pointerdown", onDown);
-    stage.canvas.removeEventListener("pointerup", onUp);
+    canvas.removeEventListener("pointerdown", onDown);
+    canvas.removeEventListener("pointerup", onUp);
+    canvas.removeEventListener("pointermove", onMove);
+    canvas.removeEventListener("pointerleave", onLeave);
   });
 
-  return { setPosition, setPins, setHoming, setFov, resetView };
+  return { setPosition, setPins, setHoming, setFov, setCovers, resetView };
 }
