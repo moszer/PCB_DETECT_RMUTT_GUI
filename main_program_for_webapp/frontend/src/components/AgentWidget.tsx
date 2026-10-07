@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { Bot, Check, Loader2, Send, Sparkles, Square, Trash2, User, X } from "lucide-react";
-import { API_BASE } from "@/lib/api";
+import { API_BASE, authHeaders } from "@/lib/api";
 import { sfx } from "@/lib/sound";
 import type { TabId } from "./AppShell";
 import { Rich } from "./ChatPanel";
@@ -57,11 +57,14 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
     try {
       const res = await fetch(`${API_BASE}/api/chat/agent`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ messages: history.map(({ role, content }) => ({ role, content })), page }),
         signal: controller.signal,
       });
-      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok || !res.body) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(typeof err.detail === "string" ? err.detail : `HTTP ${res.status}`);
+      }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -109,7 +112,7 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
   const clear = async () => {
     if (!window.confirm("ลบประวัติแชทกับผู้ช่วย AI ทั้งหมด?")) return;
     setMessages([]);
-    await fetch(`${API_BASE}/api/chat/agent/history`, { method: "DELETE" }).catch(() => undefined);
+    await fetch(`${API_BASE}/api/chat/agent/history`, { method: "DELETE", headers: authHeaders({}) }).catch(() => undefined);
   };
 
   return (

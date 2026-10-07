@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { Bot, Send, Square, Trash2, User } from "lucide-react";
-import { API_BASE } from "@/lib/api";
+import { API_BASE, authHeaders } from "@/lib/api";
 import { sfx } from "@/lib/sound";
 import { Button, Modal, Spinner, cx } from "./ui";
 
@@ -169,7 +169,7 @@ export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContex
     if (!window.confirm("ลบประวัติแชทของจุดนี้ทั้งหมด?")) return;
     setMessages([]);
     if (conversationKey) {
-      await fetch(`${API_BASE}/api/chat/history?key=${encodeURIComponent(conversationKey)}`, { method: "DELETE" }).catch(() => undefined);
+      await fetch(`${API_BASE}/api/chat/history?key=${encodeURIComponent(conversationKey)}`, { method: "DELETE", headers: authHeaders({}) }).catch(() => undefined);
     }
   };
 
@@ -195,7 +195,7 @@ export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContex
     try {
       const res = await fetch(`${API_BASE}/api/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders(),
         body: JSON.stringify({ messages: history, context, image_url: conversationKey, conversation_key: conversationKey }),
         signal: controller.signal,
       });

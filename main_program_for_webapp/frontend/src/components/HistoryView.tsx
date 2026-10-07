@@ -1,16 +1,17 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, FlaskConical, History, Image as ImageIcon, RotateCw, ScanLine } from "lucide-react";
+import { Barcode, ChevronLeft, ChevronRight, Download, FlaskConical, History, Image as ImageIcon, Printer, RotateCw, ScanLine, Search } from "lucide-react";
 import type { AOIPointResult, RunRecord, SingleInspectionRecord, Statistics, Verdict } from "@/types";
-import { API_BASE, api } from "@/lib/api";
+import { API_BASE, api, withToken } from "@/lib/api";
 import { fileName, formatDateTime } from "@/lib/format";
 import { PointResultModal } from "./PointResultModal";
 import { ZoomPan } from "./ZoomPan";
 import { PerformanceView } from "./PerformanceView";
-import { Badge, Button, Card, EmptyState, IconButton, Modal, Segmented, Select, Spinner, Stat, VerdictBadge, buttonClasses, cx } from "./ui";
+import { Badge, Button, Card, EmptyState, IconButton, Modal, Segmented, Select, Spinner, Stat, TextInput, VerdictBadge, buttonClasses, cx } from "./ui";
 import { useToast } from "./Toast";
 import { ProgressiveImage } from "./ProgressiveImage";
+import { RunReport } from "./RunReport";
 
 const PAGE = 50;
 
@@ -23,7 +24,7 @@ export function HistoryView() {
     api.getStatistics().then(setStats).catch(() => undefined);
   }, [refreshKey]);
 
-  const exportUrl = `${API_BASE}/api/history/export/${tab === "aoi" ? "csv" : "single-csv"}`;
+  const exportUrl = withToken(`${API_BASE}/api/history/export/${tab === "aoi" ? "csv" : "single-csv"}`);
 
   return (
     <div className="h-full overflow-y-auto">
@@ -82,23 +83,25 @@ function RunsTable({ refreshKey }: { refreshKey: number }) {
   const [page, setPage] = useState<{ key: string; runs: RunRecord[]; total: number } | null>(null);
   const [offset, setOffset] = useState(0);
   const [verdict, setVerdict] = useState("");
+  const [search, setSearch] = useState("");
   const [detail, setDetail] = useState<RunRecord | null>(null);
   const [point, setPoint] = useState<AOIPointResult | null>(null);
+  const [printing, setPrinting] = useState<RunRecord | null>(null);
   const toast = useToast();
-  const key = `${verdict}|${offset}|${refreshKey}`;
+  const key = `${verdict}|${search.trim()}|${offset}|${refreshKey}`;
   const loading = page?.key !== key;
   const runs = page?.runs ?? [];
   const total = page?.total ?? 0;
 
   useEffect(() => {
     api
-      .listRuns(verdict || undefined, PAGE, offset)
+      .listRuns(verdict || undefined, PAGE, offset, search)
       .then((res) => setPage({ key, runs: res.runs, total: res.total }))
       .catch((err) => {
         setPage((p) => ({ key, runs: p?.runs ?? [], total: p?.total ?? 0 }));
         toast.error("โหลดประวัติไม่สำเร็จ", err);
       });
-  }, [key, verdict, offset, toast]);
+  }, [key, verdict, search, offset, toast]);
 
   const markTruth = async (truth: "good" | "defective" | null) => {
     if (!detail) return;
@@ -141,6 +144,18 @@ function RunsTable({ refreshKey }: { refreshKey: number }) {
             </option>
           ))}
         </Select>
+        <div className="relative w-full sm:w-64 order-last sm:order-none">
+          <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-subtle" />
+          <TextInput
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setOffset(0);
+            }}
+            placeholder="ค้นหาเลขบอร์ด / ชื่อบอร์ด / รหัสรอบ"
+            className="pl-8 h-8! text-xs"
+          />
+        </div>
         <Pager offset={offset} total={total} count={runs.length} onOffset={setOffset} />
       </div>
       <ul className="sm:hidden divide-y divide-line">
@@ -148,15 +163,21 @@ function RunsTable({ refreshKey }: { refreshKey: number }) {
           <li key={r.id}>
             <button type="button" onClick={() => open(r.id)} className="w-full text-left px-4 py-3 flex flex-col gap-1.5 hover:bg-surface-2 cursor-pointer">
               <span className="flex items-center gap-2">
-                <VerdictBadge verdict={r.overall_verdict} />
+                <RunVerdict status={r.status} verdict={r.overall_verdict} />
                 <TruthBadge truth={r.ground_truth} />
                 <span className="text-xs text-muted">{formatDateTime(r.created_at)}</span>
                 <span className="ml-auto text-xs font-mono tabular text-muted">{r.total_points} จุด</span>
               </span>
+              {(r.serial || r.board_name) && (
+                <span className="text-xs text-muted truncate">
+                  {r.board_name}
+                  {r.serial && <span className="font-mono text-text"> · {r.serial}</span>}
+                </span>
+              )}
               <span className="flex items-center gap-1.5 flex-wrap text-xs">
                 {r.is_golden_scan ? <Badge tone="info">ต้นแบบ</Badge> : <Badge>ผลิต</Badge>}
                 {r.is_simulation ? <Badge tone="review">จำลอง</Badge> : null}
-                {r.status !== "complete" && <Badge tone={r.status === "error" ? "fail" : "neutral"}>{r.status}</Badge>}
+                
                 <span className="ml-auto font-mono tabular">
                   <span className="text-pass">ผ่าน {r.pass_count}</span> · <span className="text-fail">ไม่ผ่าน {r.fail_count}</span> ·{" "}
                   <span className="text-review">ซ้ำ {r.review_count}</span>
@@ -172,6 +193,7 @@ function RunsTable({ refreshKey }: { refreshKey: number }) {
             <tr>
               <th className="text-left font-medium px-4 py-2">เวลา</th>
               <th className="text-left font-medium px-4 py-2">ผล</th>
+              <th className="text-left font-medium px-4 py-2">บอร์ด / เลขบอร์ด</th>
               <th className="text-left font-medium px-4 py-2">ประเภท</th>
               <th className="text-right font-medium px-4 py-2">จุด</th>
               <th className="text-right font-medium px-4 py-2">ผ่าน / ไม่ผ่าน / ซ้ำ</th>
@@ -184,15 +206,23 @@ function RunsTable({ refreshKey }: { refreshKey: number }) {
                 <td className="px-4 py-2.5 whitespace-nowrap text-xs">{formatDateTime(r.created_at)}</td>
                 <td className="px-4 py-2.5">
                   <div className="flex items-center gap-1">
-                    <VerdictBadge verdict={r.overall_verdict} />
+                    <RunVerdict status={r.status} verdict={r.overall_verdict} />
                     <TruthBadge truth={r.ground_truth} />
                   </div>
+                </td>
+                <td className="px-4 py-2.5 text-xs max-w-[14rem]">
+                  <div className="truncate">{r.board_name || <span className="text-subtle">–</span>}</div>
+                  {r.serial && (
+                    <div className="font-mono text-[11px] text-muted truncate flex items-center gap-1">
+                      <Barcode className="size-3 shrink-0" /> {r.serial}
+                    </div>
+                  )}
                 </td>
                 <td className="px-4 py-2.5">
                   <div className="flex gap-1">
                     {r.is_golden_scan ? <Badge tone="info">ต้นแบบ</Badge> : <Badge>ผลิต</Badge>}
                     {r.is_simulation ? <Badge tone="review">จำลอง</Badge> : null}
-                    {r.status !== "complete" && <Badge tone={r.status === "error" ? "fail" : "neutral"}>{r.status}</Badge>}
+                    
                   </div>
                 </td>
                 <td className="px-4 py-2.5 text-right font-mono tabular text-xs">{r.total_points}</td>
@@ -221,12 +251,23 @@ function RunsTable({ refreshKey }: { refreshKey: number }) {
           detail && (
             <>
               รอบสแกน <span className="font-mono text-sm text-muted">{detail.id}</span>
-              <VerdictBadge verdict={detail.overall_verdict} />
+              <RunVerdict status={detail.status} verdict={detail.overall_verdict} />
             </>
           )
         }
-        subtitle={detail ? `${formatDateTime(detail.created_at)} · ${detail.results?.length ?? 0}/${detail.total_points} จุด · ${detail.is_simulation ? "จำลอง" : "เครื่องจริง"}` : undefined}
+        subtitle={
+          detail
+            ? `${formatDateTime(detail.created_at)} · ${detail.results?.length ?? 0}/${detail.total_points} จุด · ${detail.is_simulation ? "จำลอง" : "เครื่องจริง"}${detail.board_name ? ` · ${detail.board_name}` : ""}${detail.serial ? ` · เลขบอร์ด ${detail.serial}` : ""}`
+            : undefined
+        }
       >
+        {detail && (
+          <div className="mb-3 flex justify-end">
+            <Button size="sm" icon={Printer} onClick={() => setPrinting(detail)}>
+              พิมพ์ / บันทึกเป็น PDF
+            </Button>
+          </div>
+        )}
         {detail?.error_message && <p className="text-sm text-fail mb-3">{detail.error_message}</p>}
         {detail && !detail.is_golden_scan && (
           <div className="mb-4 flex items-center gap-3 flex-wrap rounded-lg border border-line bg-surface-2 px-3 py-2.5">
@@ -270,6 +311,7 @@ function RunsTable({ refreshKey }: { refreshKey: number }) {
         {detail && !detail.results?.length && <EmptyState icon={ImageIcon} title="รอบนี้ไม่มีผลของจุดใด" />}
       </Modal>
       <PointResultModal point={point} onClose={() => setPoint(null)} />
+      {printing && <RunReport run={printing} onDone={() => setPrinting(null)} />}
     </Card>
   );
 }
@@ -368,4 +410,13 @@ function SinglesTable({ refreshKey }: { refreshKey: number }) {
 function TruthBadge({ truth }: { truth?: "good" | "defective" | null }) {
   if (!truth) return null;
   return <Badge tone={truth === "good" ? "pass" : "fail"}>{truth === "good" ? "จริง: ดี" : "จริง: เสีย"}</Badge>;
+}
+
+/** A finished run's verdict; a run that did not finish says so instead (an aborted scan's
+ * partial verdict read as "REVIEW", as if it needed checking). */
+function RunVerdict({ status, verdict }: { status: string; verdict: Verdict }) {
+  if (status === "aborted") return <Badge>หยุดกลางคัน</Badge>;
+  if (status === "error") return <Badge tone="fail">ผิดพลาด</Badge>;
+  if (status === "running") return <Badge tone="info">กำลังสแกน</Badge>;
+  return <VerdictBadge verdict={verdict} />;
 }

@@ -36,6 +36,7 @@ import type {
   Statistics,
   SystemStatus,
   LibraryCatalog,
+  NotifyConfig,
   LibraryCheckJob,
 } from "@/types";
 
@@ -62,6 +63,21 @@ export function setOperatorToken(token: string | null) {
   } catch {
     // Storage unavailable (private mode): the lease simply won't survive a reload.
   }
+}
+
+/** Headers for raw fetch() calls (streams): JSON plus the control token when held. */
+export function authHeaders(extra: Record<string, string> = { "Content-Type": "application/json" }): Record<string, string> {
+  const token = getOperatorToken();
+  return token ? { ...extra, "X-Operator-Token": token } : extra;
+}
+
+/**
+ * A download link (a plain <a href>, so no headers): carries the control token, which an
+ * internet visitor (Tailscale Funnel) needs for exports and downloads.
+ */
+export function withToken(url: string): string {
+  const token = getOperatorToken();
+  return token ? `${url}${url.includes("?") ? "&" : "?"}operator_token=${encodeURIComponent(token)}` : url;
 }
 
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -140,6 +156,12 @@ export const api = {
     unserve: () => request<RemoteAccess>("/api/system/remote-access/serve", { method: "DELETE" }),
   },
   qrUrl: (text: string) => `${API_BASE}/api/system/qr?text=${encodeURIComponent(text)}`,
+  notify: {
+    get: () => request<NotifyConfig>("/api/system/notify"),
+    update: (data: Partial<Omit<NotifyConfig, "telegram_token_set" | "telegram_token_hint" | "webhook_set" | "webhook_hint">> & { telegram_token?: string; webhook_url?: string }) =>
+      request<NotifyConfig>("/api/system/notify", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
+    test: () => post<{ ok: boolean; problems: string[] }>("/api/system/notify/test"),
+  },
   libraries: {
     get: () => request<LibraryCatalog>("/api/system/libraries"),
     check: () => post<LibraryCheckJob>("/api/system/libraries/check"),
@@ -162,6 +184,10 @@ export const api = {
   uploadModel: (file: File) =>
     postForm<{ filename: string; path: string; size_mb: number; message: string }>("/api/system/models/upload", { file }),
 
+  auth: {
+    /** "internet" when this browser comes through Tailscale Funnel. */
+    origin: () => request<{ origin: "local" | "internet" }>("/api/auth/origin"),
+  },
   // Operator lease
   acquireLease: (operator_name: string, passcode: string | undefined, force: boolean) =>
     post<{ success: boolean; operator_token?: string; message: string; lease: ControlLease }>("/api/auth/acquire", {
@@ -221,7 +247,7 @@ export const api = {
     get: (id: string) => request<BoardDetail>(`/api/boards/${encodeURIComponent(id)}`),
     thumb: (id: string, index: number, w: 240 | 480 | 960 = 480, updated = 0, boxes = true) =>
       `${API_BASE}/api/boards/${encodeURIComponent(id)}/points/${index}/thumb.jpg?w=${w}&v=${Math.round(updated)}&r=2${boxes ? "" : "&boxes=false"}`,
-    exportUrl: (id: string) => `${API_BASE}/api/boards/${encodeURIComponent(id)}/export`,
+    exportUrl: (id: string) => withToken(`${API_BASE}/api/boards/${encodeURIComponent(id)}/export`),
     duplicate: (id: string, name?: string) => post<PointSetMeta>(`/api/boards/${encodeURIComponent(id)}/duplicate`, { name }),
     importBoard: (body: unknown) => post<PointSetMeta>("/api/boards/import", body),
   },
@@ -270,16 +296,17 @@ export const api = {
   importDesktopReference: () => post<ReferenceProfile>("/api/references/import-desktop"),
 
   // History
-  listRuns: (verdict: string | undefined, limit: number, offset: number) => {
+  listRuns: (verdict: string | undefined, limit: number, offset: number, search?: string) => {
     const q = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     if (verdict) q.set("verdict", verdict);
+    if (search?.trim()) q.set("q", search.trim());
     return request<{ runs: RunRecord[]; total: number }>(`/api/history/runs?${q}`);
   },
   getRun: (id: string) => request<RunRecord>(`/api/history/runs/${encodeURIComponent(id)}`),
   getStatistics: () => request<Statistics>("/api/history/statistics"),
   performance: (q: { days?: number; sim?: boolean }) =>
     request<PerformanceReport>(`/api/history/performance?${perfQuery(q)}`),
-  performanceExport: (kind: "csv" | "json", q: { days?: number; sim?: boolean }) => `${API_BASE}/api/history/performance/export.${kind}?${perfQuery(q)}`,
+  performanceExport: (kind: "csv" | "json", q: { days?: number; sim?: boolean }) => withToken(`${API_BASE}/api/history/performance/export.${kind}?${perfQuery(q)}`),
   performanceLogUrl: () => `${API_BASE}/api/history/performance/log.jsonl`,
   setGroundTruth: (runId: string, truth: "good" | "defective" | null) =>
     request<{ ground_truth: string | null }>(`/api/history/runs/${encodeURIComponent(runId)}/ground-truth`, {
@@ -336,7 +363,7 @@ export const datasetApi = {
   removeImage: (id: string, file: string) =>
     request<{ success: boolean }>(`/api/datasets/${encodeURIComponent(id)}/images/${encodeURIComponent(file)}`, { method: "DELETE" }),
   imageUrl: (id: string, file: string) => `${API_BASE}/api/storage/datasets/${id}/images/${file}`,
-  downloadUrl: (id: string, valRatio = 0.2) => `${API_BASE}/api/datasets/${encodeURIComponent(id)}/download?val_ratio=${valRatio}`,
+  downloadUrl: (id: string, valRatio = 0.2) => withToken(`${API_BASE}/api/datasets/${encodeURIComponent(id)}/download?val_ratio=${valRatio}`),
 };
 
 export const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));

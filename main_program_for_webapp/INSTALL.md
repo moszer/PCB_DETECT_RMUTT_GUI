@@ -203,7 +203,7 @@ GEMINI_API_KEY=...                   # https://aistudio.google.com/apikey (ผ�
 | Jetson: หน้าเว็บขึ้น CPU แทน CUDA | `backend/venv/bin/python -c "import torch; print(torch.cuda.is_available())"` ถ้าได้ False ให้ลง PyTorch ของ JetPack ตัวเองด้วย `PCB_TORCH_INDEX` |
 | `best.pt` เป็น LFS pointer | รัน `./install.sh` ใหม่ (โหลดจาก Hugging Face แทน) หรือ `git lfs install && git lfs pull` |
 | Jetson ขึ้น *System throttled due to over-current* | ไฟเข้าบอร์ดไม่พอตอนโหลดหนัก: ใช้อะแดปเตอร์ 19V ที่แถมมากับบอร์ด (ไม่ใช่ที่ชาร์จมือถือ) และสายหนา ลดเป็น `sudo nvpmodel -m 1` (25W) ลดความละเอียดกล้องเป็น 1080p ตรวจจำนวนครั้งด้วย `cat /sys/class/hwmon/hwmon*/oc*_event_cnt` |
-| Jetson โปรแกรมหยุดเอง / `Killed` | RAM 8GB เต็ม (ไม่มี swap) เพิ่ม swap: `sudo fallocate -l 8G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile` และอย่าเปิด Firefox บนบอร์ด ใช้เบราว์เซอร์จากเครื่องอื่นผ่านลิงก์ LAN |
+| Jetson โปรแกรมหยุดเอง / `Killed` | RAM 8GB เต็ม (ไม่มี swap) เพิ่ม swap: `sudo scripts/jetson/enable-swap.sh` (8 GB, อยู่ถาวรหลังรีบูต) และอย่าเปิด Firefox บนบอร์ด ใช้เบราว์เซอร์จากเครื่องอื่นผ่านลิงก์ LAN |
 | Jetson เห็น USB ในเทอร์มินัลแต่ไม่มี `/dev/ttyUSB0` (ชิป CH340) | เคอร์เนล JetPack 7 ไม่มีไดรเวอร์ CH340 ต้องคอมไพล์โมดูล `ch341` เอง หรือใช้บอร์ดชิป FTDI/CP2102 |
 | ขึ้น Permission denied ตอนเชื่อมต่อสเตจ | ผู้ใช้ต้องอยู่ในกลุ่ม `dialout` และต้อง logout/login ใหม่ก่อน หรือรัน `sg dialout -c "./run_web.sh --prod"` |
 | โหลดโมเดลจาก Hugging Face ไม่ได้ | เช็คอินเทอร์เน็ต, ชื่อ `PCB_MODEL_REPO`/`PCB_MODEL_FILE` ถ้า repo เป็น private ต้องใส่ `HF_TOKEN` ใน `backend/.env` |

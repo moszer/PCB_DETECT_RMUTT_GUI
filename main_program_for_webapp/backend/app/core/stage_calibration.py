@@ -268,6 +268,45 @@ def measure_offset(
 def solve_grid(
     positions_mm: Sequence[Sequence[float]],
     edges: Sequence[Tuple[int, int, Sequence[float]]],
+    reject: bool = True,
+) -> Dict[str, Any]:
+    """`_solve_grid`, dropping pairs that disagree with the rest (robust).
+
+    Every node is photographed once, so the shifts around any loop of the grid must add up to
+    zero whatever the rail does: a pair that does not fit is a bad match (a featureless or
+    repetitive view, a part standing out of the board plane), not a rail error. The worst
+    pair beyond max(3 px, median + 5·MAD) is dropped and the grid solved again, one at a time.
+    """
+    kept = list(edges)
+    rejected: List[Tuple[int, int, Sequence[float]]] = []
+    sol = _solve_grid(positions_mm, kept)
+    for _ in range(max(1, len(kept) // 4)):
+        if not reject or len(kept) < 8:
+            break
+        u = sol["image_px"]
+        res = np.array([np.hypot(*((u[j] - u[i]) - np.asarray(sv))) if sol["linked"][i] and sol["linked"][j] else 0.0
+                        for i, j, sv in kept])
+        med = float(np.median(res))
+        mad = float(np.median(np.abs(res - med))) * 1.4826
+        worst = int(np.argmax(res))
+        # One pair per round: a bad pair inflates its neighbours' residuals until it is gone.
+        if res[worst] <= max(3.0, med + 5 * mad):
+            break
+        trial = kept[:worst] + kept[worst + 1:]
+        try:
+            sol = _solve_grid(positions_mm, trial)
+        except ValueError:
+            break
+        rejected.append(kept[worst])
+        kept = trial
+    sol["edges_kept"] = kept
+    sol["rejected_edges"] = rejected
+    return sol
+
+
+def _solve_grid(
+    positions_mm: Sequence[Sequence[float]],
+    edges: Sequence[Tuple[int, int, Sequence[float]]],
 ) -> Dict[str, Any]:
     """Node positions in the image from pairwise shifts, and each node's position error.
 
@@ -289,22 +328,27 @@ def solve_grid(
 
     for i, j, _ in edges:
         parent[find(i)] = find(j)
-    linked = np.array([find(i) == find(0) for i in range(n)])
+    # Anchor on the largest group of nodes linked by measured pairs (node 0 may have lost its
+    # pairs to the outlier rejection).
+    roots = [find(i) for i in range(n)]
+    big = max(set(roots), key=roots.count)
+    linked = np.array([r == big for r in roots])
     if linked.sum() < 3:
-        raise ValueError("จับคู่ภาพระหว่างจุดได้น้อยเกินไป — วางบอร์ดที่มีลวดลายให้ครอบคลุมทั้งระยะเคลื่อนที่")
-    idx = {k: m for m, k in enumerate(int(i) for i in np.flatnonzero(linked) if i != 0)}
+        raise ValueError("จับคู่ภาพระหว่างจุดได้น้อยเกินไป — วางแผ่นลายจุดที่พิมพ์ไว้ให้ราบ ครอบคลุมทั้งระยะเคลื่อนที่")
+    anchor = int(np.flatnonzero(linked)[0])
+    idx = {k: m for m, k in enumerate(int(i) for i in np.flatnonzero(linked) if i != anchor)}
     use = [(i, j, s) for i, j, s in edges if linked[i] and linked[j]]
     a = np.zeros((len(use), len(idx)))
     rhs = np.zeros((len(use), 2))
     for e, (i, j, s) in enumerate(use):
-        if j != 0:
+        if j != anchor:
             a[e, idx[j]] += 1
-        if i != 0:
+        if i != anchor:
             a[e, idx[i]] -= 1
         rhs[e] = s
     sol, *_ = np.linalg.lstsq(a, rhs, rcond=None)
     u = np.full((n, 2), np.nan)
-    u[0] = 0.0
+    u[anchor] = 0.0
     for k, m in idx.items():
         u[k] = sol[m]
 
@@ -339,7 +383,7 @@ def map_summary(
     u = sol["image_px"]
     # Local scale: how much farther (or shorter) each move between neighbours really went.
     scale: Dict[Tuple[int, int], List[float]] = {}
-    for i, j, _ in edges:
+    for i, j, _ in sol["edges_kept"]:
         if not (sol["linked"][i] and sol["linked"][j]):
             continue
         d_cmd = c[j] - c[i]
@@ -369,6 +413,7 @@ def map_summary(
         })
     errs = np.array([n["err_um"] for n in nodes if n["err_um"] is not None])
     res = sol["edge_residual_mm"]
+    noise = round(float(np.sqrt(np.mean(np.sum(res ** 2, axis=1)))) * 1000, 1) if len(res) else None
     back = np.array([n["backlash_mm"] for n in nodes if n["backlash_mm"] is not None])
     return {
         "mode": "map",
@@ -379,9 +424,63 @@ def map_summary(
         "rms_um": round(float(np.sqrt(np.mean(errs ** 2))), 1) if len(errs) else None,
         "max_um": round(float(errs.max()), 1) if len(errs) else None,
         # How well the pairwise measurements agree: the noise floor of this map.
-        "noise_um": round(float(np.sqrt(np.mean(np.sum(res ** 2, axis=1)))) * 1000, 1) if len(res) else None,
+        "noise_um": noise,
         "backlash_mean_mm": [round(float(v), 4) for v in back.mean(axis=0)] if len(back) else None,
         "stage_to_image": m.round(4).tolist(),
         "edges": sol["edges_used"],
         "failed_edges": int(failed_edges),
+        "rejected_edges": len(sol["rejected_edges"]),
+        "quality": map_quality(noise, len(sol["rejected_edges"]), sol["edges_used"]),
     }
+
+
+# Loop residual (µm, commanded) below which a map is trustworthy / usable.
+MAP_NOISE_GOOD_UM = 8.0
+MAP_NOISE_FAIR_UM = 25.0
+
+
+def map_quality(noise_um: Optional[float], rejected: int, used: int) -> str:
+    """'good' / 'fair' / 'poor': how far the pairwise measurements agree with each other."""
+    if noise_um is None or used == 0:
+        return "poor"
+    if noise_um <= MAP_NOISE_GOOD_UM and rejected <= 0.1 * (used + rejected):
+        return "good"
+    return "fair" if noise_um <= MAP_NOISE_FAIR_UM else "poor"
+
+
+
+# ── Printable target for the map ─────────────────────────────────────────────
+
+PAPER_MM = {"a4": (210.0, 297.0), "a3": (297.0, 420.0)}
+
+
+def speckle_image(paper: str = "a4", dot_mm: float = 1.0, dpi: int = 300, seed: int = 7) -> np.ndarray:
+    """A random black/white blob pattern to print and lay flat under the camera.
+
+    The map needs a flat, non-repeating texture everywhere the camera looks: a populated board
+    gives tall parts that shift differently from the board as the camera moves (parallax), and
+    a checkerboard repeats (a shift of one square matches as well as the true one). Blobs of
+    two sizes (dot_mm and 3×) keep it textured at any zoom.
+    """
+    w_mm, h_mm = PAPER_MM.get(paper, PAPER_MM["a4"])
+    px_mm = dpi / 25.4
+    w, h = int(round(w_mm * px_mm)), int(round(h_mm * px_mm))
+    rng = np.random.default_rng(seed)
+    field = np.zeros((h, w), np.float32)
+    for size_mm, weight in ((dot_mm, 1.0), (3 * dot_mm, 0.7)):
+        sigma = max(1.0, size_mm * px_mm / 2.5)
+        small = max(1.0, sigma / 2)
+        sh, sw = max(8, int(h / small)), max(8, int(w / small))
+        noise = rng.standard_normal((sh, sw)).astype(np.float32)
+        noise = cv2.GaussianBlur(noise, (0, 0), 2.0)
+        field += weight * cv2.resize(noise, (w, h), interpolation=cv2.INTER_CUBIC) / (noise.std() + 1e-6)
+    img = np.where(field > np.median(field), 255, 0).astype(np.uint8)
+    # Margin with print instructions (outside the pattern).
+    m = int(round(8 * px_mm))
+    img[:m, :] = 255
+    img[-m:, :] = 255
+    img[:, :m] = 255
+    img[:, -m:] = 255
+    text = f"RMUTT AOI - stage map target {paper.upper()} - blob {dot_mm:g} mm - print at 100% / actual size, lay flat, tape down"
+    cv2.putText(img, text, (m, int(m * 0.65)), cv2.FONT_HERSHEY_SIMPLEX, px_mm * 0.28, 0, max(1, int(px_mm * 0.25)), cv2.LINE_AA)
+    return img

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   BarChart3,
   BookMarked,
@@ -9,6 +9,7 @@ import {
   Crosshair,
   Gauge,
   Eye,
+  Globe,
   Image as ImageIcon,
   KeyRound,
   LogOut,
@@ -64,6 +65,13 @@ interface AppShellProps {
 export function AppShell({ tab, onTab, status, socketConnected, onRefreshStatus, theme, onToggleTheme, lease, children }: AppShellProps) {
   const current = NAV.find((n) => n.id === tab)!;
   const [askControl, setAskControl] = useState(false);
+  const [fromInternet, setFromInternet] = useState(false);
+  useEffect(() => {
+    api.auth
+      .origin()
+      .then((o) => setFromInternet(o.origin === "internet"))
+      .catch(() => {});
+  }, []);
   return (
     <div className="h-dvh flex bg-bg text-text">
       {/* Sidebar (md+) */}
@@ -103,15 +111,18 @@ export function AppShell({ tab, onTab, status, socketConnected, onRefreshStatus,
       </aside>
 
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="h-14 shrink-0 flex items-center gap-3 px-4 border-b border-line bg-surface">
+        <header className="h-14 shrink-0 flex items-center gap-2 sm:gap-3 px-3 sm:px-4 border-b border-line bg-surface">
           <div className="min-w-0 flex-1">
             <h1 className="text-[15px] font-semibold leading-tight truncate">{current.label}</h1>
             <p className="hidden sm:block text-[11px] text-muted leading-tight truncate">{current.description}</p>
           </div>
           <StatusChips status={status} />
           <OperatorControl status={status} lease={lease} open={askControl} setOpen={setAskControl} />
-          <OpenOnPhoneButton />
-          <SoundToggle />
+          {/* On a phone the page name needs the room; both are also in Settings. */}
+          <span className="hidden sm:contents">
+            <OpenOnPhoneButton />
+            <SoundToggle />
+          </span>
           <button
             type="button"
             onClick={onToggleTheme}
@@ -127,6 +138,7 @@ export function AppShell({ tab, onTab, status, socketConnected, onRefreshStatus,
         {lease.controlled && !lease.isMine && (
           <ViewOnlyBanner name={status?.control_lease.operator_name} ip={status?.control_lease.client_ip} onRequest={() => setAskControl(true)} />
         )}
+        {fromInternet && !lease.isMine && !(lease.controlled && !lease.isMine) && <InternetBanner onRequest={() => setAskControl(true)} />}
         <main className="flex-1 min-h-0 overflow-hidden pb-16 md:pb-0">{children}</main>
       </div>
 
@@ -229,6 +241,21 @@ function SystemHealth({ status, socketConnected }: { status: SystemStatus | null
 }
 
 /** Someone else holds the station: say so, instead of leaving buttons silently refused. */
+/** Reached over the internet (Tailscale Funnel): looking is open, the rest needs the password. */
+function InternetBanner({ onRequest }: { onRequest: () => void }) {
+  return (
+    <div className="shrink-0 flex items-center gap-2 px-4 py-1.5 border-b border-info/30 bg-info-soft text-info text-xs animate-rise">
+      <Globe className="size-4 shrink-0" />
+      <span className="min-w-0 truncate">
+        <strong className="font-semibold">เข้าจากอินเทอร์เน็ต</strong> · ดูสถานะ ประวัติ และภาพกล้องได้ — ผู้ช่วย AI ตรวจภาพ และดาวน์โหลดข้อมูลต้องใส่รหัสสถานีก่อน
+      </span>
+      <button type="button" onClick={onRequest} className="ml-auto shrink-0 font-semibold underline underline-offset-2 hover:no-underline cursor-pointer">
+        ใส่รหัส
+      </button>
+    </div>
+  );
+}
+
 function ViewOnlyBanner({ name, ip, onRequest }: { name?: string | null; ip?: string | null; onRequest: () => void }) {
   return (
     <div className="shrink-0 flex items-center gap-2 px-4 py-1.5 border-b border-review/40 bg-review-soft text-review text-xs animate-rise">

@@ -447,3 +447,125 @@ input[type="number"]::-webkit-outer-spin-button {
     transition-duration: 1ms !important;
   }
 }
+
+
+/* ── Printed run report (RunReport): only it is on paper ─────────────────── */
+#print-root {
+  display: none;
+}
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+    height: auto !important;
+  }
+  body > *:not(#print-root) {
+    display: none !important;
+  }
+  #print-root {
+    display: block;
+    color: #111;
+    font-size: 11px;
+    line-height: 1.45;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .pr-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 2px solid #111;
+    padding-bottom: 8px;
+    margin-bottom: 10px;
+  }
+  .pr-logo {
+    height: 48px;
+    width: auto;
+  }
+  .pr-title {
+    font-size: 17px;
+    font-weight: 700;
+  }
+  .pr-sub {
+    color: #555;
+  }
+  .pr-verdict {
+    margin-left: auto;
+    border: 3px solid;
+    border-radius: 8px;
+    padding: 4px 14px;
+    font-size: 26px;
+    font-weight: 900;
+    text-align: center;
+    line-height: 1.1;
+  }
+  .pr-verdict span {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .pr-meta,
+  .pr-list {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 10px;
+  }
+  .pr-meta th,
+  .pr-meta td,
+  .pr-list th,
+  .pr-list td {
+    border: 1px solid #ccc;
+    padding: 4px 6px;
+    text-align: left;
+    vertical-align: top;
+  }
+  .pr-meta th,
+  .pr-list th {
+    background: #f1f5f9;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .pr-mono {
+    font-family: ui-monospace, monospace;
+  }
+  .pr-small {
+    font-size: 9px;
+    color: #555;
+  }
+  .pr-h2 {
+    font-size: 13px;
+    font-weight: 700;
+    margin: 10px 0 6px;
+  }
+  .pr-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+  .pr-fig {
+    margin: 0;
+    border: 1px solid #ccc;
+    break-inside: avoid;
+  }
+  .pr-fig img {
+    width: 100%;
+    display: block;
+  }
+  .pr-fig figcaption {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 4px;
+    font-size: 10px;
+  }
+  .pr-foot {
+    margin-top: 10px;
+    color: #666;
+    font-size: 9px;
+    border-top: 1px solid #ccc;
+    padding-top: 4px;
+  }
+}

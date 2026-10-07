@@ -22,6 +22,21 @@ def _walk_pt(root: Path, max_depth: int = MAX_DEPTH) -> Iterable[Path]:
                 yield Path(dirpath) / name
 
 
+def placeholder_reason(path: Path, size: int) -> Optional[str]:
+    """Why a .pt file is not real weights (a Git LFS pointer, an empty file), else None."""
+    if size == 0:
+        return "ไฟล์ว่าง"
+    if size < 1024:
+        try:
+            head = path.read_bytes()[:64]
+        except OSError:
+            return None
+        if head.startswith(b"version https://git-lfs"):
+            return "ไฟล์ Git LFS ที่ยังไม่ได้ดึงจริง (รัน git lfs pull)"
+        return "ไฟล์เล็กเกินกว่าจะเป็นโมเดล"
+    return None
+
+
 def _run_info(weights_file: Path) -> Optional[Dict[str, Any]]:
     """Training metadata when the file lives in <run>/weights/: best mAP from results.csv and args.yaml basics."""
     if weights_file.parent.name != "weights":
@@ -87,6 +102,8 @@ def discover_models(roots: Iterable[Path], extra_dirs: Iterable[str] = ()) -> Li
                 "kind": path.stem if path.stem in ("best", "last") else None,
                 "folder": str(root),
                 "run": run,
+                # Not loadable: listed (so it is clear why it is not usable) but not selectable.
+                "unusable": placeholder_reason(path, stat.st_size),
             })
     # Training runs first (most recently updated run first, best.pt before last.pt), then the rest by name.
     run_updated: Dict[str, float] = {}
@@ -96,6 +113,7 @@ def discover_models(roots: Iterable[Path], extra_dirs: Iterable[str] = ()) -> Li
             run_updated[key] = max(run_updated.get(key, 0.0), m["modified_at"])
     models.sort(
         key=lambda m: (
+            bool(m["unusable"]),
             m["source"] != "run",
             -run_updated.get(str(Path(m["path"]).parent), 0.0),
             m["kind"] != "best",

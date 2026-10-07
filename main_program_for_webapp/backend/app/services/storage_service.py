@@ -127,7 +127,7 @@ class StorageService:
                 cursor.execute("ALTER TABLE point_results ADD COLUMN details_json TEXT")
             # Which machine/model scanned the board, and its real condition (for accuracy / F1).
             run_cols = {r[1] for r in cursor.execute("PRAGMA table_info(runs)")}
-            for col in ("host", "device", "model", "ground_truth"):
+            for col in ("host", "device", "model", "ground_truth", "serial", "board_name"):
                 if col not in run_cols:
                     cursor.execute(f"ALTER TABLE runs ADD COLUMN {col} TEXT")
             # Startup recovery for F18: mark interrupted runs as aborted
@@ -220,8 +220,8 @@ class StorageService:
                     id, status, is_simulation, is_golden_scan, reference_id,
                     created_at, completed_at, overall_verdict, total_points,
                     pass_count, fail_count, review_count, error_count,
-                    plan_json, error_message, host, device, model
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    plan_json, error_message, host, device, model, serial, board_name
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 report.id, report.status, int(report.is_simulation), int(report.is_golden_scan),
                 report.reference_id, report.created_at, report.completed_at, report.overall_verdict,
@@ -230,6 +230,8 @@ class StorageService:
                 socket.gethostname(),
                 inference_service.device_info.label if inference_service.device_info else None,
                 Path(inference_service.model_path or "").name or None,
+                (report.plan.serial or "").strip() or None,
+                (report.plan.board_name or "").strip() or None,
             ))
             conn.commit()
         self.atomic_save_report_json(report)
@@ -336,29 +338,25 @@ class StorageService:
         self,
         verdict: Optional[str] = None,
         limit: int = 50,
-        offset: int = 0
+        offset: int = 0,
+        search: Optional[str] = None,
     ) -> Tuple[List[Dict[str, Any]], int]:
+        """Runs, newest first; `search` matches the board serial, board name or run id."""
+        where, params = [], []
+        if verdict:
+            where.append("overall_verdict = ?")
+            params.append(verdict)
+        if search and search.strip():
+            like = f"%{search.strip()}%"
+            where.append("(serial LIKE ? OR board_name LIKE ? OR id LIKE ?)")
+            params += [like, like, like]
+        clause = f" WHERE {' AND '.join(where)}" if where else ""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            query = "SELECT * FROM runs"
-            params = []
-            if verdict:
-                query += " WHERE overall_verdict = ?"
-                params.append(verdict)
-            query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
-            params.extend([limit, offset])
-
-            cursor.execute(query, params)
+            cursor.execute(f"SELECT * FROM runs{clause} ORDER BY created_at DESC LIMIT ? OFFSET ?", params + [limit, offset])
             runs = [dict(r) for r in cursor.fetchall()]
-
-            count_query = "SELECT COUNT(*) FROM runs"
-            count_params = []
-            if verdict:
-                count_query += " WHERE overall_verdict = ?"
-                count_params.append(verdict)
-            cursor.execute(count_query, count_params)
+            cursor.execute(f"SELECT COUNT(*) FROM runs{clause}", params)
             total = cursor.fetchone()[0]
-
             return (runs, total)
 
     # ── Single Inspection Querying ──
@@ -479,12 +477,14 @@ class StorageService:
             output = io.StringIO()
             writer = csv.writer(output)
             writer.writerow([
-                "Run ID", "Status", "Verdict", "Simulation", "Golden Scan",
+                "Run ID", "Serial", "Board", "Status", "Verdict", "Simulation", "Golden Scan",
                 "Total Points", "Pass", "Fail", "Review", "Error", "Created At"
             ])
             for r in rows:
+                keys = r.keys()
                 writer.writerow([
-                    r["id"], r["status"], r["overall_verdict"],
+                    r["id"], r["serial"] if "serial" in keys else "", r["board_name"] if "board_name" in keys else "",
+                    r["status"], r["overall_verdict"],
                     "Yes" if r["is_simulation"] else "No",
                     "Yes" if r["is_golden_scan"] else "No",
                     r["total_points"], r["pass_count"], r["fail_count"],

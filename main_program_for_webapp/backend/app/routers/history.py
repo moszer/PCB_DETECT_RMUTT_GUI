@@ -16,8 +16,9 @@ router = APIRouter(prefix="/api/history", tags=["history"])
 
 
 @router.get("/runs")
-def list_runs(verdict: Optional[str] = None, limit: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0)):
-    runs, total = storage_service.list_runs(verdict=verdict, limit=limit, offset=offset)
+def list_runs(verdict: Optional[str] = None, limit: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0),
+              q: Optional[str] = Query(None, max_length=64)):
+    runs, total = storage_service.list_runs(verdict=verdict, limit=limit, offset=offset, search=q)
     return {"runs": runs, "total": total, "limit": limit, "offset": offset}
 
 

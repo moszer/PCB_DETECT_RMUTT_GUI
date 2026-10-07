@@ -484,3 +484,49 @@ def library_check_status():
     from ..services.library_service import library_service
 
     return library_service.job()
+
+
+
+class NotifyUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    telegram_token: Optional[str] = Field(None, max_length=200)
+    telegram_chat_id: Optional[str] = Field(None, max_length=80)
+    webhook_url: Optional[str] = Field(None, max_length=600)
+    on_fail: Optional[bool] = None
+    on_error: Optional[bool] = None
+    fail_streak: Optional[int] = Field(None, ge=0, le=50)
+    yield_below_pct: Optional[float] = Field(None, ge=0, le=100)
+    yield_window: Optional[int] = Field(None, ge=3, le=500)
+    send_photo: Optional[bool] = None
+    include_simulation: Optional[bool] = None
+
+
+@router.get("/notify")
+def notify_config():
+    """Scan alert settings (Telegram / webhook); secrets are masked."""
+    from ..services import notify_service
+
+    return notify_service.config()
+
+
+@router.put("/notify")
+def update_notify(req: NotifyUpdate, x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token")):
+    from ..services import notify_service
+
+    if not lease_manager.is_operator(x_operator_token):
+        raise HTTPException(status_code=403, detail="ต้องขอสิทธิ์ควบคุมสถานี (รหัสผ่าน) ก่อนแก้การแจ้งเตือน")
+    try:
+        return notify_service.update(req.model_dump(exclude_none=True))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/notify/test")
+def test_notify(x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token")):
+    """Send a test message to every configured channel."""
+    from ..services import notify_service
+
+    if not lease_manager.is_operator(x_operator_token):
+        raise HTTPException(status_code=403, detail="ต้องขอสิทธิ์ควบคุมสถานี (รหัสผ่าน) ก่อน")
+    problems = notify_service.send_test()
+    return {"ok": not problems, "problems": problems}

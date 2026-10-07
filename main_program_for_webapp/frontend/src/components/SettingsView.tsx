@@ -11,6 +11,7 @@ import { RemoteAccessPanel } from "./RemoteAccess";
 import { StageCalibrationCard } from "./StageCalibrationCard";
 import { StraightenCard } from "./StraightenCard";
 import { StageSoundCard } from "./StageSoundCard";
+import { NotifyCard } from "./NotifyCard";
 import { useSoundPrefs } from "@/hooks/useSound";
 import { setThreePrefs, useThreePrefs, webglAvailable } from "@/lib/three/prefs";
 import { sfx } from "@/lib/sound";
@@ -251,6 +252,8 @@ export function SettingsView({ onRefreshStatus, isOperator }: { onRefreshStatus:
         <ThreeCard />
 
         <StageSoundCard isOperator={isOperator} />
+
+        <NotifyCard isOperator={isOperator} />
 
         <Card>
           <CardHeader icon={Building2} title="ข้อมูลสถานี" />

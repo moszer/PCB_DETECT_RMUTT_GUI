@@ -169,6 +169,10 @@ class ScanPlanRequest(BaseModel):
     speed: int = Field(800, ge=20, le=1500)
     settle_sec: float = Field(0.5, ge=0, le=30)
     custom_points: Optional[List[CustomPointRequest]] = None
+    # Traceability: which physical board was scanned (typed or read by a barcode scanner),
+    # and the name of the taught board (point set) it was scanned with.
+    serial: Optional[str] = Field(None, max_length=64)
+    board_name: Optional[str] = Field(None, max_length=200)
 
 
     @model_validator(mode="after")

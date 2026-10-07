@@ -87,6 +87,12 @@ app.add_middleware(
     expose_headers=["X-Frame-Timestamp", "X-Camera-Mock"],
 )
 
+# Internet visitors (Tailscale Funnel) may look but not use the AI, inspect or download data
+# without the station password (see core.access).
+from .core.access import internet_guard  # noqa: E402
+
+app.middleware("http")(internet_guard)
+
 # Mount static file route for image assets
 # Only public assets: never expose settings (passcode), SQLite or model files.
 for asset_dir in ("uploads", "runs", "references", "datasets"):

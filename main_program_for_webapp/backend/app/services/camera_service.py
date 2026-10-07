@@ -33,6 +33,12 @@ class CameraService:
     # Live previews kept per client; a new one ends the oldest. Browsers allow only 6
     # connections per host, so leaked <img> streams used to block every other API call.
     MAX_STREAMS_PER_CLIENT = 2
+    # With no live view open and nobody asking for frames for this long, frames are still
+    # pulled from the camera (so the next one is fresh) but decoded only IDLE_DECODE_SEC apart:
+    # decoding 4K MJPEG continuously kept one CPU core busy for nothing.
+    IDLE_AFTER_SEC = 8.0
+    KEEPALIVE_SEC = 2.0
+    IDLE_DECODE_SEC = 1.0
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -63,6 +69,8 @@ class CameraService:
         self._actual_fps: float = 0.0
         self._fps_count: int = 0
         self._fps_timer: float = 0.0
+        self._demand: float = time.monotonic()
+        self._last_decode: float = 0.0
         self._is_mock = False
         # None = not chosen yet: the first start() picks the preferred camera by name.
         self._device_index: Optional[int] = None
@@ -316,8 +324,10 @@ class CameraService:
         """Shape a camera frame to the output size (cameras rarely offer e.g. 640x640 natively).
 
         fit:  center-crop to the output aspect ratio, then resize (same field of view).
-        crop: cut exactly `size` from the center with no resize (1:1 pixels). Falls back to
-              fit when the frame is smaller than the requested size.
+        crop: cut exactly `size` from the center with no resize (1:1 pixels). When the frame
+              is smaller than that, the largest centred cut of the same shape — never an
+              upscale: 3840x3840 asked of a 3840x2160 camera used to stretch a 2160x2160 cut
+              to 3840x3840 (no more detail, 3x the work for everything downstream).
         """
         if not size:
             return frame
@@ -325,9 +335,11 @@ class CameraService:
         h, w = frame.shape[:2]
         if (w, h) == (out_w, out_h):
             return frame
-        if mode == "crop" and w >= out_w and h >= out_h:
-            x, y = (w - out_w) // 2, (h - out_h) // 2
-            return frame[y:y + out_h, x:x + out_w].copy()
+        if mode == "crop":
+            k = min(1.0, w / out_w, h / out_h)
+            cw, ch = int(out_w * k), int(out_h * k)
+            x, y = (w - cw) // 2, (h - ch) // 2
+            return frame[y:y + ch, x:x + cw].copy()
         target = out_w / out_h
         if w / h > target:
             crop_w, crop_h = int(round(h * target)), h
@@ -343,9 +355,20 @@ class CameraService:
             frame = None
 
             if cap is not None and cap.isOpened():
-                ret, raw_frame = cap.read()
+                if self._idle(now):
+                    # Keep the camera's buffer drained (fresh frames on demand) without decoding.
+                    if not cap.grab():
+                        time.sleep(0.02)
+                        continue
+                    self._count_frame(now)
+                    if now - self._last_decode < self.IDLE_DECODE_SEC:
+                        continue
+                    ret, raw_frame = cap.retrieve()
+                else:
+                    ret, raw_frame = cap.read()
                 if ret and raw_frame is not None:
                     frame = raw_frame
+                    self._last_decode = now
                 else:
                     time.sleep(0.02)
                     continue
@@ -375,19 +398,30 @@ class CameraService:
                     self._latest_frame = frame
                     self._latest_jpeg = jpeg_bytes
                     self._latest_timestamp = time.monotonic()
-                    self._fps_count += 1
-                    elapsed = now - self._fps_timer
-                    if elapsed >= 1.0:
-                        self._actual_fps = self._fps_count / elapsed
-                        self._fps_count = 0
-                        self._fps_timer = now
+                if not (cap is not None and self._idle(now)):
+                    self._count_frame(now)
+
+    def _idle(self, now: float) -> bool:
+        return not self._streams and now - self._demand > self.IDLE_AFTER_SEC
+
+    def _count_frame(self, now: float) -> None:
+        """Frames the camera delivered per second (decoded or not)."""
+        with self._lock:
+            self._fps_count += 1
+            elapsed = now - self._fps_timer
+            if elapsed >= 1.0:
+                self._actual_fps = self._fps_count / elapsed
+                self._fps_count = 0
+                self._fps_timer = now
 
     def get_latest_frame(self, raw: bool = False) -> Tuple[Optional[float], Optional[np.ndarray]]:
         """Get the most recently captured frame and its timestamp.
 
         Straightened by settings.camera_rotate_deg unless `raw` (motion checks don't need it);
         the rotated copy is cached per frame, as several callers may ask for the same one.
+        Wakes the camera from idle (see IDLE_AFTER_SEC) and then waits for a just-decoded frame.
         """
+        self._wake()
         with self._lock:
             if self._latest_frame is None:
                 return (None, None)
@@ -403,6 +437,23 @@ class CameraService:
         with self._lock:
             self._rotated = (ts, angle, out)
         return (ts, out.copy())
+
+    def _wake(self) -> None:
+        """Somebody wants frames: full rate from now; if the camera was idle, the last decoded
+        frame may be up to IDLE_DECODE_SEC old, so wait (briefly) for the next one."""
+        now = time.monotonic()
+        was_idle = self._running and not self._is_mock and self._idle(now)
+        self._demand = now
+        if not was_idle:
+            return
+        with self._lock:
+            before = self._latest_timestamp
+        deadline = now + 0.6
+        while time.monotonic() < deadline and self._running:
+            with self._lock:
+                if self._latest_timestamp > before:
+                    return
+            time.sleep(0.01)
 
     def wait_until_still(self, after_timestamp: float, should_stop=None, max_wait_sec: Optional[float] = None) -> Dict[str, Any]:
         """Anti-shake: block until the picture stops moving after a stage move (see core.stabilize).
@@ -470,7 +521,10 @@ class CameraService:
             self._unregister_stream(flag)
 
     async def _mjpeg_frames(self, max_fps: int, flag: Dict[str, bool]) -> AsyncGenerator[bytes, None]:
+        """Each new camera frame once (resending the same picture at max_fps cost ~4x the
+        bandwidth at 6 fps); the last one again every KEEPALIVE_SEC so proxies keep the line."""
         interval = 1.0 / max_fps
+        sent_ts, sent_at = None, 0.0
 
         while not flag["stop"]:
             if not self._running:
@@ -480,9 +534,11 @@ class CameraService:
                     break
 
             with self._lock:
-                jpeg = self._latest_jpeg
+                jpeg, ts = self._latest_jpeg, self._latest_timestamp
 
-            if jpeg is not None:
+            now = time.monotonic()
+            if jpeg is not None and (ts != sent_ts or now - sent_at >= self.KEEPALIVE_SEC):
+                sent_ts, sent_at = ts, now
                 yield (
                     b"--frame\r\n"
                     b"Content-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"

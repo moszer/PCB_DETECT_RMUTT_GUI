@@ -24,6 +24,14 @@ class LeaseResponse(BaseModel):
     lease: ControlLease
 
 
+@router.get("/origin")
+def request_origin_info(request: Request):
+    """Whether this browser reaches the station from the internet (Funnel) or locally."""
+    from ..core.access import request_origin
+
+    return {"origin": request_origin(request)}
+
+
 @router.get("/lease", response_model=ControlLease)
 def get_lease():
     """Get the current control lease status (publicly visible info only)."""

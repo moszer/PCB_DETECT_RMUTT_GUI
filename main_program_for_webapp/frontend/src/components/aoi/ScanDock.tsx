@@ -24,6 +24,8 @@ export interface DockActions {
   teachReason: string | null;
   teachProgress: { current: number; total: number } | null;
   frames: number | null;
+  /** Serial number / barcode field shown next to the start button. */
+  serial?: React.ReactNode;
 }
 
 type Tile = {
@@ -93,6 +95,7 @@ export function ScanDock({
         ) : (
           actions && (
             <>
+              {actions.serial && <div className="w-full sm:w-64">{actions.serial}</div>}
               <Button variant="primary" size="lg" icon={Play} disabled={actions.startReason !== null} reason={actions.startReason} onClick={actions.onStart}>
                 {actions.startReason ?? `เริ่มตรวจ ${points.length} จุด`}
                 {actions.frames && actions.startReason === null ? (

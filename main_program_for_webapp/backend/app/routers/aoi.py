@@ -316,6 +316,30 @@ def checkerboard_png(cols: int = 9, rows: int = 6, square_mm: float = 5.0):
     return Response(buf.getvalue(), media_type="image/png", headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
+@router.get("/calibration/speckle.{fmt}")
+def speckle_target(fmt: str, paper: str = "a4", dot_mm: float = 1.0):
+    """Flat random-blob target for the whole-travel map (PDF prints at exact size)."""
+    import io
+
+    from fastapi.responses import Response
+    from PIL import Image
+
+    from ..core.stage_calibration import PAPER_MM, speckle_image
+
+    if fmt not in ("pdf", "png") or paper not in PAPER_MM or not 0.3 <= dot_mm <= 5:
+        raise HTTPException(status_code=400, detail="fmt pdf|png, paper a4|a3, dot_mm 0.3-5")
+    img = Image.fromarray(speckle_image(paper, dot_mm))
+    buf = io.BytesIO()
+    if fmt == "pdf":
+        img.convert("1").save(buf, format="PDF", resolution=300.0)
+        media = "application/pdf"
+    else:
+        img.save(buf, format="PNG", dpi=(300, 300))
+        media = "image/png"
+    name = f"stage_map_target_{paper}_{dot_mm:g}mm.{fmt}"
+    return Response(buf.getvalue(), media_type=media, headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
 @router.post("/calibration/start")
 def start_calibration(
     req: CalibrationRequest,

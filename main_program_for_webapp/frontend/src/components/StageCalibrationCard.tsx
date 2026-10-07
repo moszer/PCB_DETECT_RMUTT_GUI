@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Box, Download, Grid3x3, Map as MapIcon, Play, Ruler, Square, Wand2 } from "lucide-react";
+import { AlertTriangle, Box, Download, Grid3x3, Map as MapIcon, Play, Ruler, Square, Wand2 } from "lucide-react";
 import type { StageAxisCalibration, StageCalibrationResult, StageCalibrationStatus, StageMapResult } from "@/types";
 import { API_BASE, api } from "@/lib/api";
 import { Button, Card, CardHeader, Field, NumberInput, Segmented, Stat, Toggle, buttonClasses, cx } from "./ui";
@@ -178,8 +178,29 @@ function RailMapResults({ map }: { map: StageMapResult }) {
   const show3d = use3d && view === "3d";
   const worstNode = map.nodes.filter((n) => n.measured).sort((a, b) => (b.err_um ?? 0) - (a.err_um ?? 0))[0];
   const bl = map.backlash_mean_mm;
+  const quality = map.quality ?? ((map.noise_um ?? 999) <= 8 ? "good" : (map.noise_um ?? 999) <= 25 ? "fair" : "poor");
   return (
     <div className="flex flex-col gap-3">
+      {quality !== "good" && (
+        <div
+          className={cx(
+            "rounded-lg border px-3 py-2 text-xs flex items-start gap-1.5",
+            quality === "poor" ? "border-fail/40 bg-fail-soft text-fail" : "border-review/40 bg-review-soft text-review"
+          )}
+        >
+          <AlertTriangle className="size-3.5 shrink-0 mt-0.5" />
+          <span>
+            {quality === "poor" ? (
+              <>
+                <strong>ผลนี้เชื่อถือไม่ได้</strong> — ภาพแต่ละคู่ไม่ลงกันถึง ±{map.noise_um} µm (ควรได้ไม่กี่ µm) ตัวเลขด้านล่างจึงมาจากการวัด ไม่ใช่จากราง
+                มักเกิดจากวัดบนบอร์ดที่มีชิ้นส่วนสูง หรือบางจุดอยู่นอกแผ่น — วัดใหม่บนแผ่นลายจุดที่พิมพ์วางราบ
+              </>
+            ) : (
+              <>ผลพอใช้ — ภาพแต่ละคู่ไม่ลงกัน ±{map.noise_um} µm ความคลาดเคลื่อนที่น้อยกว่านี้แยกจากการวัดไม่ได้ วัดบนแผ่นลายจุดจะแม่นกว่า</>
+            )}
+          </span>
+        </div>
+      )}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <Stat label="คลาดเคลื่อนเฉลี่ย (RMS)" value={map.rms_um !== null ? `${map.rms_um} µm` : "–"} tone={(map.rms_um ?? 0) > RAIL_GOOD_UM ? "review" : "pass"} />
         <Stat
@@ -207,6 +228,7 @@ function RailMapResults({ map }: { map: StageMapResult }) {
       <p className="text-[11px] text-subtle">
         วัดเมื่อ {new Date(map.time * 1000).toLocaleString("th-TH")} · {map.grid[0]}×{map.grid[1]} จุด · ความคลาดเคลื่อนคือส่วนที่เหลือหลังหักเส้นตรงที่ดีที่สุดของทั้งราง (สเกลและมุมรวมของแกนแก้ได้ด้วย steps/mm และการหมุนภาพ ส่วนนี้คือความไม่สม่ำเสมอของรางและเฟือง)
         {map.failed_edges > 0 && ` · จับคู่ภาพไม่ได้ ${map.failed_edges} คู่`}
+        {(map.rejected_edges ?? 0) > 0 && ` · ตัดคู่ที่ไม่ลงกันกับจุดอื่น ${map.rejected_edges} คู่`}
       </p>
     </div>
   );
@@ -309,8 +331,11 @@ export function StageCalibrationCard({ isOperator }: { isOperator: boolean }) {
       />
       <div className="p-4 flex flex-col gap-4">
         <ol className="text-xs text-muted list-decimal pl-4 space-y-0.5">
-          <li>วางบอร์ดที่มีลวดลาย (หรือ checkerboard) ไว้บนสเตจ ให้เต็มภาพกล้องและยึดไม่ให้ขยับ</li>
-          <li>HOME แล้วเลื่อนสเตจไปกลางบอร์ดในหน้าสแกน — ระบบจะเดินทดสอบรอบตำแหน่งนี้ ±3 mm</li>
+          <li>
+            วางแผ่นลายจุดที่พิมพ์ไว้ (ด้านล่าง) หรือ checkerboard ให้ราบบนฐาน เต็มภาพกล้อง และติดเทปไม่ให้ขยับ — บอร์ดที่มีชิ้นส่วนสูงใช้ได้แต่ค่าจะเพี้ยน
+            (กล้องเลื่อน ชิ้นที่สูงจะเลื่อนในภาพต่างจากผิวบอร์ด)
+          </li>
+          <li>HOME แล้วเลื่อนสเตจไปกลางแผ่นในหน้าสแกน — ระบบจะเดินทดสอบรอบตำแหน่งนี้ ±2 mm</li>
           <li>กดเริ่ม ใช้เวลาราว 1–2 นาที ระหว่างนั้นห้ามแตะเครื่อง</li>
         </ol>
 
@@ -372,8 +397,20 @@ export function StageCalibrationCard({ isOperator }: { isOperator: boolean }) {
               <div className="text-sm font-medium">แผนที่ความแม่นยำทั้งราง</div>
               <p className="text-[11px] text-muted mt-0.5">
                 เดินเป็นตารางทั่วทั้งระยะเคลื่อนที่ ถ่ายภาพทุกจุดแล้วต่อภาพจุดข้างเคียงกัน (เหมือนต่อภาพพาโนรามา) เพื่อหาว่าแต่ละตำแหน่งบนรางไปถึงจริงคลาดไปเท่าไหร่ และ backlash
-                ที่แต่ละจุด — ต้องวางบอร์ดที่มีลวดลายให้ครอบคลุมทั้งระยะเคลื่อนที่ และต้อง calibrate แบบด้านบนก่อน ใช้เวลาราว 3–8 นาที
+                ที่แต่ละจุด — ต้อง calibrate แบบด้านบนก่อน ใช้เวลาราว 3–8 นาที
               </p>
+              <p className="text-[11px] text-review mt-1">
+                ต้องวัดบนแผ่นลายจุดที่พิมพ์วางราบให้คลุมทุกที่ที่กล้องเห็นตลอดระยะเดิน (A3 หรือ A4 สองแผ่นต่อกัน) — บนบอร์ดจริงชิ้นส่วนที่สูงทำให้ภาพไม่ลงกัน
+                (parallax) และลายซ้ำๆ อย่าง checkerboard จับคู่ผิดช่องได้ จุดที่อยู่นอกแผ่นจะถูกตัดทิ้งอัตโนมัติ
+              </p>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {(["a3", "a4"] as const).map((paper) => (
+                  <a key={paper} className={buttonClasses("secondary", "sm")} href={`${API_BASE}/api/aoi/calibration/speckle.pdf?paper=${paper}`} download>
+                    <Download className="size-3.5" /> แผ่นลายจุด {paper.toUpperCase()} (PDF)
+                  </a>
+                ))}
+                <span className="text-[11px] text-subtle self-center">พิมพ์ขนาดจริง 100% · ห้ามย่อให้พอดีหน้า</span>
+              </div>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">

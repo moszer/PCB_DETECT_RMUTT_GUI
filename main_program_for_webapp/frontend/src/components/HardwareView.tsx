@@ -130,7 +130,7 @@ export function HardwareView({ isOperator }: { isOperator: boolean }) {
                 <Meter
                   label="Swap"
                   value={mem.swap_total_mb ? (mem.swap_used_mb / mem.swap_total_mb) * 100 : 0}
-                  text={mem.swap_total_mb ? `${gb(mem.swap_used_mb)} / ${gb(mem.swap_total_mb)} GB` : "ไม่มี swap — ถ้า RAM เต็มโปรแกรมจะถูกปิด (ดู INSTALL.md)"}
+                  text={mem.swap_total_mb ? `${gb(mem.swap_used_mb)} / ${gb(mem.swap_total_mb)} GB` : "ไม่มี swap — ถ้า RAM เต็มโปรแกรมจะถูกปิด · เพิ่มด้วย sudo scripts/jetson/enable-swap.sh"}
                   warn={!mem.swap_total_mb}
                 />
               </div>

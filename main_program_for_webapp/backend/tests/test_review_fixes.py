@@ -336,10 +336,13 @@ class CameraCropModeTests(unittest.TestCase):
         self.assertEqual(out.shape, (640, 640, 3))
         self.assertEqual(int(out[320, 320, 0]), 255)  # 1:1 — the pixel survives undiluted
 
-    def test_crop_mode_falls_back_to_fit_on_small_frames(self):
+    def test_crop_mode_never_upscales_small_frames(self):
+        # The largest centred cut of the asked shape, at 1:1 pixels (stretching adds no detail).
         from app.services.camera_service import CameraService
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        self.assertEqual(CameraService._fit_output(frame, (640, 640), "crop").shape, (640, 640, 3))
+        self.assertEqual(CameraService._fit_output(frame, (640, 640), "crop").shape, (480, 480, 3))
+        big = np.zeros((2160, 3840, 3), dtype=np.uint8)
+        self.assertEqual(CameraService._fit_output(big, (3840, 3840), "crop").shape, (2160, 2160, 3))
 
     def test_api_reports_capture_and_mode(self):
         from conftest import operator_headers
@@ -485,10 +488,13 @@ class CameraCropModeTests(unittest.TestCase):
         self.assertEqual(out.shape, (640, 640, 3))
         self.assertEqual(int(out[320, 320, 0]), 255)  # 1:1 — the pixel survives undiluted
 
-    def test_crop_mode_falls_back_to_fit_on_small_frames(self):
+    def test_crop_mode_never_upscales_small_frames(self):
+        # The largest centred cut of the asked shape, at 1:1 pixels (stretching adds no detail).
         from app.services.camera_service import CameraService
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        self.assertEqual(CameraService._fit_output(frame, (640, 640), "crop").shape, (640, 640, 3))
+        self.assertEqual(CameraService._fit_output(frame, (640, 640), "crop").shape, (480, 480, 3))
+        big = np.zeros((2160, 3840, 3), dtype=np.uint8)
+        self.assertEqual(CameraService._fit_output(big, (3840, 3840), "crop").shape, (2160, 2160, 3))
 
     def test_api_reports_capture_and_mode(self):
         from conftest import operator_headers

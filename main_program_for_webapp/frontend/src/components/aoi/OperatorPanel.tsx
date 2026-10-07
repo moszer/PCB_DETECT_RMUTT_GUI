@@ -5,6 +5,7 @@ import { Play, Square } from "lucide-react";
 import type { AOIRunReport } from "@/types";
 import { VERDICT_LABEL, VERDICT_TONE } from "@/lib/format";
 import { Button, cx } from "../ui";
+import { SerialInput } from "./SerialInput";
 
 /**
  * Operator mode: pick a board, press one big button, read one big verdict.
@@ -17,6 +18,8 @@ export function OperatorPanel({
   startReason,
   onStart,
   onStop,
+  serial,
+  onSerial,
 }: {
   report: AOIRunReport | null;
   pointCount: number;
@@ -25,6 +28,9 @@ export function OperatorPanel({
   startReason: string | null;
   onStart: () => void;
   onStop: () => void;
+  /** Serial number / barcode of the board about to be scanned. */
+  serial: string;
+  onSerial: (v: string) => void;
 }) {
   const running = report?.status === "running";
   const total = report ? report.total_points || report.points.length || 1 : pointCount;
@@ -76,6 +82,10 @@ export function OperatorPanel({
         )}
       </div>
 
+      {!running && (
+        <SerialInput size="lg" value={serial} onChange={onSerial} onEnter={startReason === null ? onStart : undefined} autoFocus />
+      )}
+      {running && report?.plan.serial && <div className="text-center text-sm font-mono text-muted">บอร์ด {report.plan.serial}</div>}
       {running ? (
         <Button variant="danger" size="lg" icon={Square} className="h-16! text-lg rounded-xl" block onClick={onStop}>
           หยุดสแกน
@@ -94,7 +104,7 @@ export function OperatorPanel({
           {startReason ?? (finished ? "ตรวจบอร์ดถัดไป" : "เริ่มตรวจบอร์ด")}
         </Button>
       )}
-      <p className="text-xs text-muted text-center">ผลของแต่ละจุดแสดงเป็นภาพย่อใต้ภาพกล้อง กดเพื่อดูรายละเอียด</p>
+      <p className="text-xs text-muted text-center">ผลของแต่ละจุดแสดงเป็นภาพย่อใต้ภาพกล้อง กดเพื่อดูรายละเอียด · ยิงบาร์โค้ดที่ช่องเลขบอร์ดแล้วเริ่มตรวจได้ทันที</p>
     </div>
   );
 }

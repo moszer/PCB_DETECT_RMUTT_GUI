@@ -13,6 +13,7 @@ import math
 from ..config import RUNS_DIR, settings
 from ..core.stabilize import motion_px, small_gray
 from .board_alignment import PointAligner, apply_pose, check_limits, estimate_board_pose
+from . import notify_service
 from ..core.inspection import (
     digital_zoom,
     draw_annotated_image,
@@ -696,6 +697,7 @@ class AOIScanService:
                             report.overall_verdict = "PASS"
 
                     storage_service.finalize_run(report)
+                    notify_service.on_run_finished(report)
                     self._broadcast_progress({
                         "event": "complete",
                         "run_id": report.id,
@@ -718,6 +720,7 @@ class AOIScanService:
                 report.overall_verdict = "ERROR"
                 report.error_message = str(exc)
                 storage_service.finalize_run(report)
+            notify_service.on_run_finished(report)
 
             self._broadcast_progress({
                 "event": "error",

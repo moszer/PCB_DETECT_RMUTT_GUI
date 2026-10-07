@@ -138,6 +138,9 @@ export interface ScanPlanRequest {
   settle_sec: number;
   custom_points?: CustomPointRequest[];
   imgsz?: number;
+  /** Serial number / barcode of the scanned board, and the taught board's name. */
+  serial?: string;
+  board_name?: string;
 }
 
 export interface ScanPoint {
@@ -339,6 +342,9 @@ export interface RunRecord {
   model?: string | null;
   /** The board's real condition, marked by hand (for board-level accuracy / F1). */
   ground_truth?: "good" | "defective" | null;
+  serial?: string | null;
+  board_name?: string | null;
+  plan?: ScanPlanRequest;
 }
 
 type TimingStat = { mean: number; std: number; median: number; p95: number; min: number; max: number; n: number } | null;
@@ -433,6 +439,8 @@ export interface ModelFile {
   source?: "run" | "project" | "custom";
   kind?: "best" | "last" | null;
   folder?: string;
+  /** Why the file is not loadable (Git LFS pointer, empty), when it is not. */
+  unusable?: string | null;
   /** Present when the file sits in an Ultralytics run folder (<run>/weights/). */
   run?: {
     run: string;
@@ -665,6 +673,10 @@ export interface StageMapResult {
   backlash_mean_mm: [number, number] | null;
   edges: number;
   failed_edges: number;
+  /** Pairs dropped because they disagreed with the rest of the grid. */
+  rejected_edges?: number;
+  /** How well the pairs agree: good (≤ 8 µm), fair (≤ 25 µm), poor. */
+  quality?: "good" | "fair" | "poor";
   time: number;
 }
 
@@ -836,4 +848,21 @@ export interface LibraryCatalog {
     python: { installed: number; direct: number; updates: Record<UpdateKind, number>; mismatched: string[] };
     node: { installed: number; direct: number; updates: Record<UpdateKind, number> };
   };
+}
+
+/** Scan alerts (Telegram / webhook); secrets only as hints. */
+export interface NotifyConfig {
+  enabled: boolean;
+  telegram_chat_id: string;
+  on_fail: boolean;
+  on_error: boolean;
+  fail_streak: number;
+  yield_below_pct: number;
+  yield_window: number;
+  send_photo: boolean;
+  include_simulation: boolean;
+  telegram_token_set: boolean;
+  telegram_token_hint: string | null;
+  webhook_set: boolean;
+  webhook_hint: string | null;
 }

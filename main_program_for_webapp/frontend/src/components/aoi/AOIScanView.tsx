@@ -42,6 +42,7 @@ import { JogOverlay } from "./JogOverlay";
 import { WorkflowSteps, type StepKey, type WorkflowStep } from "./WorkflowSteps";
 import { OperatorPanel } from "./OperatorPanel";
 import { ShortcutHelp } from "./ShortcutHelp";
+import { SerialInput } from "./SerialInput";
 import { useThreePrefs } from "@/lib/three/prefs";
 
 // three.js loads only when the 3D view is opened.
@@ -172,6 +173,8 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [pickedGridRef, setGridReferenceId] = useState("");
   const [snapping, setSnapping] = useState(false);
+  // Serial number / barcode of the board about to be scanned (traceability in history).
+  const [serial, setSerial] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
   const [tourManual, setTourManual] = useState(false);
   const shutter = () => sfx.shutter();
@@ -326,7 +329,10 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
   const startScan = async (plan: Parameters<typeof api.startScan>[0]["plan"], isGolden: boolean, referenceId?: string) => {
     try {
       setPick(null);
-      await api.startScan({ ...params, plan, isGolden, referenceId });
+      const board_name = board?.name ?? undefined;
+      await api.startScan({ ...params, plan: { ...plan, serial: serial.trim() || undefined, board_name }, isGolden, referenceId });
+      // The next board gets its own serial (a barcode scanner fills it again).
+      setSerial("");
       // Watching the scan on the 3D twin is a reason to have opened it: keep it.
       setViewMode((m) => (m === "twin" ? m : "split"));
       onRefreshStatus();
@@ -626,7 +632,8 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)] overflow-y-auto lg:overflow-hidden">
         {/* ── Left: tools ── */}
-        <aside className="border-b lg:border-b-0 lg:border-r border-line bg-surface flex flex-col lg:min-h-0">
+        {/* Below lg the camera comes first: on a phone it was under the whole tool panel. */}
+        <aside className="order-2 lg:order-none border-t lg:border-t-0 lg:border-r border-line bg-surface flex flex-col lg:min-h-0">
           <div className="p-3 border-b border-line flex flex-col gap-3">
             <div data-tour="mode">
               <Segmented
@@ -676,6 +683,8 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
                   }}
                 />
                 <OperatorPanel
+                  serial={serial}
+                  onSerial={setSerial}
                   report={report}
                   pointCount={points.length}
                   currentName={scanning ? (progress?.name ?? null) : null}
@@ -759,7 +768,7 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
         </aside>
 
         {/* ── Right: camera + results ── */}
-        <section className="min-h-[560px] lg:min-h-0 p-3 flex flex-col gap-3">
+        <section className="order-1 lg:order-none min-h-[560px] lg:min-h-0 p-3 flex flex-col gap-3">
           <div className="flex items-center gap-2 flex-wrap mx-auto w-full" style={fit ? { maxWidth: Math.max(fit.total, 480) } : undefined}>
             <Segmented
               size="sm"
@@ -879,6 +888,7 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
                         teachReason: stageReason,
                         teachProgress,
                         frames: params.multiframeEnabled ? params.targetFrames : null,
+                        serial: <SerialInput value={serial} onChange={setSerial} onEnter={startReason === null ? startPointScan : undefined} />,
                       }
                 }
               />

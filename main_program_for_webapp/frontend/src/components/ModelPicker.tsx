@@ -127,10 +127,13 @@ export function ModelPicker({ onRefreshStatus }: { onRefreshStatus: () => void }
       <li key={m.path}>
         <button
           type="button"
-          disabled={active || !!loadingModel}
+          disabled={active || !!loadingModel || !!m.unusable}
           onClick={() => choose(m.path)}
-          title={m.path}
-          className={cx("w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors", active ? "bg-accent-soft" : "hover:bg-surface-2 cursor-pointer")}
+          title={m.unusable ? `${m.path} — ${m.unusable}` : m.path}
+          className={cx(
+            "w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors",
+            active ? "bg-accent-soft" : m.unusable ? "opacity-50 cursor-not-allowed" : "hover:bg-surface-2 cursor-pointer"
+          )}
         >
           <span className={cx("size-4 rounded-full border-2 grid place-items-center shrink-0", active ? "border-accent bg-accent" : "border-line-strong")}>
             {active && <Check className="size-2.5 text-on-accent" strokeWidth={4} />}
@@ -139,6 +142,7 @@ export function ModelPicker({ onRefreshStatus }: { onRefreshStatus: () => void }
             <span className="flex items-center gap-1.5 text-sm font-medium">
               <span className="truncate">{m.filename}</span>
               {m.kind === "last" && <Badge>last</Badge>}
+              {m.unusable && <Badge tone="review">ใช้ไม่ได้: {m.unusable}</Badge>}
               {top && (
                 <Badge tone="pass">
                   <Trophy className="size-3" /> ดีที่สุด

@@ -339,6 +339,50 @@ class MapMathTests(unittest.TestCase):
         np.testing.assert_allclose(sol["error_mm"], affine_residual_mm(cmds, phys), atol=1e-4)  # 0.1 µm
         self.assertLess(np.abs(sol["edge_residual_mm"]).max(), 1e-9)
 
+    def test_bad_pairs_are_dropped(self):
+        """A mis-matched pair (e.g. a view off the target) must not bend the whole map."""
+        cols, rows = 5, 4
+        cmds = [(2 + 8 * c, 3 + 9 * r) for r in range(rows) for c in range(cols)]
+        phys = [rail_error(p) for p in cmds]
+        u = [map_shift(p) for p in phys]
+        edges = []
+        for r in range(rows):
+            for c in range(cols):
+                k = r * cols + c
+                for j in ([k - 1] if c else []) + ([k - cols] if r else []):
+                    edges.append((j, k, np.subtract(u[k], u[j])))
+        edges[5] = (edges[5][0], edges[5][1], edges[5][2] + np.array([60.0, -25.0]))  # a 1.6 mm mis-lock
+        out = map_summary(cols, rows, cmds, edges, [None] * len(cmds))
+        self.assertEqual(out["rejected_edges"], 1)
+        self.assertEqual(out["quality"], "good")
+        got = np.array([n["err_mm"] for n in sorted(out["nodes"], key=lambda n: (n["row"], n["col"]))])
+        want = affine_residual_mm(cmds, phys)
+        # map_summary lists nodes in visiting (serpentine) order; compare by position instead.
+        by_pos = {(n["x_mm"], n["y_mm"]): n["err_mm"] for n in out["nodes"]}
+        got = np.array([by_pos[(round(float(x), 3), round(float(y), 3))] for x, y in cmds])
+        self.assertLess(np.abs(got - want).max(), 0.001)
+        self.assertLess(out["noise_um"], 1.0)
+
+    def test_inconsistent_maps_are_graded_poor(self):
+        from app.core.stage_calibration import map_quality
+
+        self.assertEqual(map_quality(231.0, 4, 140), "poor")
+        self.assertEqual(map_quality(12.0, 2, 140), "fair")
+        self.assertEqual(map_quality(2.0, 1, 140), "good")
+
+    def test_printable_speckle_target(self):
+        from app.core.stage_calibration import speckle_image
+
+        img = speckle_image("a4", 1.0)
+        self.assertEqual(img.shape, (3508, 2480))  # A4 at 300 dpi
+        a, b = img[400:1400, 400:1400], img[537:1537, 711:1711]
+        dx, dy, resp = measure_offset(cv2.cvtColor(a, cv2.COLOR_GRAY2BGR), cv2.cvtColor(b, cv2.COLOR_GRAY2BGR), (-300, -130))
+        self.assertAlmostEqual(dx, -311, delta=0.05)
+        self.assertAlmostEqual(dy, -137, delta=0.05)
+        res = TestClient(app).get("/api/aoi/calibration/speckle.pdf")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.headers["content-type"], "application/pdf")
+
     def test_disconnected_nodes_are_reported_unmeasured(self):
         cmds = [(0, 0), (5, 0), (5, 5), (0, 5)]
         u = [map_shift(p) for p in cmds]

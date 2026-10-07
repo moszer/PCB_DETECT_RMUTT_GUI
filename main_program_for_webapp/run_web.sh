@@ -172,7 +172,9 @@ took() { (( $1 > 0 )) && echo " ${D}· ${1}s${N}" || true; }
 section "Starting"
 [[ $ANIM -eq 1 ]] || echo "  ${D}…${N} backend  (FastAPI + YOLO) on port $BACKEND_PORT"
 cd "$PROJECT_DIR/backend"
-venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" --log-level warning > >(tidy) 2>&1 &
+# Keep-alive longer than the web server's proxy reuses idle connections: at uvicorn's default
+# 5 s, Next sometimes reused a socket uvicorn had just closed (ECONNRESET → HTTP 500 on /api).
+venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" --log-level warning --timeout-keep-alive 75 > >(tidy) 2>&1 &
 BACKEND_PID=$!
 wait_ready "$BACKEND_PID" "http://127.0.0.1:$BACKEND_PORT/api/system/status" Backend "backend (FastAPI + YOLO) starting on port $BACKEND_PORT"
 ok "backend ready (pid $BACKEND_PID)$(took $READY_SECS)"
