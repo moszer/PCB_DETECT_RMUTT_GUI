@@ -194,7 +194,7 @@ function Station() {
           {tab === "references" && (
             <BoardsView references={references} onRefreshReferences={refreshReferences} onOpenBoard={() => setTab("aoi")} isOperator={lease.isMine} />
           )}
-          {tab === "history" && <HistoryView />}
+          {tab === "history" && <HistoryView isOperator={lease.isMine} />}
           {tab === "hardware" && <HardwareView isOperator={lease.isMine} />}
           {tab === "libraries" && <LibrariesView />}
           {tab === "settings" && <SettingsView onRefreshStatus={refreshStatus} isOperator={lease.isMine} />}

@@ -160,6 +160,57 @@ def _send(text: str, photo: Optional[str] = None, details: Optional[Dict[str, An
     return problems
 
 
+def _send_file(name: str, content: bytes, caption: str, mime: str = "text/csv") -> List[str]:
+    """A file to Telegram (sendDocument); webhooks get the caption only (they take JSON)."""
+    data = _load()
+    problems: List[str] = []
+    token, chat = os.environ.get(TOKEN_VAR), data.get("telegram_chat_id")
+    if token and chat:
+        try:
+            r = httpx.post(f"https://api.telegram.org/bot{token}/sendDocument", data={"chat_id": chat, "caption": caption[:1000]},
+                           files={"document": (name, content, mime)}, timeout=30.0)
+            if r.status_code != 200:
+                problems.append(f"Telegram: {r.json().get('description', r.status_code) if r.headers.get('content-type', '').startswith('application/json') else r.status_code}")
+        except Exception as exc:
+            problems.append(f"Telegram: {exc}")
+    hook = os.environ.get(WEBHOOK_VAR)
+    if hook:
+        try:
+            r = httpx.post(hook, json={"text": caption, "content": caption[:1900], "event": "history"}, timeout=TIMEOUT)
+            if r.status_code >= 300:
+                problems.append(f"Webhook: HTTP {r.status_code}")
+        except Exception as exc:
+            problems.append(f"Webhook: {exc}")
+    if not (token and chat) and not hook:
+        problems.append("ยังไม่ได้ตั้งค่าช่องทาง (Telegram bot + chat ID หรือ webhook)")
+    return problems
+
+
+def history_summary() -> str:
+    """Production yield in a few lines (the caption sent with the history file)."""
+    from .storage_service import storage_service
+
+    st = storage_service.get_statistics()
+    lines = [
+        f"📊 ประวัติการสแกน · {settings.station_name}",
+        f"บอร์ดผลิต {st.get('total_runs', 0)} บอร์ด · ผ่าน {st.get('pass_runs', 0)} · ไม่ผ่าน {st.get('fail_runs', 0)}",
+        f"Yield บอร์ด {st.get('board_yield_rate', 0)}% · Yield จุด {st.get('point_yield_rate', 0)}%",
+        f"รอตรวจซ้ำ {st.get('review_runs', 0)} · จำลอง {st.get('simulation_runs', 0)} · ต้นแบบ {st.get('golden_runs', 0)} รอบ",
+        time.strftime("ส่งเมื่อ %Y-%m-%d %H:%M", time.localtime()),
+    ]
+    return "\n".join(lines)
+
+
+def send_history() -> List[str]:
+    """Every scan run as a CSV file (serial, board, verdict, counts, time) plus the yield summary."""
+    from .storage_service import storage_service
+
+    csv_text = storage_service.export_runs_csv()
+    name = time.strftime("aoi_history_%Y%m%d_%H%M.csv", time.localtime())
+    # UTF-8 BOM: Excel opens Thai board names correctly.
+    return _send_file(name, ("\ufeff" + csv_text).encode("utf-8"), history_summary())
+
+
 def send_test() -> List[str]:
     return _send(f"🔔 ทดสอบการแจ้งเตือนจากสถานี {settings.station_name} — ถ้าเห็นข้อความนี้ การแจ้งเตือนใช้ได้แล้ว",
                  details={"event": "test", "station": settings.station_name})

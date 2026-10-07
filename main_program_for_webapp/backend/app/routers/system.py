@@ -530,3 +530,14 @@ def test_notify(x_operator_token: Optional[str] = Header(None, alias="X-Operator
         raise HTTPException(status_code=403, detail="ต้องขอสิทธิ์ควบคุมสถานี (รหัสผ่าน) ก่อน")
     problems = notify_service.send_test()
     return {"ok": not problems, "problems": problems}
+
+
+@router.post("/notify/send-history")
+def send_history_to_chat(x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token")):
+    """Send the whole scan history (CSV) and the yield summary to the configured channels."""
+    from ..services import notify_service
+
+    if not lease_manager.is_operator(x_operator_token):
+        raise HTTPException(status_code=403, detail="ต้องขอสิทธิ์ควบคุมสถานี (รหัสผ่าน) ก่อนส่งประวัติออกไป")
+    problems = notify_service.send_history()
+    return {"ok": not problems, "problems": problems}

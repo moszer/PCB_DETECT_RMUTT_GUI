@@ -43,6 +43,7 @@ SYSTEM_PROMPT = f"""คุณคือผู้ช่วย AI ของสถ�
 เว็บแอปมีหน้าต่างๆ: {json.dumps(PAGES, ensure_ascii=False)}
 - ถ้าคำถามต้องใช้ข้อมูล ให้เรียกเครื่องมือก่อนตอบ (เรียกได้หลายตัว/หลายรอบ)
 - ถามเบอร์/ยี่ห้อของ IC หรือตัวอักษรบนชิ้น ให้เรียก list_scan_runs แล้ว read_part_markings (ต้องระบุ run_id; ถ้าผู้ใช้ไม่ระบุรอบ ใช้รอบล่าสุด) แล้วสรุปเบอร์ที่อ่านได้พร้อมบอกว่าชิปนั้นคืออะไรจากความรู้ของคุณ บอกด้วยว่า OCR อาจผิดบางตัวอักษร
+- Telegram / webhook: สถานีมีระบบแจ้งเตือนผลสแกนอัตโนมัติ (หน้า settings การ์ด “แจ้งเตือนผลสแกน”: FAIL, สแกนผิดพลาด, FAIL ติดกัน, yield ตก) และปุ่ม “ส่งเข้า Telegram” ในหน้า history ที่ส่งประวัติทั้งหมด (ไฟล์ CSV + สรุป yield) — คุณส่งข้อความออกไปเองไม่ได้ ถ้าถูกขอให้ส่ง ให้เรียก get_notifications ดูว่าตั้งค่าไว้หรือยัง แล้ว navigate ไปหน้า history และบอกให้กดปุ่มนั้น (ถ้ายังไม่ได้ตั้งค่า ให้ไปหน้า settings)
 - "บอร์ด" ที่บันทึกไว้คือชุดจุดตรวจที่ตั้งชื่อในหน้าสแกน AOI (list_boards / get_board) — การเปิดบอร์ดหรือแก้บอร์ดต้องทำเองที่หน้า aoi
 - ถ้าผู้ใช้ขอให้ไป/เปิดหน้าใด หรือคำตอบจะดูต่อได้ดีที่หน้าใด ให้เรียก navigate
 - ถ้าถูกขอให้สรุปภาพรวม/ทุกอย่าง/สถานะเครื่อง ให้เรียก get_full_snapshot ครั้งเดียวก่อน แล้วสรุปเป็นหมวด (สถานะ สแกน สเตจ กล้อง ความแม่นยำราง ฮาร์ดแวร์ การตั้งค่าสำคัญ ปัญหาที่ควรแก้) ชี้จุดผิดปกติให้ชัด เช่น ยังไม่ HOME, backlash สูงแต่ยังไม่เปิดชดเชย, ไม่มีผล calibrate, คำเตือน GPU/หน่วยความจำ, อุณหภูมิสูง
@@ -574,6 +575,7 @@ def get_full_snapshot() -> Dict[str, Any]:
         "statistics": safe(get_statistics),
         "hardware": hw_brief,
         "settings": safe(get_settings),
+        "notifications": safe(get_notifications),
         "recent_warnings": safe(lambda: get_recent_events("WARNING", 8)["events"]),
     }
 
@@ -608,6 +610,21 @@ def get_libraries() -> Dict[str, Any]:
     }
 
 
+def get_notifications() -> Dict[str, Any]:
+    """Scan alert settings (Telegram / webhook) — whether set up and which rules, no secrets."""
+    from . import notify_service
+
+    c = notify_service.config()
+    return {
+        "enabled": c["enabled"],
+        "telegram_ready": bool(c["telegram_token_set"] and c["telegram_chat_id"]),
+        "webhook_ready": c["webhook_set"],
+        "rules": {k: c[k] for k in ("on_fail", "on_error", "fail_streak", "yield_below_pct", "yield_window", "send_photo", "include_simulation")},
+        "send_history": "หน้า history ปุ่ม “ส่งเข้า Telegram” (ต้องมีสิทธิ์ควบคุมสถานี)",
+        "settings_where": "หน้า settings การ์ด “แจ้งเตือนผลสแกน”",
+    }
+
+
 def navigate(page: str) -> Dict[str, Any]:
     if page not in PAGES:
         return {"ok": False, "error": f"unknown page; use one of {list(PAGES)}"}
@@ -631,6 +648,7 @@ TOOLS: Dict[str, Callable[..., Any]] = {
     "get_settings": get_settings,
     "get_hardware": get_hardware,
     "get_libraries": get_libraries,
+    "get_notifications": get_notifications,
     "get_full_snapshot": get_full_snapshot,
     "get_stage_calibration": get_stage_calibration,
     "get_stage_errors": get_stage_errors,
@@ -683,6 +701,7 @@ DECLARATIONS = [
                                                      "limit": {"type": "integer", "description": "จำนวน (1-200, ค่าเริ่ม 30)"}}}},
     {"name": "get_hardware", "description": "ประสิทธิภาพเครื่องสด: การใช้งาน/ความถี่ CPU แต่ละคอร์, GPU, RAM, อุณหภูมิ, พลังงาน (W), พัดลม (%/rpm), โหมดพลังงาน Jetson, over-current — ใช้เมื่อถามว่าเครื่องร้อน/ช้า/กินไฟ/พัดลม"},
     {"name": "get_libraries", "description": "ไลบรารีทั้งหมดที่สถานีใช้ (Python, JavaScript, ระบบ: CUDA/cuDNN/OpenCV/Node ฯลฯ) พร้อมเวอร์ชัน และรุ่นใหม่ที่มีจากการเช็กล่าสุด — ใช้เมื่อถามเวอร์ชัน/ต้องอัปเดตไหม"},
+    {"name": "get_notifications", "description": "การแจ้งเตือนผลสแกนเข้า Telegram/webhook: ตั้งค่าแล้วหรือยัง เงื่อนไขที่เปิด และวิธีส่งประวัติเข้า Telegram — ใช้เมื่อถามเรื่อง Telegram/แจ้งเตือน/ส่งข้อมูลออก"},
     {"name": "navigate", "description": "พาผู้ใช้ไปหน้าในเว็บแอป",
      "parameters": {"type": "object", "properties": {"page": {"type": "string", "enum": list(PAGES)}}, "required": ["page"]}},
 ]
@@ -691,7 +710,7 @@ TOOL_LABELS = {
     "get_station_status": "ดูสถานะสถานี", "get_statistics": "ดูสถิติ Yield", "list_scan_runs": "ดูรายการรอบสแกน",
     "get_scan_run": "ดูผลรอบสแกน", "read_part_markings": "อ่านตัวอักษรบนชิ้น (OCR)", "list_single_inspections": "ดูการตรวจภาพเดี่ยว", "list_reference_profiles": "ดูโปรไฟล์อ้างอิง",
     "get_reference_profile": "ดูรายละเอียดโปรไฟล์", "list_datasets": "ดูชุดข้อมูล", "get_dataset": "ดูรายละเอียดชุดข้อมูล",
-    "list_models": "ดูรายการโมเดล", "list_boards": "ดูบอร์ดที่บันทึกไว้", "get_board": "ดูรายละเอียดบอร์ด", "get_settings": "ดูการตั้งค่า", "get_hardware": "ดูประสิทธิภาพเครื่อง", "get_libraries": "ดูไลบรารีและอัปเดต", "navigate": "เปิดหน้า",
+    "list_models": "ดูรายการโมเดล", "list_boards": "ดูบอร์ดที่บันทึกไว้", "get_board": "ดูรายละเอียดบอร์ด", "get_settings": "ดูการตั้งค่า", "get_hardware": "ดูประสิทธิภาพเครื่อง", "get_libraries": "ดูไลบรารีและอัปเดต", "get_notifications": "ดูการแจ้งเตือน Telegram", "navigate": "เปิดหน้า",
     "get_full_snapshot": "ดูภาพรวมทั้งระบบ", "get_stage_calibration": "ดูผล calibrate ราง", "get_stage_errors": "ดูความคลาดเคลื่อนราง",
     "get_scan_progress": "ดูความคืบหน้าสแกน", "get_camera": "ดูสถานะกล้อง", "get_motion": "ดูสถานะสเตจ/เฟิร์มแวร์",
     "get_access": "ดูสิทธิ์ควบคุม/การเข้าถึง", "get_recent_events": "ดู log ล่าสุด",

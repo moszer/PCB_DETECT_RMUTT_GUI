@@ -161,6 +161,7 @@ export const api = {
     update: (data: Partial<Omit<NotifyConfig, "telegram_token_set" | "telegram_token_hint" | "webhook_set" | "webhook_hint">> & { telegram_token?: string; webhook_url?: string }) =>
       request<NotifyConfig>("/api/system/notify", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
     test: () => post<{ ok: boolean; problems: string[] }>("/api/system/notify/test"),
+    sendHistory: () => post<{ ok: boolean; problems: string[] }>("/api/system/notify/send-history"),
   },
   libraries: {
     get: () => request<LibraryCatalog>("/api/system/libraries"),

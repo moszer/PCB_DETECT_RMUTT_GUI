@@ -264,3 +264,36 @@ class ShutdownTests(unittest.TestCase):
                 signal.signal(s, h)
             shutdown.shutting_down.clear()
             shutdown._installed = False
+
+
+class SendHistoryTests(unittest.TestCase):
+    def test_history_goes_as_a_csv_file_with_the_summary(self):
+        import os
+
+        cfg = ns.CONFIG_FILE.with_name("notify.hist.json")
+        env = ns.CONFIG_FILE.with_name("env.hist")
+        with patch.object(ns, "CONFIG_FILE", cfg):
+            try:
+                ns.update({"telegram_token": "123456789:" + "C" * 35, "telegram_chat_id": "42"}, env_path=env)
+                ok = MagicMock(status_code=200, headers={"content-type": "application/json"})
+                with patch.object(ns.httpx, "post", return_value=ok) as post:
+                    self.assertEqual(ns.send_history(), [])
+                call = post.call_args
+                self.assertTrue(call.args[0].endswith("/sendDocument"))
+                name, content, mime = call.kwargs["files"]["document"]
+                self.assertTrue(name.endswith(".csv"))
+                self.assertIn(b"Run ID", content)
+                self.assertIn("Yield", call.kwargs["data"]["caption"])
+                # Needs the station password.
+                self.assertEqual(TestClient(app).post("/api/system/notify/send-history").status_code, 403)
+            finally:
+                cfg.unlink(missing_ok=True)
+                env.unlink(missing_ok=True)
+                os.environ.pop(ns.TOKEN_VAR, None)
+
+    def test_agent_knows_about_telegram(self):
+        from app.services import agent_service
+
+        self.assertIn("get_notifications", agent_service.TOOLS)
+        self.assertIn("ส่งเข้า Telegram", agent_service.SYSTEM_PROMPT)
+        self.assertIn("telegram_ready", agent_service.get_notifications())

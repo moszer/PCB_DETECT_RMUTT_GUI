@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { Barcode, ChevronLeft, ChevronRight, Download, FlaskConical, History, Image as ImageIcon, Printer, RotateCw, ScanLine, Search } from "lucide-react";
+import { Barcode, ChevronLeft, ChevronRight, Download, FlaskConical, History, Image as ImageIcon, Printer, RotateCw, ScanLine, Search, Send } from "lucide-react";
 import type { AOIPointResult, RunRecord, SingleInspectionRecord, Statistics, Verdict } from "@/types";
 import { API_BASE, api, withToken } from "@/lib/api";
 import { fileName, formatDateTime } from "@/lib/format";
@@ -15,10 +15,33 @@ import { RunReport } from "./RunReport";
 
 const PAGE = 50;
 
-export function HistoryView() {
+export function HistoryView({ isOperator = false }: { isOperator?: boolean }) {
   const [tab, setTab] = useState<"aoi" | "single" | "perf">("aoi");
   const [stats, setStats] = useState<Statistics | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [chatReady, setChatReady] = useState(false);
+  const [sending, setSending] = useState(false);
+  const toast = useToast();
+
+  useEffect(() => {
+    api.notify
+      .get()
+      .then((c) => setChatReady((c.telegram_token_set && !!c.telegram_chat_id) || c.webhook_set))
+      .catch(() => {});
+  }, []);
+
+  const sendHistory = async () => {
+    setSending(true);
+    try {
+      const r = await api.notify.sendHistory();
+      if (r.ok) toast.success("ส่งประวัติแล้ว", "ไฟล์ CSV ทุกรอบสแกนพร้อมสรุป yield");
+      else toast.error("ส่งไม่สำเร็จ", r.problems.join(" · "));
+    } catch (err) {
+      toast.error("ส่งไม่สำเร็จ", err);
+    } finally {
+      setSending(false);
+    }
+  };
 
   useEffect(() => {
     api.getStatistics().then(setStats).catch(() => undefined);
@@ -52,6 +75,17 @@ export function HistoryView() {
             <Button icon={RotateCw} variant="ghost" onClick={() => setRefreshKey((k) => k + 1)}>
               รีเฟรช
             </Button>
+            {tab === "aoi" && (
+              <Button
+                icon={Send}
+                loading={sending}
+                disabled={!chatReady || !isOperator}
+                reason={!chatReady ? "ยังไม่ได้ตั้งค่า Telegram — ตั้งค่าสถานี › แจ้งเตือนผลสแกน" : !isOperator ? "ต้องขอสิทธิ์ควบคุมสถานีก่อน" : null}
+                onClick={sendHistory}
+              >
+                ส่งเข้า Telegram
+              </Button>
+            )}
             {tab !== "perf" && (
               <a href={exportUrl} className={buttonClasses("secondary", "md")}>
                 <Download className="size-4" />
