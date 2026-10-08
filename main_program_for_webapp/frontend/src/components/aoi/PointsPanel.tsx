@@ -20,6 +20,11 @@ interface PointsPanelProps {
   stagePosition: [number, number] | null;
   /** Travel limits (mm). */
   limits: [number, number];
+  /** Point the stage is travelling to right now (go-to or a scan's move), and where it is. */
+  travelIndex?: number | null;
+  livePosition?: [number, number] | null;
+  /** Point just reached (a short "arrived" flash). */
+  arrivedIndex?: number | null;
   onMark: () => void;
   onMove: (index: number) => void;
   onEditReference: (index: number) => void;
@@ -85,8 +90,17 @@ export function PointsPanel(p: PointsPanelProps) {
               const parts = pt.expected_components?.length ?? 0;
               const moving = p.movingIndex === i;
               const live = p.scanningIndex === i;
+              const travelling = p.travelIndex === i && !!p.livePosition;
+              const arrived = p.arrivedIndex === i;
               return (
-                <li key={pt.id ?? i} className={cx("transition-colors animate-rise", active || live ? "bg-accent-soft" : "hover:bg-surface-2")}>
+                <li
+                  key={pt.id ?? i}
+                  className={cx(
+                    "relative transition-colors",
+                    active || live ? "bg-accent-soft" : "hover:bg-surface-2",
+                    arrived ? "animate-arrive" : "animate-rise"
+                  )}
+                >
                   <div className="flex items-center gap-2 px-2.5 py-2 cursor-pointer" onClick={() => p.onSelect(i)}>
                     <span
                       className={cx(
@@ -114,8 +128,15 @@ export function PointsPanel(p: PointsPanelProps) {
                         {formatMm(pt.x_mm)}, {formatMm(pt.y_mm)} mm · {pt.zoom || 1}×
                       </div>
                     </div>
-                    {parts ? <Badge tone="info">{parts} ชิ้น</Badge> : <Badge tone="review">ไม่มีต้นแบบ</Badge>}
+                    {arrived ? (
+                      <Badge tone="pass">ถึงแล้ว</Badge>
+                    ) : parts ? (
+                      <Badge tone="info">{parts} ชิ้น</Badge>
+                    ) : (
+                      <Badge tone="review">ไม่มีต้นแบบ</Badge>
+                    )}
                   </div>
+                  {travelling && <TravelIndicator target={[pt.x_mm, pt.y_mm]} position={p.livePosition!} />}
                   {active && (
                     <div className="flex items-center gap-1 px-2.5 pb-2 flex-wrap">
                       <Button size="sm" icon={moving ? undefined : Navigation} loading={moving} disabled={p.markReason !== null} onClick={() => p.onMove(i)}>
@@ -231,6 +252,34 @@ function PositionEditor({
         <Button size="sm" variant="primary" disabled={!inside || moved < 0.005} onClick={() => onSave(Math.round(x * 100) / 100, Math.round(y * 100) / 100)}>
           บันทึกตำแหน่ง
         </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The stage on its way to this point: how far it has come (from where it was when the move
+ * started) with a moving shimmer, the distance still to go, and a pulsing marker.
+ */
+function TravelIndicator({ target, position }: { target: [number, number]; position: [number, number] }) {
+  // Where the move started: the position when this indicator appeared.
+  const [from] = useState<[number, number]>(position);
+  const total = Math.hypot(target[0] - from[0], target[1] - from[1]);
+  const left = Math.hypot(target[0] - position[0], target[1] - position[1]);
+  const done = total > 0.01 ? Math.min(1, Math.max(0, 1 - left / total)) : 1;
+  return (
+    <div className="px-2.5 pb-2" aria-live="polite">
+      <div className="flex items-center gap-2 text-[11px] text-accent font-medium mb-1">
+        <span className="relative flex size-2.5">
+          <span className="absolute inline-flex size-full rounded-full bg-accent opacity-60 animate-ping" />
+          <span className="relative inline-flex size-2.5 rounded-full bg-accent" />
+        </span>
+        <Navigation className="size-3 animate-travel" />
+        <span>กำลังไปที่จุดนี้</span>
+        <span className="ml-auto font-mono tabular text-muted">เหลือ {formatMm(left)} mm</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-surface-3 overflow-hidden">
+        <div className="h-full rounded-full bg-accent bg-stripes animate-stripes transition-[width] duration-300 ease-linear" style={{ width: `${Math.max(4, done * 100)}%` }} />
       </div>
     </div>
   );

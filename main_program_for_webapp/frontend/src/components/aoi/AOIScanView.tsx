@@ -169,6 +169,8 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
   const [liveZoom, setLiveZoom] = useState(1);
   const [marking, setMarking] = useState(false);
   const [movingIndex, setMovingIndex] = useState<number | null>(null);
+  const [arrivedIndex, setArrivedIndex] = useState<number | null>(null);
+  const arrivedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [teachProgress, setTeachProgress] = useState<{ current: number; total: number } | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [pickedGridRef, setGridReferenceId] = useState("");
@@ -227,6 +229,9 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
     setLiveZoom(pt.zoom || 1);
     try {
       await moveTo(pt.x_mm, pt.y_mm);
+      setArrivedIndex(index);
+      clearTimeout(arrivedTimer.current);
+      arrivedTimer.current = setTimeout(() => setArrivedIndex(null), 1600);
     } finally {
       setMovingIndex(null);
     }
@@ -726,6 +731,9 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
                           toast.success(`ย้าย${points[i]?.name ? ` “${points[i].name}”` : "จุด"} ไป (${formatMm(x_mm)}, ${formatMm(y_mm)}) mm แล้ว`);
                         }}
                         stagePosition={machine?.connected && machine.homed ? machine.position_mm : null}
+                        travelIndex={movingIndex ?? (report?.plan.plan_mode === "custom" && progress?.event === "point_start" ? scanningIndex : null)}
+                        livePosition={machine?.connected ? machine.position_mm : null}
+                        arrivedIndex={arrivedIndex}
                         limits={machine?.soft_limits_mm ?? [38, 38]}
                         onSetPointZoom={(i, zoom) => {
                           updatePoint(i, { zoom });

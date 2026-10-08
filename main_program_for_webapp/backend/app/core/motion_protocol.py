@@ -208,7 +208,9 @@ class MotionClient:
             if self.closed:
                 return
             now = self.clock()
-            if now >= self.transmit_after and now - self.last_ping >= 1.0:
+            # Position 4x a second while moving (live progress / 3D view), once a second idle.
+            interval = 0.25 if self.ready and self.pending else 1.0
+            if now >= self.transmit_after and now - self.last_ping >= interval:
                 self._write("POS" if self.ready else "HELLO")
                 self.last_ping = now
             if not self.ready and now - self.started > 8.0:
