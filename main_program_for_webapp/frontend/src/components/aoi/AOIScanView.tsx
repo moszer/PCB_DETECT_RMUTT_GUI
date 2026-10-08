@@ -721,6 +721,12 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
                         }}
                         zoom={liveZoom}
                         onRename={(i, name) => updatePoint(i, { name })}
+                        onSetPosition={(i, x_mm, y_mm) => {
+                          updatePoint(i, { x_mm, y_mm });
+                          toast.success(`ย้าย${points[i]?.name ? ` “${points[i].name}”` : "จุด"} ไป (${formatMm(x_mm)}, ${formatMm(y_mm)}) mm แล้ว`);
+                        }}
+                        stagePosition={machine?.connected && machine.homed ? machine.position_mm : null}
+                        limits={machine?.soft_limits_mm ?? [38, 38]}
                         onSetPointZoom={(i, zoom) => {
                           updatePoint(i, { zoom });
                           setLiveZoom(zoom);

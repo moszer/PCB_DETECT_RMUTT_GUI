@@ -1,10 +1,10 @@
 "use client";
 
-import React from "react";
-import { Crosshair, MapPin, Navigation, Plus, Trash2 } from "lucide-react";
+import React, { useState } from "react";
+import { Crosshair, LocateFixed, MapPin, Move, Navigation, Plus, Trash2 } from "lucide-react";
 import type { CustomPointRequest } from "@/types";
 import { formatMm } from "@/lib/format";
-import { Badge, Button, EmptyState, SectionLabel, cx } from "../ui";
+import { Badge, Button, EmptyState, NumberInput, SectionLabel, cx } from "../ui";
 
 interface PointsPanelProps {
   points: CustomPointRequest[];
@@ -14,6 +14,12 @@ interface PointsPanelProps {
   zoom: number;
   onRename: (index: number, name: string) => void;
   onSetPointZoom: (index: number, zoom: number) => void;
+  /** Move a point to new stage coordinates (mm). */
+  onSetPosition: (index: number, x: number, y: number) => void;
+  /** Live stage position (mm), to take over as a point's position; null when not connected. */
+  stagePosition: [number, number] | null;
+  /** Travel limits (mm). */
+  limits: [number, number];
   onMark: () => void;
   onMove: (index: number) => void;
   onEditReference: (index: number) => void;
@@ -34,6 +40,7 @@ const ZOOMS = [1, 1.5, 2, 3, 4];
 
 export function PointsPanel(p: PointsPanelProps) {
   const taught = p.points.filter((pt) => pt.expected_components?.length).length;
+  const [editing, setEditing] = useState<number | null>(null);
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-2">
@@ -117,6 +124,9 @@ export function PointsPanel(p: PointsPanelProps) {
                       <Button size="sm" icon={Crosshair} disabled={p.locked} onClick={() => p.onEditReference(i)}>
                         {parts ? "แก้ต้นแบบ" : "สอนต้นแบบ"}
                       </Button>
+                      <Button size="sm" icon={Move} variant={editing === i ? "primary" : "secondary"} disabled={p.locked} onClick={() => setEditing(editing === i ? null : i)}>
+                        แก้ตำแหน่ง
+                      </Button>
                       <select
                         aria-label="ซูมของจุด"
                         value={pt.zoom || 1}
@@ -141,11 +151,86 @@ export function PointsPanel(p: PointsPanelProps) {
                       </button>
                     </div>
                   )}
+                  {active && editing === i && (
+                    <PositionEditor
+                      key={`${pt.x_mm},${pt.y_mm}`}
+                      point={pt}
+                      limits={p.limits}
+                      stagePosition={p.stagePosition}
+                      hasReference={!!pt.reference_image || parts > 0}
+                      onSave={(x, y) => {
+                        p.onSetPosition(i, x, y);
+                        setEditing(null);
+                      }}
+                      onCancel={() => setEditing(null)}
+                    />
+                  )}
                 </li>
               );
             })}
           </ul>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * New coordinates for a point: typed, or the stage's current position (jog there on the live
+ * view first). The reference picture was taken at the old place, so a big move asks for a
+ * new one.
+ */
+function PositionEditor({
+  point,
+  limits,
+  stagePosition,
+  hasReference,
+  onSave,
+  onCancel,
+}: {
+  point: CustomPointRequest;
+  limits: [number, number];
+  stagePosition: [number, number] | null;
+  hasReference: boolean;
+  onSave: (x: number, y: number) => void;
+  onCancel: () => void;
+}) {
+  const [x, setX] = useState(point.x_mm);
+  const [y, setY] = useState(point.y_mm);
+  const moved = Math.hypot(x - point.x_mm, y - point.y_mm);
+  const inside = x >= 0 && y >= 0 && x <= limits[0] && y <= limits[1];
+  return (
+    <div className="mx-2.5 mb-2.5 rounded-lg border border-line bg-surface p-2.5 flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
+      <div className="grid grid-cols-2 gap-2">
+        <NumberInput value={x} min={0} max={limits[0]} step={0.1} suffix="X mm" onChange={setX} aria-label="ตำแหน่ง X" />
+        <NumberInput value={y} min={0} max={limits[1]} step={0.1} suffix="Y mm" onChange={setY} aria-label="ตำแหน่ง Y" />
+      </div>
+      {stagePosition && (
+        <Button
+          size="sm"
+          variant="ghost"
+          icon={LocateFixed}
+          onClick={() => {
+            setX(Math.round(stagePosition[0] * 100) / 100);
+            setY(Math.round(stagePosition[1] * 100) / 100);
+          }}
+        >
+          ใช้ตำแหน่งสเตจตอนนี้ ({formatMm(stagePosition[0])}, {formatMm(stagePosition[1])})
+        </Button>
+      )}
+      {!inside && <p className="text-[11px] text-fail">อยู่นอกระยะเคลื่อนที่ (0–{limits[0]} × 0–{limits[1]} mm)</p>}
+      {inside && hasReference && moved >= 1 && (
+        <p className="text-[11px] text-review">
+          ย้าย {moved.toFixed(1)} mm — ภาพต้นแบบและกรอบชิ้นส่วนถ่ายที่ตำแหน่งเดิม หลังบันทึกให้กด “ไปที่จุด” แล้ว “แก้ต้นแบบ” ถ่ายใหม่
+        </p>
+      )}
+      <div className="flex gap-1.5 justify-end">
+        <Button size="sm" variant="ghost" onClick={onCancel}>
+          ยกเลิก
+        </Button>
+        <Button size="sm" variant="primary" disabled={!inside || moved < 0.005} onClick={() => onSave(Math.round(x * 100) / 100, Math.round(y * 100) / 100)}>
+          บันทึกตำแหน่ง
+        </Button>
       </div>
     </div>
   );
