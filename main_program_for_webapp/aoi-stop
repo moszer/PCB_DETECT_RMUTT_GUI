@@ -42,6 +42,13 @@ port_pids() {
     else ss -ltnpH "sport = :$1" 2>/dev/null | grep -o 'pid=[0-9]*' | cut -d= -f2; fi
 }
 
+# Never this script or the shells that started it (e.g. bash -c "./aoi-stop; ./run_web.sh"
+# has run_web.sh in its command line and runs in this folder).
+ANCESTORS=" $$ "
+_p=$$
+while _p="$(ps -o ppid= -p "$_p" 2>/dev/null | tr -d ' ')" && [[ -n "$_p" && "$_p" != "0" && "$_p" != "1" ]]; do ANCESTORS+="$_p "; done
+mine() { [[ "$ANCESTORS" == *" $1 "* ]]; }
+
 find_pids() {
     local pid found=""
     pid="$(cat "$PROJECT_DIR/.cache/station.pid" 2>/dev/null || true)"
@@ -62,7 +69,7 @@ find_pids() {
     done
     local all="$found"
     for pid in $found; do all+=" $(descendants "$pid" | tr '\n' ' ')"; done
-    tr ' ' '\n' <<<"$all" | grep -E '^[0-9]+$' | sort -un
+    for pid in $(tr ' ' '\n' <<<"$all" | grep -E '^[0-9]+$' | sort -un); do mine "$pid" || echo "$pid"; done
 }
 
 PIDS="$(find_pids)"
