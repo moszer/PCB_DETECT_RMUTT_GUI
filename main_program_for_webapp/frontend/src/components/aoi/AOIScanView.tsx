@@ -43,6 +43,7 @@ import { WorkflowSteps, type StepKey, type WorkflowStep } from "./WorkflowSteps"
 import { OperatorPanel } from "./OperatorPanel";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { SerialInput } from "./SerialInput";
+import { ScanCompleteModal } from "./ScanCompleteModal";
 import { useThreePrefs } from "@/lib/three/prefs";
 
 // three.js loads only when the 3D view is opened.
@@ -170,6 +171,8 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
   const [marking, setMarking] = useState(false);
   const [movingIndex, setMovingIndex] = useState<number | null>(null);
   const [arrivedIndex, setArrivedIndex] = useState<number | null>(null);
+  // The "scan finished" popup: shown once per run that ends while this page is open.
+  const [dismissedRun, setDismissedRun] = useState<string | null>(null);
   const arrivedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [teachProgress, setTeachProgress] = useState<{ current: number; total: number } | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -600,6 +603,10 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
 
   const { use3d } = useThreePrefs();
   const twin = viewMode === "twin" && use3d;
+  const endEvent = progress && (progress.event === "complete" || progress.event === "aborted" || progress.event === "error") ? progress : null;
+  const endedReport = endEvent ? (endEvent.report ?? (report?.id === endEvent.run_id ? report : null)) : null;
+  const finishedRun = endedReport && endedReport.status !== "running" && endedReport.id !== dismissedRun ? endedReport : null;
+
   const showLive = viewMode !== "output";
   const showOutput = viewMode !== "live" && !twin;
   // Latest result of each point of this board's scan, for the 3D pins.
@@ -926,6 +933,17 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
         />
       )}
       <PointResultModal point={detail} onClose={() => setDetail(null)} />
+      {finishedRun && (
+        <ScanCompleteModal
+          report={finishedRun}
+          onClose={() => setDismissedRun(finishedRun.id)}
+          onShowResults={() => setViewMode((m) => (m === "live" || m === "twin" ? "split" : m))}
+          onNextBoard={() =>
+            // The serial field is where a barcode scanner types: ready for the next board.
+            document.querySelector<HTMLInputElement>('input[aria-label="เลขบอร์ด (serial) ของบอร์ดที่จะตรวจ"]')?.focus()
+          }
+        />
+      )}
       {tourOpen && <Tour steps={operator ? OPERATOR_TOUR : ENGINEER_TOUR} onClose={closeTour} />}
     </div>
   );

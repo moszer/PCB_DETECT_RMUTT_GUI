@@ -85,8 +85,20 @@ class CameraService:
 
     @property
     def resolution(self) -> Tuple[int, int]:
-        """Size of the frames handed to streaming, inspection and AOI (after any output crop)."""
-        return self._output_size or (self._actual_width, self._actual_height)
+        """Size of the frames handed to streaming, inspection and AOI (after any output crop).
+
+        What the frames really are: a crop larger than the camera delivers is cut smaller
+        (never stretched, see _fit_output), so asking 3840x3840 of a 3840x2160 camera gives
+        2160x2160 — reporting the asked size showed 3840x3840 on screen.
+        """
+        if not self._output_size:
+            return (self._actual_width, self._actual_height)
+        ow, oh = self._output_size
+        w, h = self._actual_width, self._actual_height
+        if self._output_mode == "crop" and w and h:
+            k = min(1.0, w / ow, h / oh)
+            return (int(ow * k), int(oh * k))
+        return self._output_size
 
     @property
     def capture_resolution(self) -> Tuple[int, int]:
