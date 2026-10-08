@@ -630,7 +630,9 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
     <div className="h-full flex flex-col">
       <StageBar machine={machine} scanning={scanning} onChange={onRefreshStatus} lockReason={lockReason} stageError={stageError} />
 
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)] overflow-y-auto lg:overflow-hidden">
+      {/* auto-rows-max below lg: in this fixed-height scrolling grid, plain auto rows were cut to
+          the camera section's min height and its pictures spilled over the tool panel. */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 auto-rows-max lg:auto-rows-auto lg:grid-cols-[360px_minmax(0,1fr)] overflow-y-auto lg:overflow-hidden">
         {/* ── Left: tools ── */}
         {/* Below lg the camera comes first: on a phone it was under the whole tool panel. */}
         <aside className="order-2 lg:order-none border-t lg:border-t-0 lg:border-r border-line bg-surface flex flex-col lg:min-h-0">
@@ -802,7 +804,9 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
             </div>
           </div>
 
-          <div ref={viewArea} className="flex-1 min-h-0 flex flex-col items-center gap-3">
+          {/* Below lg the page scrolls: the area grows with its pictures (min-h-0 there let them spill
+              over the tool panel that now follows the camera). */}
+          <div ref={viewArea} className="lg:flex-1 lg:min-h-0 flex flex-col items-center gap-3">
             <div className={cx("flex gap-3", fit ? (fit.row ? "flex-row" : "flex-col") : "w-full flex-col xl:flex-row")}>
               {showLive && (
                 <div className="shrink-0" data-tour="live" style={fit ? { width: fit.w, height: fit.h } : { width: "100%", height: 420 }}>
