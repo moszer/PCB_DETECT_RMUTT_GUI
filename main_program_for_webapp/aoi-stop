@@ -73,10 +73,17 @@ fi
 say "Stopping: $(tr '\n' ' ' <<<"$PIDS")"
 # shellcheck disable=SC2086
 kill -TERM $PIDS 2>/dev/null
-for _ in $(seq 1 30); do
+for i in $(seq 1 30); do
     alive=""
     for pid in $PIDS; do kill -0 "$pid" 2>/dev/null && alive+=" $pid"; done
     [[ -z "$alive" ]] && break
+    # The production web server (next start) waits for every open browser connection before
+    # it exits; it has nothing to save, so after 4 s it is simply closed.
+    if [[ $i -eq 8 ]]; then
+        for pid in $alive; do
+            ps -o args= -p "$pid" 2>/dev/null | grep -qE "next-server|next start" && kill -KILL "$pid" 2>/dev/null
+        done
+    fi
     sleep 0.5
 done
 if [[ -n "${alive:-}" ]]; then

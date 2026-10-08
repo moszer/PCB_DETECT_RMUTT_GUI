@@ -62,7 +62,9 @@ spin_frame() {  # tick, label, [detail]
 }
 spin_clear() { [[ $ANIM -eq 1 ]] && printf '\r\033[K' || true; }
 # Background service output: clear the spinner line first so both stay readable.
-tidy() { if [[ $ANIM -eq 1 ]]; then while IFS= read -r line; do printf '\r\033[K%s\n' "$line"; done; else cat; fi; }
+# (Runs in a subshell that inherits the traps below: reset them, or a stop signal waits for the
+# pipe to close and then runs cleanup again — run_web.sh then hung in `wait` until killed.)
+tidy() { trap - EXIT INT TERM; if [[ $ANIM -eq 1 ]]; then while IFS= read -r line; do printf '\r\033[K%s\n' "$line"; done; else cat; fi; }
 ok()   { echo "  ${G}✓${N} $*"; }
 warn() { echo "  ${Y}!${N} $*"; }
 fail() { echo "  ${R}✗${N} $*" >&2; }
@@ -75,7 +77,21 @@ cleanup() {
         if [[ -n "$pid" ]]; then kill "$pid" 2>/dev/null || true; fi
     done
     [[ -n "$UPDATES_FILE" ]] && rm -f "$UPDATES_FILE"
-    wait 2>/dev/null || true
+    # Bounded waits, never a bare `wait`: `next start` closes only idle connections and waits
+    # for every open browser page (live view, status WebSocket) and Tailscale's connections,
+    # which kept the stop going until ./aoi-stop killed everything after 15 s. The web server
+    # has nothing to save: 3 s, then it is cut. The backend saves runs and closes the stage
+    # and camera: up to 8 s (uvicorn itself gives connections 5 s).
+    stop_within() {
+        local secs=$1 pid=$2 i
+        [[ -z "$pid" ]] && return 0
+        for ((i = 0; i < secs * 10; i++)); do kill -0 "$pid" 2>/dev/null || return 0; sleep 0.1; done
+        kill -KILL "$pid" 2>/dev/null || true
+        pkill -KILL -P "$pid" 2>/dev/null || true
+    }
+    stop_within 3 "$FRONTEND_PID"
+    stop_within 8 "$BACKEND_PID"
+    stop_within 1 "$BUILD_PID"
     exit "$code"
 }
 trap cleanup EXIT
