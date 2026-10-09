@@ -1,5 +1,18 @@
 # RMUTT PCB AOI Station — YOLO component inspection
 
+<p align="center">
+  <img src="docs/readme/aoi-hero.svg" width="100%"
+       alt="Animation: the camera head of the XY gantry visits six test points on a board, YOLO marks the parts it finds, and the scan ends FAIL because a resistor is missing at point 5">
+</p>
+
+<p align="center">
+  <a href="https://github.com/moszer/PCB_DETECT_RMUTT_GUI/actions/workflows/aoi.yml"><img alt="AOI checks" src="https://github.com/moszer/PCB_DETECT_RMUTT_GUI/actions/workflows/aoi.yml/badge.svg"></a>
+  <a href="https://huggingface.co/Moszer777/pcb-aoi-yolo-rmutt"><img alt="Model on Hugging Face" src="https://img.shields.io/badge/model-Hugging%20Face-ffcc4d?logo=huggingface&logoColor=black"></a>
+  <img alt="Python 3.10-3.14" src="https://img.shields.io/badge/python-3.10--3.14-3776ab?logo=python&logoColor=white">
+  <img alt="Next.js 16" src="https://img.shields.io/badge/Next.js-16-000?logo=nextdotjs">
+  <img alt="Jetson Orin Nano" src="https://img.shields.io/badge/NVIDIA-Jetson%20Orin%20Nano-76b900?logo=nvidia&logoColor=white">
+</p>
+
 An **automated optical inspection (AOI)** station for printed circuit boards, built as an
 undergraduate project at **RMUTT** (Rajamangala University of Technology Thanyaburi,
 มหาวิทยาลัยเทคโนโลยีราชมงคลธัญบุรี).
@@ -51,8 +64,14 @@ data counts and URLs. Options:
 | Option | Effect |
 | --- | --- |
 | `--prod` | Build the frontend once and serve it (faster, less RAM) |
+| `--dev` | Development mode for this run, even on a machine set to prod |
 | `--update` | Upgrade Python/JS libraries before starting (PyTorch is left alone) |
 | `--no-check` | Skip the library check |
+
+While it runs, a status panel pinned to the bottom of the terminal refreshes every second
+(scan progress, stage, uptime). `echo prod > .station-mode` makes a machine always start in
+prod mode, and `./aoi-stop` stops this folder's station, including one started in the
+background or left hanging (use it on `Address already in use`).
 
 **Update to the latest version:** `./update.sh` pulls from GitHub, runs `install.sh` only when
 libraries changed, and restarts the station with the same options (`--background` over SSH,
@@ -63,17 +82,19 @@ edited locally; your data, `.env` and models are untouched.
 
 ## Web station features
 
-The UI is in Thai. The sidebar has seven pages.
+The UI is in Thai and fits desktop, tablet and phone screens (a bottom bar replaces the
+sidebar on phones). The sidebar has eight pages.
 
 | Page | What it does |
 | --- | --- |
 | **สแกน AOI** (AOI scan) | Main workflow. Create or open a board, home the stage, jog to each test point and mark it (a reference photo is captured automatically), teach the expected parts, then scan the whole board |
 | **ตรวจภาพเดี่ยว** (single inspection) | Inspect a live camera frame or an uploaded image against a reference profile, with click-to-inspect boxes |
 | **ชุดข้อมูลเทรน** (training data) | Mark the four corners of a board and the stage photographs the whole board automatically. Edit labels in the browser (marquee select, bulk delete), then download a YOLO dataset with a train/val split |
-| **โปรไฟล์อ้างอิง** (references) | Golden reference profiles (single image and AOI grid); import the desktop `Refs.json` |
-| **ประวัติ & Yield** (history) | Every scan and single inspection with board/point yield, filters and CSV export |
+| **บอร์ด** (boards) | Every taught board with its pictures, readiness before a scan, and its own history and yield; golden reference profiles and the desktop `Refs.json` import |
+| **ประวัติ & Yield** (history) | Every scan and single inspection with board/point yield, search by serial number, printable report, CSV export, and sending the history to Telegram |
 | **ประสิทธิภาพเครื่อง** (performance) | Live CPU usage/clock per core, GPU, RAM/swap, temperatures, power rails, fan and over-current events. On Jetson it also sets the power mode (nvpmodel), max clocks (jetson_clocks) and fan (auto quiet/cool or fixed 20–100 %) after a one-time `sudo ./scripts/jetson/install-power-control.sh` |
-| **ตั้งค่าสถานี** (settings) | Choose the model (also finds Ultralytics `runs/*/weights`), choose the compute device (MPS / CUDA / CPU), set stage soft limits and station info |
+| **ไลบรารี** (libraries) | Every Python / JavaScript / system library the station uses, with its installed version and an update check against PyPI and npm |
+| **ตั้งค่าสถานี** (settings) | Choose the model (also finds Ultralytics `runs/*/weights`), compute device (MPS / CUDA / CPU), stage soft limits, XY rail calibration, board-placement compensation, camera settle, 3D view, alerts and station info |
 
 ### AOI scan page
 
@@ -86,6 +107,15 @@ The UI is in Thai. The sidebar has seven pages.
   `1`–`5` zoom, `?` help.
 - **Scan dock under the camera:** start/stop, progress, and one thumbnail per point. The
   thumbnails show the plan before a scan and turn into PASS/FAIL as the results arrive.
+- **Serial number per board:** type it or use a USB barcode / QR scanner before each scan;
+  it is saved with the run and searchable in History.
+- **Edit a marked point:** change its position by hand or take the stage's current position.
+  While the stage travels, the point list shows the distance left and flashes on arrival.
+- **Scan finished pop-up:** the board verdict in large letters, the point counts and the
+  failing parts, with *print report*, *show every point* and *next board*.
+- **3D digital twin:** a three.js model of the real gantry (from the machine's CAD) moves
+  with the stage, shows the camera's field of view and the board picture under it, and names
+  each part on hover. It renders only when something changes and can be turned off.
 - **Multi-frame inspection:** each point is confirmed over N frames, and you can watch every
   frame as it is analyzed.
 - **Point detail:** per-component status, **OCR of part markings** (Apple Vision on macOS,
@@ -100,7 +130,7 @@ The UI is in Thai. The sidebar has seven pages.
 ### Station-wide
 
 - **AI assistant:** a chat button on every page. It answers questions about the station's
-  live data (status, runs, boards, references, datasets, models, settings), can read part
+  live data (status, runs, boards, references, datasets, models, settings, alerts, libraries), can read part
   markings, and can navigate between pages. It also has per-board chat ("what is this board
   for?"), saved chat history and sound effects. It uses Google Gemini, with automatic model
   fallback, or OpenRouter.
@@ -118,8 +148,18 @@ The UI is in Thai. The sidebar has seven pages.
   pinch, double-click or the +/− buttons, and pan by dragging.
 - **Operator control lease:** only one browser controls the stage at a time; others see a
   *view-only* banner. **STOP** always works from any device.
-- **Camera:** MJPEG live stream with a snapshot fallback. Format and crop are configurable
-  (default 4K → 2160×2160 square crop, remembered).
+- **Camera:** MJPEG live stream with a snapshot fallback; only new frames are sent, and the
+  camera stops decoding when nobody is watching. Format and output size are configurable and
+  remembered (default 2160×2160; the Jetson station runs 3840×3840, scaled from a
+  3840×2160 camera).
+- **Alerts:** a Telegram and/or webhook message (Discord, Slack, LINE bot…) when a board
+  FAILs, a scan stops with an error, several boards in a row FAIL, or the yield drops
+  (Settings → แจ้งเตือนผลสแกน). History can also send the whole log to Telegram as a CSV.
+- **Access from the internet:** requests that arrive through Tailscale Funnel must hold the
+  operator lease for the AI assistant, inspections, exports and downloads; a banner says when
+  the page is opened from outside.
+- **XY rail calibration:** the camera measures the stage against a printed speckle target
+  (PDF/PNG for A4/A3 from Settings), builds a correction map and grades it good / fair / poor.
 - Light/dark theme, splash screen with the RMUTT logo, sound effects, and touch-sized controls
   for tablets.
 
@@ -133,7 +173,8 @@ browser (only a masked hint). It requires the operator lease (station passcode).
 Created from `.env.example` by `install.sh`. The file is git-ignored; never commit keys.
 
 ```bash
-PCB_OPERATOR_PASSCODE=change-me     # passcode to take control (default rmutt-aoi)
+PCB_OPERATOR_PASSCODE=change-me     # passcode to take control; if unset, a random one is
+                                    # written to backend/data/.operator-passcode
 AI_PROVIDER=gemini                  # or openrouter
 GEMINI_API_KEY=...                  # https://aistudio.google.com/apikey
 PCB_DEVICE=auto                     # auto | cuda:0 | mps | cpu
@@ -141,7 +182,12 @@ PCB_CAMERA_SIMULATION=1             # software test camera (Docker, no webcam)
 PCB_MODEL_REPO=Moszer777/pcb-aoi-yolo-rmutt   # Hugging Face repo with the weights
 PCB_MODEL_FILE=best.pt              # file install.sh downloads when best.pt is missing
 HF_TOKEN=...                        # only for a private repo (read access)
+PCB_REQUIRE_MODEL_APPROVAL=1        # 1 (default): serial scans need a certified model
+TELEGRAM_BOT_TOKEN=...              # alerts; set from Settings → แจ้งเตือนผลสแกน
+NOTIFY_WEBHOOK_URL=...              # optional webhook for the same alerts
 ```
+
+The full list is in [backend/README.md](main_program_for_webapp/backend/README.md#2-running).
 
 Ports can be changed with `PCB_FRONTEND_PORT` / `PCB_BACKEND_PORT` (defaults 3001 / 8000).
 
@@ -152,13 +198,17 @@ Browser (Next.js 16 · React 19 · Tailwind 4)          :3001
    │   /api/* proxied by Next  ·  WebSocket /ws/status (stage, scan progress, frames)
    ▼
 FastAPI backend                                        :8000
-   routers/  system · auth · camera · inspection · aoi · references · history · datasets · chat · ws
+   routers/  system · auth · camera · inspection · aoi · boards · references · history
+             datasets · chat · media · ws
    services/ inference (YOLO) · camera · machine (serial / simulation) · aoi_scan · dataset
-             depth · chat (Gemini/OpenRouter) · agent (tool calling) · storage · point_set_store
+             depth · stage_calibration · board_alignment · chat (Gemini/OpenRouter)
+             agent (tool calling) · notify (Telegram/webhook) · library · tunnel (Tailscale)
+             hardware · benchmark · backup · storage · point_set_store
    core/     inspection matching · motion protocol v2 · device selection · OCR · depth
+             access (internet guard) · stage calibration · model catalog · shutdown
    │
    ├── Ultralytics YOLO on Apple MPS / CUDA / CPU
-   ├── Arduino Nano XY stage, protocol v2 @ 9600 baud (or the built-in simulator)
+   ├── Arduino Nano XY stage (firmware/cnc), protocol v2 @ 9600 baud, or the built-in simulator
    └── SQLite + files in backend/data/ (runs, references, boards, datasets, chat history)
 ```
 
@@ -190,10 +240,13 @@ Detection alone doesn't tell you whether a board is good, so both stations add a
 ```
 main_program_for_webapp/   Web station
   install.sh  run_web.sh   one-command install / start (macOS, Linux, Jetson)
+  update.sh   aoi-stop     pull + restart from GitHub · stop the station
   docker-compose*.yml      Docker (+ hardware passthrough, + Jetson GPU), docker-test.sh
   backend/                 FastAPI app, tests/ (pytest), requirements*.txt, .env.example
   frontend/                Next.js app (src/app, src/components, src/lib, src/hooks)
-  scripts/console.py       run_web.sh banner, library check, status summary
+  firmware/cnc/            Arduino Nano stage firmware (protocol v2) and how to flash it
+  scripts/console.py       run_web.sh banner, library check, live status panel
+  scripts/jetson/          power/clock/fan helper, enable-swap.sh
   INSTALL.md               installation guide (Thai)
 main_program/              Desktop station (PyQt6): gui_test.py, app/, qa/ tests
 best.pt  exp.pt  Refs.json Model weights (Git LFS) and the desktop reference profile
@@ -203,6 +256,8 @@ tools/                     predict_image.py (one image) · webcam_detect.py (liv
 assets/                    logo-rmutt.png · ascii-art.txt · test_images/ (pass.jpg, fail.png)
                            samples/ · board_photos/
 docs/                      AOI.md · NVIDIA.md · WEB_AOI.md · web-audit/ · thesis/
+                           readme/ (this page's animation and make_hero.py)
+.github/workflows/aoi.yml  CI: frontend lint, typecheck, build + backend tests
 scripts/archive/           one-off helper scripts kept for reference
 ```
 
@@ -477,6 +532,11 @@ application.
 ---
 
 ## Dataset — 23 classes
+
+> The web station's current model is a newer one trained on a separate 11-class dataset
+> (`buzzer capacitor clock connector display ic led potentiometer resistor switch transistor`,
+> YOLO26m, run `new_dataset_v6_split_v1_aug_v2_m`); it is on Hugging Face with the other runs. The 23-class set below is the one kept
+> in this repository for the desktop station.
 
 ```
 ant  button  capacitor  capacitor_0  chip  connector  connector_0  connector_1

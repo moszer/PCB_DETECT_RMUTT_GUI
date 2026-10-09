@@ -26,9 +26,13 @@ app/
     camera.py           MJPEG stream, snapshot, camera devices and format
     inspection.py       inspect upload / live / multi-frame, OCR of part markings
     aoi.py              stage connect/home/jog/move/stop, scan plan/start/stop/status,
-                        boards (point-sets CRUD), depth measurement
+                        boards (point-sets CRUD), depth measurement, XY rail calibration
+                        and the printable speckle target (/calibration/speckle.{pdf,png})
+    boards.py           boards page: pictures, readiness, per-board history, export
+    media.py            small previews (LQIP + JPEG thumbs) of stored images
     references.py       golden reference profiles, import desktop Refs.json
-    history.py          runs, single inspections, statistics, CSV export
+    history.py          runs (search by serial ?q=), single inspections, statistics, CSV export,
+                        performance comparison and benchmark
     datasets.py         4-corner board capture, label editing, YOLO dataset download
     chat.py             board chat, station-wide AI agent, chat history
     ws.py               WebSocket /ws/status: machine state, scan progress, frames
@@ -47,8 +51,16 @@ app/
     hardware_service    CPU/GPU/RAM/thermal/power/fan readings; Jetson control through the
                         root helper scripts/jetson/aoi-jetson-power (sudo -n, fixed commands only)
     chat_store          saved chat history
+    notify_service      Telegram / webhook alerts (fail, error, fails in a row, yield drop),
+                        history CSV to Telegram
+    library_service     installed library versions + update check (PyPI / npm), cached
+    tunnel_service      Tailscale login / serve / funnel for the station's own entry
+    board_alignment     board-placement compensation from two taught points
+    backup_service, benchmark, perf_log, stage_monitor_service, ai_settings
   core/                 inspection matching, motion protocol v2, device detection, OCR, depth, schemas,
-                        hub.py (Hugging Face weight downloads: resume + SHA-256 check, stdlib only)
+                        hub.py (Hugging Face weight downloads: resume + SHA-256 check, stdlib only),
+                        access.py (internet guard), shutdown.py (end live streams on stop),
+                        stage_calibration.py (rail map), model_catalog.py, log_buffer.py (secret redaction)
 tests/                  pytest suite (API, motion protocol, inspection, datasets, OCR, depth, chat, agent…)
 data/                   runtime data (git-ignored)
 ```
@@ -89,6 +101,8 @@ Settings come from `backend/.env`, which `install.sh` copies from `.env.example`
 | `PCB_CAMERA_SIMULATION=1` | Software test camera (Docker, no webcam) |
 | `PCB_STORAGE_DIR` | Data folder (default `backend/data`) |
 | `PCB_MODEL_REPO`, `PCB_MODEL_FILE`, `HF_TOKEN` | Hugging Face repo with the YOLO weights, the file `install.sh` fetches (default `best.pt`), and a read token for private repos |
+| `TELEGRAM_BOT_TOKEN`, `NOTIFY_WEBHOOK_URL` | Alert channels; set from **Settings → แจ้งเตือนผลสแกน** (rules are kept in `data/notify.json`) |
+| `PCB_FRONTEND_PORT`, `PCB_BACKEND_PORT` | Ports used by `run_web.sh` (defaults 3001 / 8000) |
 
 AI keys stay on the server and are never sent to the browser. They can be edited from
 **Settings → ผู้ช่วย AI** (`GET/PUT /api/chat/config`, `POST /api/chat/config/test`).
@@ -121,13 +135,13 @@ The device can be changed at runtime from the Settings page.
 
 ## 4. Motion Control & Serial Protocol v2
 
-Compatible with `Desktop/cnc/cnc.ino` firmware:
+Compatible with the firmware in [`../firmware/cnc/cnc.ino`](../firmware/):
 - **Baud Rate**: 9600 baud, 8N1.
 - **Kinematics**: 512 steps/mm mechanism.
 - **Travel Limits**: EEPROM defaults (21167 × 20446 steps).
 - **Soft Limits**: Configurable (default 38.00 × 38.00 mm) to prevent hard endstop collisions.
 - **Startup Delay**: 2.5s Nano boot wait before transmitting commands.
-- **Heartbeat**: 1.0s `POS` query serves as both state query and host heartbeat.
+- **Heartbeat**: a `POS` query serves as both state query and host heartbeat: every 0.25 s while a move is pending, 1.0 s when idle.
 - **Timeouts**: Host disconnects after 6.0s silent link; firmware stops active job after 3.0s without messages.
 - **Emergency STOP**: Preempts active movement immediately and clears queues without queuing behind inference.
 

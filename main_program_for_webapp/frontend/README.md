@@ -11,7 +11,7 @@ Start the whole station from the parent folder with `./run_web.sh` (see
 
 ## 1. Pages
 
-The page lives in a single route (`src/app/page.tsx`). The sidebar switches between seven
+The page lives in a single route (`src/app/page.tsx`). The sidebar switches between eight
 views, and the bottom bar does the same on small screens.
 
 | View | Component | What it does |
@@ -19,13 +19,14 @@ views, and the bottom bar does the same on small screens.
 | สแกน AOI | `components/aoi/AOIScanView.tsx` | Boards, stage control, marking and teaching points, point/grid scans |
 | ตรวจภาพเดี่ยว | `InspectionView.tsx`, `BoardInspection.tsx` | Inspect a live frame or an uploaded image against a reference |
 | ชุดข้อมูลเทรน | `dataset/DatasetView.tsx`, `dataset/LabelEditor.tsx` | Whole-board capture, label editing (marquee select, bulk delete), dataset download |
-| โปรไฟล์อ้างอิง | `ReferencesView.tsx` | Golden reference profiles, import the desktop `Refs.json` |
-| ประวัติ & Yield | `HistoryView.tsx` | Runs and single inspections, yield, CSV export |
+| บอร์ด | `BoardsView.tsx`, `ReferencesView.tsx` | Taught boards (pictures, readiness, per-board history/yield), golden reference profiles, import the desktop `Refs.json` |
+| ประวัติ & Yield | `HistoryView.tsx`, `RunReport.tsx`, `PerformanceView.tsx` | Runs and single inspections, yield, serial search, printable report, CSV export, send to Telegram, performance comparison |
 | ประสิทธิภาพเครื่อง | `HardwareView.tsx` | Live CPU cores, GPU, RAM, temperatures, power, fan; Jetson power mode / max clocks / fan controls |
-| ตั้งค่าสถานี | `SettingsView.tsx`, `ModelPicker.tsx`, `AIKeyPanel.tsx` | Model, compute device, stage limits, station info |
+| ไลบรารี | `LibrariesView.tsx` | Python / JS / system libraries with versions and an update check |
+| ตั้งค่าสถานี | `SettingsView.tsx`, `ModelPicker.tsx`, `AIKeyPanel.tsx`, `StageCalibrationCard.tsx`, `NotifyCard.tsx`, `RemoteAccess.tsx` | Model, compute device, stage limits, XY rail calibration, alerts, remote access, 3D view, station info |
 
 Shared across all pages:
-- `AppShell.tsx`: sidebar, header status chips, operator control, view-only banner, STOP button.
+- `AppShell.tsx`: sidebar / phone bottom bar, header status chips, operator control, view-only and internet banners, STOP button.
 - `AgentWidget.tsx`: the station-wide AI assistant.
 - `SplashScreen.tsx`
 - `Toast.tsx`
@@ -39,10 +40,12 @@ Shared across all pages:
 | `AOIScanView.tsx` | Page state and wiring: workflow steps, keyboard shortcuts, operator/engineer mode, guided tour, camera/result layout sized to the camera aspect ratio |
 | `WorkflowSteps.tsx` | ① board → ② stage ready → ③ mark points → ④ scan, with the next action |
 | `PointSets.tsx` | Create / open / rename / delete boards; autosaves the points (operator variant: open only) |
-| `PointsPanel.tsx` | Mark button and the point list (go to, teach reference, zoom, delete) |
+| `PointsPanel.tsx` | Mark button and the point list (go to, edit position, teach reference, zoom, delete) with the travel indicator |
 | `StageBar.tsx` | Serial / simulation connect, HOME, position, motors off |
 | `JogOverlay.tsx` | Jog pad over the live camera (press-and-hold, step cycling) |
 | `ScanDock.tsx` | Start/stop, progress, and one thumbnail per point under the camera |
+| `SerialInput.tsx` | Board serial number (keyboard or USB barcode / QR scanner) |
+| `ScanCompleteModal.tsx` | Pop-up when a scan ends: verdict, counts, failing parts, print / results / next board |
 | `ScanResults.tsx` | Result pane; when empty, shows the last scan and today's tally |
 | `ResultOverlay.tsx` | Box-by-box result reveal and the per-frame capture progress |
 | `OperatorPanel.tsx` | Operator mode: one big start button and a big PASS/FAIL |
@@ -67,6 +70,7 @@ Other components:
 - `LiveCameraFeed.tsx`: MJPEG with a snapshot fallback; it closes leaked streams.
 - `PointResultModal.tsx` (point detail), `DepthModal.tsx`, `Depth3DView.tsx`, `DepthMap2D.tsx` (3D height map).
 - `ChatPanel.tsx`: board chat.
+- `three/`: lazy-loaded three.js views — `StageTwin3D.tsx` (gantry twin from `public/models/machine.glb`), `Board3D.tsx`, `RailMap3D.tsx`, `DecorPcb.tsx`; helpers in `lib/three/`.
 - `Tour.tsx`: guided tour.
 
 ---
