@@ -457,6 +457,12 @@ input[type="number"]::-webkit-outer-spin-button {
   from { background-position: 100% 0; }
   to { background-position: 0% 0; }
 }
+/* LiveCameraFeed aiming mark: a dark halo so the white lines read on any board */
+.reticle {
+  overflow: visible;
+  filter: drop-shadow(0 0 1px rgb(0 0 0 / 0.75)) drop-shadow(0 0 3px rgb(0 0 0 / 0.35));
+}
+
 /* ── Scan point: Apple-style status capsule and picture effects (ScanCapsule.tsx) ── */
 .scan-capsule {
   --ai-colors: #8d9fff, #bc82f3, #f5b9ea, #ff6778, #ffba71, #c686ff, #8d9fff;

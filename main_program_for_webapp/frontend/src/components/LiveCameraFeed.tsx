@@ -317,15 +317,30 @@ function HudPill({ children, className }: { children: React.ReactNode; className
   );
 }
 
+/**
+ * Aiming mark at the picture center: thin white arms that stop short of the middle (the spot
+ * itself stays visible), a small ring with a colored dot, and rounded focus corners. A dark
+ * halo keeps it readable on light and dark boards. Amber while digitally zoomed.
+ */
 function Reticle({ zoomed }: { zoomed: boolean }) {
-  const color = zoomed ? "border-amber-400/80" : "border-emerald-400/70";
-  const line = zoomed ? "bg-amber-400/70" : "bg-emerald-400/60";
+  const accent = zoomed ? "#fbbf24" : "#34d399";
   return (
     <div className="absolute inset-0 pointer-events-none grid place-items-center">
-      <div className={cx("absolute w-40 h-px", line)} />
-      <div className={cx("absolute h-40 w-px", line)} />
-      <div className={cx("absolute size-20 rounded-full border", color)} />
-      <div className={cx("absolute size-1.5 rounded-full", zoomed ? "bg-amber-400" : "bg-emerald-400")} />
+      <svg width="132" height="132" viewBox="-66 -66 132 132" className="reticle" aria-hidden="true">
+        <g fill="none" stroke="#fff" strokeLinecap="round">
+          {/* arms with a gap round the center */}
+          <path d="M-58 0H-14M14 0H58M0 -58V-14M0 14V58" strokeWidth="1.25" opacity="0.9" />
+          {/* fine ticks every 10 px along the arms */}
+          <path d="M-44 -2.5V2.5M-24 -2.5V2.5M24 -2.5V2.5M44 -2.5V2.5M-2.5 -44H2.5M-2.5 -24H2.5M-2.5 24H2.5M-2.5 44H2.5" strokeWidth="1" opacity="0.6" />
+          {/* rounded focus corners */}
+          <path
+            d="M-40 -26V-34a6 6 0 0 1 6-6H-26M26 -40H34a6 6 0 0 1 6 6V-26M40 26V34a6 6 0 0 1-6 6H26M-26 40H-34a6 6 0 0 1-6-6V26"
+            strokeWidth="1.75"
+          />
+          <circle r="7" strokeWidth="1.25" opacity="0.85" />
+        </g>
+        <circle r="2.25" fill={accent} />
+      </svg>
     </div>
   );
 }
