@@ -109,13 +109,6 @@ def cmd_banner(_args) -> int:
         print(f"  {left}{pad}   {right}", flush=True)
         if delay:
             time.sleep(delay)
-    if ANIMATE:
-        # One short scan sweep after the seal; keep redirected output plain.
-        sweep = "━" * min(32, max(8, cols - 8))
-        for i in range(1, len(sweep) + 1, 2):
-            print(f"\r  {cyan(sweep[:i])}", end="", flush=True)
-            time.sleep(0.015)
-        print()
     return 0
 
 
@@ -214,10 +207,7 @@ def cmd_deps(args) -> int:
     if problems:
         for p in problems:
             print(f"  {WARN} {p}")
-        if any("not supported on this platform" in p or "nvidia-" in p.lower() for p in problems):
-            print(f"      {dim('→ check the PyTorch build against this GPU and JetPack version; do not auto-upgrade torch')}")
-        else:
-            print(f"      {dim('→ run  ./install.sh --no-system --yes  (or ./run_web.sh --update)')}")
+        print(f"      {dim('→ run  ./install.sh --no-system --yes  (or ./run_web.sh --update)')}")
     else:
         print(f"  {OK} libraries match requirements ({n} Python packages · frontend lockfile in sync)")
 
@@ -286,7 +276,6 @@ def cmd_status(args) -> int:
         print(f"  {mark} {bold(label):<{14 + (len(bold(label)) - len(label))}} {text}")
 
     model_file = Path(system.get("model_path") or "").name
-    device_warning = system.get("device_detail") or ""
     model_run = Path(system.get("model_path") or "").parent.parent.name if "weights" in (system.get("model_path") or "") else ""
     pid = lambda p: f"pid {p}  " if p else ""  # noqa: E731
     print()
@@ -295,10 +284,7 @@ def cmd_status(args) -> int:
         "ok" if health else "bad")
     row("Frontend", f"Next.js ({'production' if args.mode == 'prod' else 'development, hot reload'}) · {pid(args.frontend_pid)}Node {_version(['node', '--version'])} · port {args.frontend_port}")
     row("AI model", (f"{model_run + ' · ' if model_run else ''}{model_file or 'best.pt'} · {health.get('device', system.get('active_device', '?'))}")
-        if health.get("model_loaded") else "not loaded — choose one in Settings",
-        "warn" if device_warning.startswith("Warning:") or not health.get("model_loaded") else "ok")
-    if device_warning.startswith("Warning:"):
-        print(f"      {yellow(device_warning)}")
+        if health.get("model_loaded") else "not loaded — choose one in Settings", "ok" if health.get("model_loaded") else "warn")
     if cam.get("active"):
         r = cam.get("resolution") or [0, 0]
         row("Camera", f"{'test camera' if cam.get('is_mock') else 'live'} · {r[0]}×{r[1]} @ {cam.get('fps', 0):.0f} fps · {cam.get('output_mode')}", "warn" if cam.get("is_mock") else "ok")
@@ -316,22 +302,8 @@ def cmd_status(args) -> int:
     row("Data", f"{stats.get('total_runs', 0)} scan runs · {stats.get('single_inspections_count', 0)} single inspections · {len(boards)} saved boards")
     print()
     print(f"  {bold('Open')}   http://localhost:{args.frontend_port}    {dim('LAN')} http://{_lan_ip()}:{args.frontend_port}")
-    print(f"  {dim('Operator passcode: PCB_OPERATOR_PASSCODE in backend/.env, or backend/data/.operator-passcode. Ctrl+C stops everything.')}")
+    print(f"  {dim('Operator passcode: PCB_OPERATOR_PASSCODE in backend/.env (default rmutt-aoi).  Ctrl+C stops everything.')}")
     print()
-    return 0
-
-
-def cmd_model_status(args) -> int:
-    base = f"http://127.0.0.1:{args.backend_port}"
-    health = _get(f"{base}/api/health") or {}
-    system = _get(f"{base}/api/system/status") or {}
-    detail = system.get("device_detail") or ""
-    if not health.get("model_loaded"):
-        print(f"  {WARN} AI model not loaded — choose one in Settings")
-        return 0  # A station can still be used for setup without weights.
-    print(f"  {WARN if detail.startswith('Warning:') else OK} AI model ready · {health.get('device', '?')}")
-    if detail.startswith("Warning:"):
-        print(f"      {yellow(detail)}")
     return 0
 
 
@@ -349,9 +321,6 @@ def main() -> int:
     s.add_argument("--backend-pid", default="")
     s.add_argument("--frontend-pid", default="")
     s.set_defaults(fn=cmd_status)
-    m = sub.add_parser("model-status")
-    m.add_argument("--backend-port", type=int, default=8000)
-    m.set_defaults(fn=cmd_model_status)
     args = ap.parse_args()
     return args.fn(args)
 

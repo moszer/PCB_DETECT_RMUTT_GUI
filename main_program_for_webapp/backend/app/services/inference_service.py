@@ -108,15 +108,7 @@ class InferenceService:
             dummy = np.zeros((320, 320, 3), dtype=np.uint8)
             try:
                 model.predict(source=dummy, device=device.device, verbose=False)
-                if device.device.startswith("cuda"):
-                    # Kernel failures can be asynchronous; do not claim a successful GPU
-                    # warmup until the actual inference work has completed.
-                    import torch
-
-                    torch.cuda.synchronize(device.device)
                 logger.info("Model warmup completed on %s.", device.label)
-                if device.detail.startswith("Warning:"):
-                    logger.warning("%s Inference warmup completed, but this build is not listed for the GPU.", device.detail)
             except Exception as e:
                 raise RuntimeError(f"Model cannot run on {device.label}: {e}") from e
 
