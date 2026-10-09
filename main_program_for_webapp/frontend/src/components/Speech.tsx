@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Square, Volume2, VolumeX } from "lucide-react";
+import { Loader2, Square, Volume2, VolumeX } from "lucide-react";
 import { setAuto, speechSupported, toggle, useSpeech } from "@/lib/speech";
 import { cx } from "./ui";
 
@@ -27,11 +27,12 @@ export function VoiceToggle({ className }: { className?: string }) {
   );
 }
 
-/** Under an answer: read it aloud / stop. Shows moving bars while it is being read. */
+/** Under an answer: read it aloud / stop. A spinner while the voice is made, bars while it plays. */
 export function SpeakButton({ id, text }: { id: string; text: string }) {
-  const { speaking } = useSpeech();
+  const { speaking, loading } = useSpeech();
   if (!speechSupported() || !text.trim()) return null;
   const on = speaking === id;
+  const preparing = on && loading === id;
   return (
     <button
       type="button"
@@ -42,7 +43,12 @@ export function SpeakButton({ id, text }: { id: string; text: string }) {
         on ? "bg-accent-soft text-accent" : "text-subtle hover:text-text hover:bg-surface-3"
       )}
     >
-      {on ? (
+      {preparing ? (
+        <>
+          <Loader2 className="size-3.5 animate-spin" />
+          เตรียมเสียง…
+        </>
+      ) : on ? (
         <>
           <span className="speak-bars" aria-hidden="true">
             <i />

@@ -1,0 +1,95 @@
+"""Gemini TTS for the AI answers: model fallback, WAV output, cache, and the browser fallback (503)."""
+import base64
+import json
+import os
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+import httpx
+from fastapi.testclient import TestClient
+
+from app.main import app
+from app.services import chat_service, tts_service
+
+QUOTA = {"error": {"code": 429, "message": "You exceeded your current quota, please check your plan and billing details."}}
+
+
+def _audio(mime, data):
+    return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"inlineData": {"mimeType": mime, "data": base64.b64encode(data).decode()}}]}}]})
+
+
+class TTSServiceTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        for store in (chat_service._resting,):
+            store.clear()
+            self.addCleanup(store.clear)
+        p = patch.object(tts_service, "CACHE_DIR", Path(self.tmp.name))
+        p.start()
+        self.addCleanup(p.stop)
+        self.calls = []
+
+    def _client(self, handler):
+        real = httpx.Client
+        return patch("app.services.tts_service.httpx.Client", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+
+    def test_pcm_answer_becomes_wav_and_is_cached(self):
+        def handler(request):
+            self.calls.append(request.url.path.split("/")[-1].split(":")[0])
+            body = json.loads(request.content)
+            self.assertEqual(body["generationConfig"]["responseModalities"], ["AUDIO"])
+            return _audio("audio/L16;codec=pcm;rate=24000", b"\x01\x00" * 100)
+
+        env = {"GEMINI_API_KEY": "k", "GEMINI_TTS_MODELS": "tts-a"}
+        with patch.dict(os.environ, env), self._client(handler):
+            audio, model = tts_service.synthesize("สวัสดีครับ")
+            again, cached = tts_service.synthesize("สวัสดีครับ")
+        self.assertEqual(model, "tts-a")
+        self.assertEqual(audio[:4], b"RIFF")
+        self.assertEqual(audio[8:12], b"WAVE")
+        self.assertEqual(len(audio), 44 + 200)
+        self.assertEqual((again, cached), (audio, "cache"))
+        self.assertEqual(self.calls, ["tts-a"])  # the second read came from the cache
+
+    def test_out_of_quota_model_is_skipped(self):
+        def handler(request):
+            model = request.url.path.split("/")[-1].split(":")[0]
+            self.calls.append(model)
+            return httpx.Response(429, json=QUOTA) if model == "tts-a" else _audio("audio/wav", b"RIFF....WAVEdata")
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "k", "GEMINI_TTS_MODELS": "tts-a,tts-b"}), self._client(handler):
+            _, model = tts_service.synthesize("หนึ่ง")
+            tts_service.synthesize("สอง")
+        self.assertEqual(model, "tts-b")
+        self.assertEqual(self.calls, ["tts-a", "tts-b", "tts-b"])  # tts-a rests after its quota error
+
+    def test_no_key_or_no_model_means_browser_voice(self):
+        with patch.dict(os.environ, {"GEMINI_API_KEY": ""}):
+            with self.assertRaises(tts_service.TTSUnavailable):
+                tts_service.synthesize("ทดสอบ")
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "k", "GEMINI_TTS_MODELS": "tts-a"}), \
+                self._client(lambda r: httpx.Response(503, json={"error": {"message": "overloaded"}})):
+            with self.assertRaises(tts_service.TTSUnavailable):
+                tts_service.synthesize("ทดสอบ")
+
+    def test_route_returns_wav_or_503(self):
+        client = TestClient(app)
+        with patch.object(tts_service, "synthesize", return_value=(b"RIFFxxxxWAVE", "tts-a")):
+            res = client.post("/api/chat/tts", json={"text": "สวัสดี"})
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.headers["content-type"], "audio/wav")
+        self.assertEqual(res.headers["x-tts-model"], "tts-a")
+        with patch.object(tts_service, "synthesize", side_effect=tts_service.TTSUnavailable("quota")):
+            self.assertEqual(client.post("/api/chat/tts", json={"text": "สวัสดี"}).status_code, 503)
+
+    def test_internet_requests_need_the_lease(self):
+        from app.core import access
+
+        self.assertTrue(access.needs_lease("POST", "/api/chat/tts"))
+
+
+if __name__ == "__main__":
+    unittest.main()

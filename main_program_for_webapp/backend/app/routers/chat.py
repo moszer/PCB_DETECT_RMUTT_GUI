@@ -4,11 +4,11 @@ import json
 from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Header, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..core.security import lease_manager
-from ..services import ai_settings, chat_service, chat_store
+from ..services import ai_settings, chat_service, chat_store, tts_service
 from .inspection import _storage_image
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -25,6 +25,28 @@ class ChatRequest(BaseModel):
     image_url: Optional[str] = None
     # Conversation to save the exchange under (the inspected image URL); omit to not save.
     conversation_key: Optional[str] = Field(None, max_length=512)
+
+
+class TTSRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=2000)
+
+
+@router.get("/tts/status")
+def tts_status():
+    """Whether answers can be read with Gemini TTS (otherwise the browser uses its own voice)."""
+    return {"available": tts_service.available(), "voice": tts_service.voice(), "model": tts_service.model_name()}
+
+
+@router.post("/tts")
+def tts(req: TTSRequest):
+    """One piece of an AI answer as WAV (Gemini TTS, cached). 503 = use the browser voice."""
+    try:
+        audio, model = tts_service.synthesize(req.text)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except tts_service.TTSUnavailable as exc:
+        raise HTTPException(503, str(exc))
+    return Response(content=audio, media_type="audio/wav", headers={"X-TTS-Model": model, "Cache-Control": "private, max-age=86400"})
 
 
 @router.get("/status")
