@@ -535,6 +535,7 @@ export function Modal({
   subtitle,
   actions,
   size = "lg",
+  glow,
   children,
 }: {
   open: boolean;
@@ -543,6 +544,8 @@ export function Modal({
   subtitle?: React.ReactNode;
   actions?: React.ReactNode;
   size?: "sm" | "md" | "lg" | "xl";
+  /** AI dialogs: the rainbow "thinking" light (globals.css .ai-glow); true while waiting. */
+  glow?: boolean;
   children: React.ReactNode;
 }) {
   useEffect(() => {
@@ -562,25 +565,42 @@ export function Modal({
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
-        role="dialog"
-        aria-modal="true"
         className={cx(
-          "w-full flex flex-col max-h-[94dvh] bg-surface border border-line shadow-pop animate-modal",
-          "rounded-t-2xl sm:rounded-2xl",
-          width
+          "relative w-full flex flex-col max-h-[94dvh] rounded-t-2xl sm:rounded-2xl animate-modal",
+          width,
+          glow !== undefined && "ai-assistant-frame",
+          glow && "is-thinking"
         )}
       >
-        <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-line">
-          <div className="min-w-0">
-            <h2 className="text-base font-semibold text-text flex items-center gap-2 flex-wrap">{title}</h2>
-            {subtitle && <p className="text-xs text-muted mt-0.5">{subtitle}</p>}
+        {glow !== undefined && (
+          <span className="ai-glow" aria-hidden="true">
+            <span className="far" />
+            <span className="near" />
+            <span className="ring" />
+          </span>
+        )}
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="relative isolate w-full min-h-0 flex-1 flex flex-col bg-surface border border-line shadow-pop rounded-[inherit]"
+        >
+          {glow !== undefined && (
+            <span className="ai-glow-edge" aria-hidden="true">
+              <span />
+            </span>
+          )}
+          <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-line">
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold text-text flex items-center gap-2 flex-wrap">{title}</h2>
+              {subtitle && <p className="text-xs text-muted mt-0.5">{subtitle}</p>}
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {actions}
+              <IconButton icon={X} label="ปิด" onClick={onClose} />
+            </div>
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            {actions}
-            <IconButton icon={X} label="ปิด" onClick={onClose} />
-          </div>
+          <div className="flex-1 overflow-y-auto p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">{children}</div>
         </div>
-        <div className="flex-1 overflow-y-auto p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">{children}</div>
       </div>
     </div>,
     document.body

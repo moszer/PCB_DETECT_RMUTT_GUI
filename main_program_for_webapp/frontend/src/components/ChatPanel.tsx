@@ -14,7 +14,8 @@ export interface BoardContext {
   parts?: { name: string; status?: string; text?: string }[];
 }
 
-type Msg = { role: "user" | "assistant"; content: string };
+/** `fresh`: written in this page (revealed with an animation; history is not). */
+type Msg = { role: "user" | "assistant"; content: string; fresh?: boolean };
 
 const SUGGESTIONS = ["บอร์ดนี้คืออะไร ใช้ทำอะไรได้บ้าง", "ชิปหลักบนบอร์ดนี้ทำหน้าที่อะไร", "ทำไมจุดนี้ถึงได้ผลตรวจแบบนี้", "เอาบอร์ดนี้ไปทำโปรเจกต์อะไรได้บ้าง"];
 
@@ -181,7 +182,7 @@ export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContex
     const q = text.trim();
     if (!q || busy) return;
     const history: Msg[] = [...messages, { role: "user", content: q }];
-    setMessages([...history, { role: "assistant", content: "" }]);
+    setMessages([...history, { role: "assistant", content: "", fresh: true }]);
     setInput("");
     setBusy(true);
     sfx.chatSend();
@@ -228,6 +229,7 @@ export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContex
       open
       onClose={onClose}
       size="lg"
+      glow={thinking}
       title={
         <>
           <Bot className="size-4 text-accent" />
@@ -270,7 +272,13 @@ export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContex
                   m.role === "user" ? "bg-accent-soft whitespace-pre-wrap" : "bg-surface-2"
                 )}
               >
-                {m.role === "user" ? m.content : m.content ? <Rich text={m.content} /> : null}
+                {m.role === "user" ? (
+                  m.content
+                ) : m.content ? (
+                  <div className={m.fresh ? "ai-reveal" : undefined}>
+                    <Rich text={m.content} />
+                  </div>
+                ) : null}
                 {thinking && i === messages.length - 1 && <ThinkingIndicator />}
               </div>
             </div>
@@ -288,20 +296,26 @@ export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContex
           {messages.length > 0 && (
             <Button type="button" variant="ghost" icon={Trash2} disabled={busy} onClick={clearHistory} title="ลบประวัติแชทของจุดนี้" />
           )}
-          <textarea
-            value={input}
-            rows={1}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault();
-                send(input);
-              }
-            }}
-            placeholder="พิมพ์คำถาม…"
-            title="Enter ส่ง · Shift+Enter ขึ้นบรรทัด"
-            className="flex-1 resize-none max-h-32 min-h-9 rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:outline-none focus:border-accent"
-          />
+          <div className="relative flex-1 flex">
+            <span className="ai-glow-input" aria-hidden="true">
+              <span />
+              <span />
+            </span>
+            <textarea
+              value={input}
+              rows={1}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  send(input);
+                }
+              }}
+              placeholder="พิมพ์คำถาม…"
+              title="Enter ส่ง · Shift+Enter ขึ้นบรรทัด"
+              className="relative flex-1 resize-none max-h-32 min-h-9 rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:outline-none focus:border-accent"
+            />
+          </div>
           {busy ? (
             <Button type="button" variant="secondary" icon={Square} onClick={() => abort.current?.abort()}>
               หยุด
