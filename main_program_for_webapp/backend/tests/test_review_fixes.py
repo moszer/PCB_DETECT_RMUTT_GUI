@@ -336,13 +336,16 @@ class CameraCropModeTests(unittest.TestCase):
         self.assertEqual(out.shape, (640, 640, 3))
         self.assertEqual(int(out[320, 320, 0]), 255)  # 1:1 — the pixel survives undiluted
 
-    def test_crop_mode_never_upscales_small_frames(self):
-        # The largest centred cut of the asked shape, at 1:1 pixels (stretching adds no detail).
+    def test_crop_mode_scales_to_the_chosen_size_on_small_frames(self):
+        # The station works at a fixed output size (3840x3840 on a 3840x2160 camera): a frame
+        # too small for a 1:1 cut is cropped to the shape and scaled to exactly that size.
         from app.services.camera_service import CameraService
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        self.assertEqual(CameraService._fit_output(frame, (640, 640), "crop").shape, (480, 480, 3))
+        self.assertEqual(CameraService._fit_output(frame, (640, 640), "crop").shape, (640, 640, 3))
         big = np.zeros((2160, 3840, 3), dtype=np.uint8)
-        self.assertEqual(CameraService._fit_output(big, (3840, 3840), "crop").shape, (2160, 2160, 3))
+        self.assertEqual(CameraService._fit_output(big, (3840, 3840), "crop").shape, (3840, 3840, 3))
+        # ...and a big enough frame is still cut 1:1.
+        self.assertEqual(CameraService._fit_output(big, (1280, 1280), "crop").shape, (1280, 1280, 3))
 
     def test_api_reports_capture_and_mode(self):
         from conftest import operator_headers
@@ -488,13 +491,16 @@ class CameraCropModeTests(unittest.TestCase):
         self.assertEqual(out.shape, (640, 640, 3))
         self.assertEqual(int(out[320, 320, 0]), 255)  # 1:1 — the pixel survives undiluted
 
-    def test_crop_mode_never_upscales_small_frames(self):
-        # The largest centred cut of the asked shape, at 1:1 pixels (stretching adds no detail).
+    def test_crop_mode_scales_to_the_chosen_size_on_small_frames(self):
+        # The station works at a fixed output size (3840x3840 on a 3840x2160 camera): a frame
+        # too small for a 1:1 cut is cropped to the shape and scaled to exactly that size.
         from app.services.camera_service import CameraService
         frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        self.assertEqual(CameraService._fit_output(frame, (640, 640), "crop").shape, (480, 480, 3))
+        self.assertEqual(CameraService._fit_output(frame, (640, 640), "crop").shape, (640, 640, 3))
         big = np.zeros((2160, 3840, 3), dtype=np.uint8)
-        self.assertEqual(CameraService._fit_output(big, (3840, 3840), "crop").shape, (2160, 2160, 3))
+        self.assertEqual(CameraService._fit_output(big, (3840, 3840), "crop").shape, (3840, 3840, 3))
+        # ...and a big enough frame is still cut 1:1.
+        self.assertEqual(CameraService._fit_output(big, (1280, 1280), "crop").shape, (1280, 1280, 3))
 
     def test_api_reports_capture_and_mode(self):
         from conftest import operator_headers

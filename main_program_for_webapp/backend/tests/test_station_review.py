@@ -323,13 +323,3 @@ class SecretLogTests(unittest.TestCase):
         finally:
             root.removeHandler(h)
             os.environ.pop("GEMINI_API_KEY", None)
-
-
-class ResolutionTests(unittest.TestCase):
-    def test_reported_size_is_what_frames_really_are(self):
-        cam = CameraService()
-        cam._output_size, cam._output_mode = (3840, 3840), "crop"
-        cam._actual_width, cam._actual_height = 3840, 2160
-        self.assertEqual(cam.resolution, (2160, 2160))  # was reported as 3840x3840
-        cam._output_size = (640, 640)
-        self.assertEqual(cam.resolution, (640, 640))

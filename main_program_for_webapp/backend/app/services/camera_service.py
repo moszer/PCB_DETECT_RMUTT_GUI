@@ -85,20 +85,8 @@ class CameraService:
 
     @property
     def resolution(self) -> Tuple[int, int]:
-        """Size of the frames handed to streaming, inspection and AOI (after any output crop).
-
-        What the frames really are: a crop larger than the camera delivers is cut smaller
-        (never stretched, see _fit_output), so asking 3840x3840 of a 3840x2160 camera gives
-        2160x2160 — reporting the asked size showed 3840x3840 on screen.
-        """
-        if not self._output_size:
-            return (self._actual_width, self._actual_height)
-        ow, oh = self._output_size
-        w, h = self._actual_width, self._actual_height
-        if self._output_mode == "crop" and w and h:
-            k = min(1.0, w / ow, h / oh)
-            return (int(ow * k), int(oh * k))
-        return self._output_size
+        """Size of the frames handed to streaming, inspection and AOI (after any output crop)."""
+        return self._output_size or (self._actual_width, self._actual_height)
 
     @property
     def capture_resolution(self) -> Tuple[int, int]:
@@ -337,9 +325,10 @@ class CameraService:
 
         fit:  center-crop to the output aspect ratio, then resize (same field of view).
         crop: cut exactly `size` from the center with no resize (1:1 pixels). When the frame
-              is smaller than that, the largest centred cut of the same shape — never an
-              upscale: 3840x3840 asked of a 3840x2160 camera used to stretch a 2160x2160 cut
-              to 3840x3840 (no more detail, 3x the work for everything downstream).
+              is smaller than that (3840x3840 asked of a 3840x2160 camera, the station's
+              chosen size) it is scaled to `size` like fit: a fixed output size keeps taught
+              reference pictures and calibrations comparable, at the cost of work on pixels
+              that carry no extra detail.
         """
         if not size:
             return frame
@@ -347,11 +336,9 @@ class CameraService:
         h, w = frame.shape[:2]
         if (w, h) == (out_w, out_h):
             return frame
-        if mode == "crop":
-            k = min(1.0, w / out_w, h / out_h)
-            cw, ch = int(out_w * k), int(out_h * k)
-            x, y = (w - cw) // 2, (h - ch) // 2
-            return frame[y:y + ch, x:x + cw].copy()
+        if mode == "crop" and w >= out_w and h >= out_h:
+            x, y = (w - out_w) // 2, (h - out_h) // 2
+            return frame[y:y + out_h, x:x + out_w].copy()
         target = out_w / out_h
         if w / h > target:
             crop_w, crop_h = int(round(h * target)), h
