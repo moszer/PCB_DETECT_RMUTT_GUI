@@ -163,6 +163,19 @@ When accessed via local Wi-Fi / LAN by multiple devices (e.g., operator iPad and
 - `data/runs/`, `data/uploads/`: captured and annotated images.
 - `data/references/`, `data/datasets/`, `data/models/`: reference profiles, training datasets, uploaded weights.
 - `data/settings.json`: station settings saved from the UI.
+- `data/knowledge/project_book.pdf`: optional local thesis PDF used by the station AI agent.
+
+### Ask the agent about the project book
+
+Copy the thesis PDF to `backend/data/knowledge/project_book.pdf` on each station, then
+restart the backend if it is already running. You can instead set `PCB_BOOK_PDF_PATH` to
+its absolute path in `backend/.env`. The PDF stays in station storage, which Git ignores;
+matching excerpts are sent to the configured Gemini model when a book question is asked.
+The agent searches the table of contents and main chapters (PDF pages
+7–88), cites PDF page numbers in its answers, and does not search signatures, student IDs,
+or author biographies. The first question may take a moment while the PDF is read. The
+agent still requires Gemini and a working API key. Example: “ในเล่ม ชุดข้อมูลหลักมีภาพกี่ภาพ
+อ้างหน้า PDF ด้วย”.
 
 ### Back up and restore
 

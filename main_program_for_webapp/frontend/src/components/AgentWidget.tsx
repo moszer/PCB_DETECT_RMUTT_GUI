@@ -11,14 +11,14 @@ import { Button, Spinner, cx } from "./ui";
 type Step = { label: string; done: boolean };
 type Msg = { role: "user" | "assistant"; content: string; steps?: Step[]; error?: boolean };
 
-const SUGGESTIONS = ["สรุปสถานะและการตั้งค่าทั้งหมดของเครื่อง", "รางแม่นแค่ไหน ควรตั้งชดเชยไหม", "รอบสแกนล่าสุดผลเป็นยังไง", "มี error อะไรล่าสุดบ้าง", "สรุป yield ตอนนี้"];
+const SUGGESTIONS = ["สรุปสถานะและการตั้งค่าทั้งหมดของเครื่อง", "สรุปโครงงานในเล่มปริญญานิพนธ์", "รางแม่นแค่ไหน ควรตั้งชดเชยไหม", "รอบสแกนล่าสุดผลเป็นยังไง", "มี error อะไรล่าสุดบ้าง", "สรุป yield ตอนนี้"];
 
 function ThinkingIndicator({ reading }: { reading: boolean }) {
   return (
     <div className="flex items-center gap-2.5 min-h-6" role="status" aria-live="polite">
       <span className="ai-thinking-orb" aria-hidden="true" />
       <span className="text-xs font-medium text-text">
-        {reading ? "กำลังอ่านข้อมูลสถานี…" : "กำลังคิด…"}
+        {reading ? "กำลังอ่านข้อมูล…" : "กำลังคิด…"}
       </span>
     </div>
   );
@@ -26,7 +26,8 @@ function ThinkingIndicator({ reading }: { reading: boolean }) {
 
 /**
  * Station-wide AI assistant: a floating button on every page. It answers from live station
- * data (history, yield, scans, references, datasets, models, settings) and can open pages.
+ * data (history, yield, scans, references, datasets, models, settings), the project
+ * thesis PDF and can open pages.
  */
 export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (page: TabId) => void }) {
   const [open, setOpen] = useState(false);
@@ -166,7 +167,7 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
             </span>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold">ผู้ช่วย AI ประจำสถานี</div>
-              <div className="text-[11px] text-muted truncate">ถามได้ทุกข้อมูลในระบบ · พาไปหน้าต่างๆ ได้ · อ่านอย่างเดียว</div>
+              <div className="text-[11px] text-muted truncate">ถามข้อมูลสถานีและเล่มโครงงาน · พาไปหน้าต่างๆ ได้</div>
             </div>
             {messages.length > 0 && (
               <button type="button" onClick={clear} disabled={busy} title="ลบประวัติแชท" className="size-8 grid place-items-center rounded-md text-subtle hover:text-fail hover:bg-fail-soft cursor-pointer">
@@ -184,7 +185,7 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
             {loaded && !messages.length && (
               <div className="m-auto flex flex-col items-center gap-3 text-center">
                 <Sparkles className="size-7 text-accent" />
-                <p className="text-sm text-muted">ถามได้เลย เช่น yield, ผลสแกน, จุดที่ FAIL, โมเดล, ชุดข้อมูล, การตั้งค่า หรือ “พาไปหน้าประวัติ”</p>
+                <p className="text-sm text-muted">ถามได้เลย เช่น yield, ผลสแกน, โมเดล, ชุดข้อมูล, การตั้งค่า หรือเนื้อหาในเล่มปริญญานิพนธ์</p>
                 <div className="flex flex-wrap justify-center gap-1.5">
                   {SUGGESTIONS.map((s) => (
                     <button key={s} type="button" onClick={() => send(s)} className="h-7 px-2.5 rounded-full border border-line text-xs hover:bg-surface-2 cursor-pointer">
