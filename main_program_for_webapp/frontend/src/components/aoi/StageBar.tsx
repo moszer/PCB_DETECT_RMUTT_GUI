@@ -128,7 +128,7 @@ export function StageBar({
       <div className="flex items-center gap-2 sm:mr-1" title="สเตจ XY">
         <StatusDot tone={!connected ? "neutral" : machine?.homed ? "pass" : "review"} pulse={machine?.is_moving} />
         <span className="hidden sm:inline text-sm font-medium">สเตจ XY</span>
-        {connected && <Badge tone={machine?.mode === "serial" ? "accent" : "review"}>{machine?.mode === "serial" ? "Serial" : "จำลอง"}</Badge>}
+        {connected && <Badge className="max-sm:hidden" tone={machine?.mode === "serial" ? "accent" : "review"}>{machine?.mode === "serial" ? "Serial" : "จำลอง"}</Badge>}
       </div>
 
       {!connected ? (
@@ -209,7 +209,7 @@ export function StageBar({
             <span>
               <span className="text-subtle">Y</span> {formatMm(machine?.position_mm[1])}
             </span>
-            <span className="text-subtle">mm</span>
+            <span className="hidden sm:inline text-subtle">mm</span>
           </div>
           {!machine?.homed && <span className="hidden sm:inline text-xs text-review font-medium">← กด HOME ก่อนเคลื่อนที่</span>}
           {machine?.homed && machine.mode === "serial" && (

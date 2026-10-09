@@ -589,12 +589,13 @@ export function Modal({
               <span />
             </span>
           )}
-          <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-line">
-            <div className="min-w-0">
+          {/* Actions wrap under the title on a phone instead of squeezing it to one word a line. */}
+          <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 px-5 py-4 border-b border-line">
+            <div className="min-w-[10rem] flex-1">
               <h2 className="text-base font-semibold text-text flex items-center gap-2 flex-wrap">{title}</h2>
               {subtitle && <p className="text-xs text-muted mt-0.5">{subtitle}</p>}
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex flex-wrap items-center justify-end gap-1.5 ml-auto">
               {actions}
               <IconButton icon={X} label="ปิด" onClick={onClose} />
             </div>

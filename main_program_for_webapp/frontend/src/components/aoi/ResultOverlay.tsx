@@ -2,6 +2,7 @@
 
 import React, { useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { ScanCapsule, ScanEffects } from "../ScanCapsule";
 import type { AOIPointResult, CapturedFrame, InspectionResult } from "@/types";
 import { classColor } from "@/lib/format";
 import { LABEL_FONT, LABEL_HEIGHT, layoutLabels, type NBox } from "@/lib/labelLayout";
@@ -219,8 +220,11 @@ export function AnimatedResult({ item }: { item: ResultSource }) {
   );
 }
 
-/** Boxes of one captured frame, drawn statically over its preview (object-contain aligned). */
-function FrameImage({ frame, className = "absolute inset-0" }: { frame: CapturedFrame; className?: string }) {
+/**
+ * Boxes of one captured frame over its preview (object-contain aligned). `dots`: a glowing dot
+ * per part instead (the frame being analysed; remount per frame so they pop in again).
+ */
+function FrameImage({ frame, dots, className = "absolute inset-0" }: { frame: CapturedFrame; dots?: boolean; className?: string }) {
   const [dims, setDims] = useState<{ src: string; w: number; h: number } | null>(null);
   const size = frame.preview && dims?.src === frame.preview ? dims : null;
   if (!frame.preview) return <div className={cx("bg-viewport", className)} />;
@@ -235,20 +239,31 @@ function FrameImage({ frame, className = "absolute inset-0" }: { frame: Captured
       />
       {size && (
         <svg viewBox={`0 0 ${size.w} ${size.h}`} preserveAspectRatio="xMidYMid meet" className="absolute inset-0 size-full pointer-events-none">
-          {frame.boxes.map((b, i) => (
-            <rect
-              key={i}
-              x={b.box[0] * size.w}
-              y={b.box[1] * size.h}
-              width={(b.box[2] - b.box[0]) * size.w}
-              height={(b.box[3] - b.box[1]) * size.h}
-              fill={classColor(b.label)}
-              fillOpacity={0.12}
-              stroke={classColor(b.label)}
-              strokeWidth={1.5}
-              vectorEffect="non-scaling-stroke"
-            />
-          ))}
+          {dots
+            ? frame.boxes.map((b, i) => (
+                <circle
+                  key={i}
+                  cx={((b.box[0] + b.box[2]) / 2) * size.w}
+                  cy={((b.box[1] + b.box[3]) / 2) * size.h}
+                  r={Math.max(size.w, size.h) * 0.007}
+                  className="scan-dot"
+                  style={{ animationDelay: `${Math.round(((b.box[0] + b.box[2]) / 2) * 420)}ms` }}
+                />
+              ))
+            : frame.boxes.map((b, i) => (
+                <rect
+                  key={i}
+                  x={b.box[0] * size.w}
+                  y={b.box[1] * size.h}
+                  width={(b.box[2] - b.box[0]) * size.w}
+                  height={(b.box[3] - b.box[1]) * size.h}
+                  fill={classColor(b.label)}
+                  fillOpacity={0.12}
+                  stroke={classColor(b.label)}
+                  strokeWidth={1.5}
+                  vectorEffect="non-scaling-stroke"
+                />
+              ))}
         </svg>
       )}
     </div>
@@ -256,8 +271,9 @@ function FrameImage({ frame, className = "absolute inset-0" }: { frame: Captured
 }
 
 /**
- * Shown while a test snap / scan point is being analyzed: a loading bar plus every frame
- * captured so far (click a thumbnail to look at it), no flashing effects.
+ * Shown while a test snap / scan point is being analyzed: the status capsule and the AI light
+ * over the latest frame (its parts as glowing dots), plus every frame captured so far (click a
+ * thumbnail to look at it).
  */
 export function CaptureProgress({
   image,
@@ -278,33 +294,24 @@ export function CaptureProgress({
   const latest = sorted[sorted.length - 1];
   const shown = (picked !== null && sorted.find((f) => f.index === picked)) || latest;
   const total = Math.max(target ?? 0, sorted.length);
-  const percent = total ? (sorted.length / total) * 100 : 0;
-  const status = !sorted.length ? waiting : total > 1 ? `เฟรม ${sorted.length}/${total}` : "กำลังวิเคราะห์";
 
   return (
     <div className="absolute inset-0 flex flex-col">
       <div className="relative flex-1 min-h-0">
         {shown ? (
-          <FrameImage frame={shown} />
+          <FrameImage key={shown.index} frame={shown} dots />
         ) : image ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={image} alt="ภาพที่กำลังวิเคราะห์" className="absolute inset-0 size-full object-contain" />
         ) : null}
 
-        <div className="absolute top-3 left-3 right-3 flex flex-col gap-1.5 pointer-events-none">
-          <span className="self-start h-7 px-2.5 rounded-md bg-black/65 backdrop-blur text-xs text-white flex items-center gap-2">
-            <Loader2 className="size-3.5 animate-spin text-cyan-300" />
-            กำลังตรวจ {label} · {status}
-            {shown && <span className="text-white/60">· พบ {shown.boxes.length} ชิ้น</span>}
-          </span>
-          <div className="h-1 rounded-full bg-white/15 overflow-hidden">
-            {sorted.length ? (
-              <div className="h-full bg-cyan-400 transition-[width] duration-300 ease-out" style={{ width: `${percent}%` }} />
-            ) : (
-              <div className="h-full w-1/3 bg-cyan-400/70 res-indeterminate" />
-            )}
-          </div>
-        </div>
+        <ScanEffects phase={sorted.length ? "analyze" : "settle"} />
+        <ScanCapsule
+          top={12}
+          phase={sorted.length ? "analyze" : "settle"}
+          title={sorted.length ? "AI กำลังตรวจ" : waiting}
+          detail={[label, total > 1 && sorted.length ? `เฟรม ${sorted.length}/${total}` : null, shown ? `พบ ${shown.boxes.length} ชิ้น` : null].filter(Boolean).join(" · ")}
+        />
       </div>
 
       {total > 1 && (

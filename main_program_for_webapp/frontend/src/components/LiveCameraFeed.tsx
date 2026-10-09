@@ -8,11 +8,14 @@ import { formatMm } from "@/lib/format";
 import type { CameraShape } from "@/lib/cameraFormat";
 import { Button, IconButton, StatusDot, cx } from "./ui";
 import { CameraFormatPanel } from "./CameraFormatPanel";
+import { ScanCapsule, ScanEffects, type ScanPhase } from "./ScanCapsule";
 
 export interface FeedHud {
   title: string;
   detail?: string;
   tone: "accent" | "review";
+  /** Scan status: drawn as the floating capsule (ScanCapsule) instead of the banner. */
+  phase?: ScanPhase;
 }
 
 interface LiveCameraFeedProps {
@@ -24,8 +27,8 @@ interface LiveCameraFeedProps {
   hud?: FeedHud | null;
   /** Disable camera switching (e.g. during a scan the backend rejects it anyway). */
   locked?: boolean;
-  /** Sweep a scan line over the image while a scan is capturing. */
-  scanning?: boolean;
+  /** true: sweep a scan line (dataset capture). A phase: the scan-point effects (ScanEffects). */
+  scanning?: boolean | "settle" | "analyze";
   /** Extra controls drawn over the image (e.g. the AOI jog pad). */
   children?: React.ReactNode;
 }
@@ -197,7 +200,8 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
 
       {reticle && <Reticle zoomed={zoomed} />}
 
-      {scanning && (
+      {(scanning === "settle" || scanning === "analyze") && <ScanEffects phase={scanning} />}
+      {scanning === true && (
         <div className="absolute inset-x-0 h-0.5 bg-cyan-300/90 shadow-[0_0_14px_3px_rgb(103_232_249/0.6)] animate-scanline pointer-events-none" />
       )}
 
@@ -258,7 +262,8 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
           document.body
         )}
 
-      {hud && (
+      {hud?.phase && <ScanCapsule phase={hud.phase} title={hud.title} detail={hud.detail} />}
+      {hud && !hud.phase && (
         <div
           key={hud.title}
           className={cx(

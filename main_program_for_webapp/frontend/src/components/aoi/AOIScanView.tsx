@@ -553,19 +553,29 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
           ? " · หาบอร์ดเทียบต้นแบบไม่ได้"
           : "";
   if (scanning && progress?.event === "board_aligning") {
-    hud = { tone: "accent", title: "กำลังหาตำแหน่งบอร์ด", detail: "ถ่ายจุดอ้างอิงเทียบกับภาพต้นแบบ เพื่อชดเชยบอร์ดที่วางเอียงหรือเลื่อน" };
+    hud = { tone: "accent", phase: "align", title: "กำลังหาตำแหน่งบอร์ด", detail: "เทียบภาพต้นแบบ" };
   } else if (scanning && progress?.point_index !== undefined) {
-    const frame = progress.event === "point_frame" ? ` · เฟรม ${progress.frame_index}/${progress.target_frames}` : "";
-    hud = {
-      tone: "accent",
-      title: PROGRESS_TITLE[progress.event] ?? "กำลังสแกน",
-      detail: `จุด ${progress.point_index + 1}/${progress.total_points} ${progress.name ?? ""}${
-        progress.target_mm ? ` · ${formatMm(progress.target_mm[0])}, ${formatMm(progress.target_mm[1])} mm` : ""
-      }${frame}${alignNote}`,
-    };
+    const at = `จุด ${progress.point_index + 1}/${progress.total_points}`;
+    const where = progress.target_mm ? ` · ${formatMm(progress.target_mm[0])}, ${formatMm(progress.target_mm[1])} mm` : "";
+    const done = progress.event === "point_complete" ? results.find((r) => r.point_index === progress.point_index) : undefined;
+    if (progress.event === "point_start") {
+      hud = { tone: "accent", phase: "move", title: `กำลังไป${at}`, detail: `${progress.name ?? ""}${where}${alignNote}`.replace(/^ · /, "") };
+    } else if (progress.event === "point_capturing") {
+      hud = { tone: "accent", phase: "settle", title: "รอภาพนิ่ง", detail: at };
+    } else if (progress.event === "point_frame") {
+      const frame = progress.target_frames && progress.target_frames > 1 ? ` · เฟรม ${progress.frame_index}/${progress.target_frames}` : "";
+      hud = { tone: "accent", phase: "analyze", title: "AI กำลังตรวจ", detail: `${at}${frame}` };
+    } else if (done) {
+      const phase = done.verdict === "PASS" ? "pass" : done.verdict === "FAIL" ? "fail" : "review";
+      const parts = done.component_eval ?? [];
+      const count = parts.length ? `ครบ ${parts.filter((c) => c.status === "confirmed").length}/${parts.length}` : `พบ ${done.detections.length} ชิ้น`;
+      hud = { tone: "accent", phase, title: done.verdict, detail: `${at} · ${count}` };
+    } else {
+      hud = { tone: "accent", phase: "move", title: PROGRESS_TITLE[progress.event] ?? "กำลังสแกน", detail: at };
+    }
   } else if (movingIndex !== null && points[movingIndex]) {
     const pt = points[movingIndex];
-    hud = { tone: "review", title: `กำลังเคลื่อนไป ${pt.name}`, detail: `${formatMm(pt.x_mm)}, ${formatMm(pt.y_mm)} mm` };
+    hud = { tone: "review", phase: "move", title: `กำลังไป ${pt.name}`, detail: `${formatMm(pt.x_mm)}, ${formatMm(pt.y_mm)} mm` };
   }
 
   // While a scan captures a point that has no result yet, show its frozen frame analyzing.
@@ -597,7 +607,7 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
           frames: pointFrames?.key === capturingKey ? pointFrames.frames : [],
           target: progress?.target_frames ?? (pointFrames?.key === capturingKey ? pointFrames.target : undefined),
           label: `จุด ${(progress?.point_index ?? 0) + 1}/${progress?.total_points ?? "?"}`,
-          waiting: "รอภาพนิ่งและถ่ายภาพ",
+          waiting: "รอภาพนิ่ง",
         }
       : null);
 
@@ -837,7 +847,7 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
                     onZoomChange={scanning ? undefined : setLiveZoom}
                     stagePosition={machine?.connected ? machine.position_mm : undefined}
                     hud={hud}
-                    scanning={capturing}
+                    scanning={capturing ? (progress?.event === "point_frame" ? "analyze" : "settle") : false}
                     locked={scanning}
                   >
                     {!operator && !scanning && machine?.connected && (
