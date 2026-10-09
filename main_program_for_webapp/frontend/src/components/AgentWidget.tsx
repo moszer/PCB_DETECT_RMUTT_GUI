@@ -126,6 +126,9 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
     await fetch(`${API_BASE}/api/chat/agent/history`, { method: "DELETE", headers: authHeaders({}) }).catch(() => undefined);
   };
 
+  const lastMessage = messages[messages.length - 1];
+  const thinking = busy && lastMessage?.role === "assistant" && !lastMessage.content;
+
   return (
     <>
       <button
@@ -153,7 +156,10 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
       </button>
 
       {open && (
-        <div className="fixed bottom-36 md:bottom-20 right-2 sm:right-4 z-40 w-[440px] max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2.5rem)] h-[620px] max-h-[calc(100dvh-13rem)] md:max-h-[calc(100dvh-7rem)] rounded-2xl border border-line bg-surface shadow-2xl flex flex-col animate-rise">
+        <div className={cx(
+          "ai-assistant-panel fixed bottom-36 md:bottom-20 right-2 sm:right-4 z-40 w-[440px] max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2.5rem)] h-[620px] max-h-[calc(100dvh-13rem)] md:max-h-[calc(100dvh-7rem)] rounded-2xl border border-line bg-surface shadow-2xl flex flex-col animate-rise",
+          thinking && "ai-assistant-panel-thinking"
+        )}>
           <div className="flex items-center gap-2 px-4 py-3 border-b border-line">
             <span className="ai-assistant-icon size-8 rounded-xl text-white grid place-items-center">
               <Bot className="size-4" />

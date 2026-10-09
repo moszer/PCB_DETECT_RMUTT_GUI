@@ -337,6 +337,41 @@ input[type="number"]::-webkit-outer-spin-button {
   box-shadow: var(--shadow);
   backdrop-filter: blur(12px);
 }
+/* The whole station chat window picks up a soft, wide rim only while waiting for AI. */
+.ai-assistant-panel {
+  isolation: isolate;
+  transition: box-shadow 400ms ease;
+}
+.ai-assistant-panel-thinking {
+  box-shadow: var(--shadow-lg), 0 0 28px rgb(95 145 225 / 0.18);
+}
+.ai-assistant-panel-thinking::before {
+  position: absolute;
+  z-index: 2;
+  inset: -2px;
+  padding: 6px;
+  border-radius: inherit;
+  background: linear-gradient(
+    110deg,
+    transparent 4%,
+    rgb(92 143 215 / 0.18) 24%,
+    rgb(130 170 225 / 0.48) 45%,
+    rgb(151 165 222 / 0.3) 57%,
+    transparent 78%
+  );
+  background-size: 240% 100%;
+  filter: blur(5px);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  content: "";
+  animation: ai-assistant-rim 7s ease-in-out infinite;
+}
+@keyframes ai-assistant-rim {
+  0%, 100% { background-position: 0% 50%; opacity: 0.55; }
+  50% { background-position: 100% 50%; opacity: 0.95; }
+}
 .ai-thinking-orb {
   position: relative;
   display: inline-block;
