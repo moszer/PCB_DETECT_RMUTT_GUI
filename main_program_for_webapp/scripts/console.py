@@ -200,11 +200,55 @@ def _jetson() -> str | None:
     return model.replace("Engineering Reference Developer Kit", "Developer Kit")
 
 
+NVIDIA_ART = Path(__file__).with_name("nvidia-ascii.txt")
+
+
+def _nvidia_art() -> tuple[list[str], list[str]]:
+    """The NVIDIA art file as (eye rows, wordmark rows): two blocks separated by blank lines,
+    stripped of their common left margin (the file is centred in a wide canvas)."""
+    if not NVIDIA_ART.is_file():
+        return [], []
+    blocks: list[list[str]] = [[]]
+    for ln in NVIDIA_ART.read_text(encoding="utf-8").splitlines():
+        if ln.strip():
+            blocks[-1].append(ln.rstrip())
+        elif blocks[-1]:
+            blocks.append([])
+    blocks = [b for b in blocks if b]
+    if len(blocks) < 2:
+        return [], []
+    # Each block loses its own margin, then the narrower one is centred under/over the wider.
+    trimmed = []
+    for b in blocks[:2]:
+        indent = min(len(ln) - len(ln.lstrip()) for ln in b)
+        trimmed.append([ln[indent:] for ln in b])
+    widths = [max(len(ln) for ln in b) for b in trimmed]
+    wide = max(widths)
+    return tuple([" " * ((wide - w) // 2) + ln for ln in b] for b, w in zip(trimmed, widths))  # type: ignore[return-value]
+
+
 def nvidia_lines(max_width: int) -> list[str]:
-    """NVIDIA in green block letters and the Jetson board's name (wide or compact letters)."""
+    """The NVIDIA eye (green) and wordmark (white) from scripts/nvidia-ascii.txt and the
+    Jetson board's name; block letters when the terminal is too narrow for the art."""
     board = _jetson()
     if not board:
         return []
+    eye, word = _nvidia_art()
+    width = max((len(ln) for ln in eye + word), default=0)
+    if eye and word and width > max_width:
+        # Two thirds as wide: every third column dropped (the strokes are 5+ characters thick).
+        thin = lambda rows: ["".join(ch for i, ch in enumerate(r) if i % 3 != 2).rstrip() for r in rows]  # noqa: E731
+        eye, word = thin(eye), thin(word)
+        width = max((len(ln) for ln in eye + word), default=0)
+    if eye and word and width <= max_width:
+        green = (lambda t: f"{_fg(NVIDIA_GREEN)}{t}\033[0m") if COLOR else (lambda t: t)
+        white = (lambda t: f"\033[1;97m{t}\033[0m") if COLOR else (lambda t: t)
+        return ["", *[green(r) for r in eye], "", *[white(r) for r in word], "", f"{dim('powered by')} {bold(board)}"]
+    return _nvidia_blocks(max_width, board)
+
+
+def _nvidia_blocks(max_width: int, board: str) -> list[str]:
+    """NVIDIA in green block letters and the Jetson board's name (wide or compact letters)."""
     word = "NVIDIA"
     for scale in (2, 1):
         rows = ["  ".join(_GLYPHS[ch][r].replace("#", "█" * scale).replace(" ", " " * scale) for ch in word) for r in range(5)]
