@@ -61,10 +61,10 @@ def _fg(rgb) -> str:
     return f"\033[38;2;{rgb[0]};{rgb[1]};{rgb[2]}m" if TRUECOLOR else f"\033[38;5;{_ansi256(*rgb)}m"
 
 
-def logo_rows() -> list[str]:
-    """The seal as ASCII art, trimmed, tinted gold at the spire to orange at the base."""
+def _logo_art() -> tuple[list[str], list[tuple[int, int, int]]]:
+    """The seal's ASCII lines (trimmed, same width) and a colour per line (gold -> orange)."""
     if not ASCII_LOGO.is_file():
-        return []
+        return [], []
     lines = [ln.rstrip() for ln in ASCII_LOGO.read_text(encoding="utf-8").splitlines()]
     while lines and not lines[0].strip():
         lines.pop(0)
@@ -73,14 +73,103 @@ def logo_rows() -> list[str]:
     indent = min((len(ln) - len(ln.lstrip()) for ln in lines if ln.strip()), default=0)
     lines = [ln[indent:] for ln in lines]
     width = max((len(ln) for ln in lines), default=0)
-    out = []
-    for i, ln in enumerate(lines):
-        if COLOR:
-            t = i / max(1, len(lines) - 1)
-            rgb = (round(255 - 25 * t), round(190 - 100 * t), round(20 + 10 * t))  # gold -> orange
-            ln = f"{_fg(rgb)}{ln}\033[0m"
-        out.append((ln, width))
-    return out
+    lines = [ln.ljust(width) for ln in lines]
+    rgbs = []
+    for i in range(len(lines)):
+        t = i / max(1, len(lines) - 1)
+        rgbs.append((round(255 - 25 * t), round(190 - 100 * t), round(20 + 10 * t)))
+    return lines, rgbs
+
+
+def logo_rows() -> list[tuple[str, int]]:
+    """The seal as ASCII art, trimmed, tinted gold at the spire to orange at the base."""
+    lines, rgbs = _logo_art()
+    width = len(lines[0]) if lines else 0
+    return [((f"{_fg(rgb)}{ln}\033[0m" if COLOR else ln), width) for ln, rgb in zip(lines, rgbs)]
+
+
+def _visible_len(text: str) -> int:
+    return len(re.sub(r"\033\[[0-9;]*m", "", text))
+
+
+def _snake_banner(lines: list[str], top: int, rows: int) -> None:
+    """The seal drawn by a snake: it zig-zags down the faint art in bands, every character its
+    head passes is eaten and lights up in colour, it grows as it eats, then slides off."""
+    art, rgbs = _logo_art()
+    h, w = len(art), len(art[0])
+    band = 3
+    # The head's path: left to right on band 0, right to left on band 1, … (centre row of each band).
+    path: list[tuple[int, int]] = []
+    for b, r0 in enumerate(range(0, h, band)):
+        r = min(h - 1, r0 + band // 2)
+        cols = range(w) if b % 2 == 0 else range(w - 1, -1, -1)
+        path += [(r, x) for x in cols]
+        if r0 + band < h:  # the turn down to the next band
+            x = w - 1 if b % 2 == 0 else 0
+            path += [(rr, x) for rr in range(r + 1, min(h - 1, r + band) + 1)]
+    eaten = [[False] * w for _ in range(h)]
+    green = [(40, 230, 110), (30, 200, 90), (25, 165, 75), (20, 130, 60)]
+    duration = 2.6
+    steps_per_frame = max(1, round(len(path) / (duration * 50)))
+    length = 6
+
+    def cell(r: int, x: int, snake: dict) -> str:
+        ch = art[r][x]
+        if (r, x) in snake:
+            k = snake[(r, x)]
+            if k == 0:
+                return f"\033[1m{_fg(green[0])}@\033[0m"
+            return f"{_fg(green[min(3, 1 + k // 6)])}{'o' if k % 3 else 'O'}\033[0m"
+        if ch == " ":
+            return " "
+        return f"{_fg(rgbs[r])}{ch}\033[0m" if eaten[r][x] else f"\033[38;5;239m{ch}\033[0m"
+
+    def row_text(i: int, snake: dict) -> str:
+        left = "".join(cell(i, x, snake) for x in range(w)) if i < h else " " * w
+        right = lines[i - top] if 0 <= i - top < len(lines) else ""
+        return f"  {left}   {right}"
+
+    out = sys.stdout
+    out.write("\033[?25l")  # hide the cursor while drawing
+    try:
+        for i in range(rows):
+            out.write(row_text(i, {}) + "\n")
+        out.flush()
+        prev_rows: set = set()
+        head = 0
+        last = len(path) + 40  # run on until the tail has left the art
+        while head <= last:
+            for _ in range(steps_per_frame):
+                if head < len(path):
+                    r, x = path[head]
+                    for rr in range(max(0, r - band // 2), min(h, r + band // 2 + 1)):
+                        if not eaten[rr][x] and art[rr][x] != " ":
+                            eaten[rr][x] = True
+                            if art[rr][x] in "*#%@&$":
+                                length = min(40, length + 1)  # the rich bits make it grow
+                        eaten[rr][x] = True
+                head += 1
+            snake = {}
+            for k in range(length):
+                j = head - 1 - k
+                if 0 <= j < len(path):
+                    snake.setdefault(path[j], k)
+            now_rows = {r for r, _ in snake}
+            for i in sorted(now_rows | prev_rows):
+                up = rows - i
+                out.write(f"\033[{up}F" + row_text(i, snake) + "\033[K" + f"\033[{up}E")
+            out.flush()
+            prev_rows = now_rows
+            time.sleep(0.02)
+        for i in range(h):  # everything in colour at the end
+            eaten[i] = [True] * w
+        for i in range(min(rows, h)):
+            up = rows - i
+            out.write(f"\033[{up}F" + row_text(i, {}) + "\033[K" + f"\033[{up}E")
+        out.flush()
+    finally:
+        out.write("\033[?25h")
+        out.flush()
 
 
 def cmd_banner(_args) -> int:
@@ -91,20 +180,27 @@ def cmd_banner(_args) -> int:
         print("\n".join(lines))
         return 0
     width = logo[0][1]
-    text_width = max((len(re.sub(r"\033\[[0-9;]*m", "", ln)) for ln in lines), default=0)
-    cols = shutil.get_terminal_size((100, 24)).columns
-    if cols < 2 + width + 3 + text_width:  # narrow terminal: the text goes below the art
+    text_width = max((_visible_len(ln) for ln in lines), default=0)
+    size = shutil.get_terminal_size((100, 24))
+    if size.columns < 2 + width + 3 + text_width:  # narrow terminal: the text goes below the art
         print("\n".join(f"  {ln}" for ln, _ in logo))
         print()
         print("\n".join(f"  {ln}" for ln in lines))
         return 0
     top = max(0, (len(logo) - len(lines)) // 2)
     rows = max(len(logo), top + len(lines))
-    # On a terminal the seal is drawn in top to bottom (~0.5 s); logs get it at once.
+    # A snake draws the seal on a terminal tall enough to hold it (redrawing in place);
+    # otherwise it is drawn top to bottom, and logs get it at once.
+    if ANIMATE and COLOR and size.lines >= rows + 2:
+        try:
+            _snake_banner(lines, top, rows)
+            return 0
+        except (OSError, KeyboardInterrupt):
+            sys.stdout.write("\033[?25h\n")
     delay = 0.5 / rows if ANIMATE else 0.0
     for i in range(rows):
         left = logo[i][0] if i < len(logo) else ""
-        pad = " " * (width - (len(re.sub(r"\033\[[0-9;]*m", "", left))))
+        pad = " " * (width - _visible_len(left))
         right = lines[i - top] if 0 <= i - top < len(lines) else ""
         print(f"  {left}{pad}   {right}", flush=True)
         if delay:
