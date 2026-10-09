@@ -65,7 +65,18 @@ def select_device(preference: Optional[str] = None) -> InferenceDevice:
     if index >= count:
         raise RuntimeError(f"Requested cuda:{index}, but only {count} CUDA GPU(s) visible.")
     name = torch.cuda.get_device_name(index)
-    return InferenceDevice(f"cuda:{index}", f"NVIDIA {name} (cuda:{index})", f"VRAM: {count} GPU(s)")
+    detail = f"VRAM: {count} GPU(s)"
+    # is_available() only establishes that CUDA can see the card. Some wheels omit
+    # the GPU's architecture (notably Jetson Orin sm_87) yet still print a CUDA label.
+    try:
+        major, minor = torch.cuda.get_device_capability(index)
+        arches = torch.cuda.get_arch_list()
+        arch = f"sm_{major}{minor}"
+        if arches and arch not in arches:
+            detail = f"Warning: PyTorch {torch.__version__} does not list {arch} for this GPU; verify a compatible JetPack/PyTorch build."
+    except (AttributeError, RuntimeError):
+        pass
+    return InferenceDevice(f"cuda:{index}", f"NVIDIA {name} (cuda:{index})", detail)
 
 
 def validate_model_file(model_path: str) -> Path:

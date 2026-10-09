@@ -40,6 +40,11 @@ FRONTEND_PID=""
 BUILD_PID=""
 UPDATES_FILE=""
 UPDATES_PID=""
+DEPS_PID=""
+DEPS_LOG=""
+BOOTING_FILE="$PROJECT_DIR/.cache/.booting-$$"
+BACKEND_LOG="$PROJECT_DIR/.cache/backend.log"
+FRONTEND_LOG="$PROJECT_DIR/.cache/frontend.log"
 
 if [[ -t 1 && -z "${NO_COLOR:-}" ]] || [[ "${PCB_FORCE_COLOR:-}" == "1" ]]; then
     B=$'\e[1m'; D=$'\e[2m'; G=$'\e[32m'; Y=$'\e[33m'; R=$'\e[31m'; C=$'\e[36m'; N=$'\e[0m'
@@ -61,10 +66,20 @@ spin_frame() {  # tick, label, [detail]
     printf '\r\033[K  %s%s%s %s %s%ss%s%s' "$C" "${SPIN[$(( $1 % 10 ))]}" "$N" "$2" "$D" "$(( $1 / 10 ))" "$N" "$detail"
 }
 spin_clear() { [[ $ANIM -eq 1 ]] && printf '\r\033[K' || true; }
-# Background service output: clear the spinner line first so both stay readable.
-# (Runs in a subshell that inherits the traps below: reset them, or a stop signal waits for the
-# pipe to close and then runs cleanup again — run_web.sh then hung in `wait` until killed.)
-tidy() { trap - EXIT INT TERM; if [[ $ANIM -eq 1 ]]; then while IFS= read -r line; do printf '\r\033[K%s\n' "$line"; done; else cat; fi; }
+# During interactive startup, keep routine server chatter in the log files while
+# surfacing warnings and failures immediately. Once ready, stream every line again.
+# The process-substitution subshell must not inherit the parent's cleanup trap.
+service_log() {
+    trap - EXIT INT TERM
+    local file="$1" line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        printf '%s\n' "$line" >> "$file"
+        if [[ $ANIM -eq 0 || ! -f "$BOOTING_FILE" || "$line" =~ WARNING|WARN|ERROR|Traceback|Exception|UserWarning ]]; then
+            if [[ $ANIM -eq 1 && -f "$BOOTING_FILE" ]]; then printf '\r\033[K'; fi
+            printf '%s\n' "$line"
+        fi
+    done
+}
 ok()   { echo "  ${G}✓${N} $*"; }
 warn() { echo "  ${Y}!${N} $*"; }
 fail() { echo "  ${R}✗${N} $*" >&2; }
@@ -73,6 +88,9 @@ cleanup() {
     code=$?
     trap - EXIT INT TERM
     spin_clear
+    rm -f "$BOOTING_FILE"
+    [[ -n "$DEPS_PID" ]] && kill "$DEPS_PID" 2>/dev/null || true
+    [[ -n "$DEPS_LOG" ]] && rm -f "$DEPS_LOG"
     for pid in "$BUILD_PID" "$FRONTEND_PID" "$BACKEND_PID"; do
         if [[ -n "$pid" ]]; then kill "$pid" 2>/dev/null || true; fi
     done
@@ -122,8 +140,8 @@ fi
 ok "Python $("$PY" -c 'import platform; print(platform.python_version())') · Node $(node --version | sed 's/^v//') · npm $(npm --version)"
 if [[ -f "$PROJECT_DIR/best.pt" ]] && ! head -c 40 "$PROJECT_DIR/best.pt" | grep -q "git-lfs"; then
     ok "YOLO model best.pt ($(du -h "$PROJECT_DIR/best.pt" | cut -f1))"
-else warn "No usable best.pt next to run_web.sh — run ./install.sh to download it from Hugging Face, or pick a model in Settings"; fi
-if [[ -f "$PROJECT_DIR/backend/.env" ]]; then ok "backend/.env found"; else warn "backend/.env missing (copy backend/.env.example) — AI assistant and passcode use defaults"; fi
+else warn "No usable best.pt in the project root — the configured model will be checked when backend starts"; fi
+if [[ -f "$PROJECT_DIR/backend/.env" ]]; then ok "backend/.env found"; else warn "backend/.env missing — optional AI settings are unset; operator passcode is generated per station"; fi
 
 if [[ $UPDATE -eq 1 ]]; then
     section "Updating libraries (PyTorch is left as installed)"
@@ -138,7 +156,20 @@ fi
 
 if [[ $CHECK -eq 1 ]]; then
     section "Checking libraries"
-    "$PY" "$CONSOLE" deps || true
+    DEPS_LOG="$(mktemp)"
+    "$PY" "$CONSOLE" deps > "$DEPS_LOG" 2>&1 &
+    DEPS_PID=$!
+    tick=0
+    while kill -0 "$DEPS_PID" 2>/dev/null; do
+        spin_frame "$tick" "checking Python and frontend libraries"
+        sleep 0.1; tick=$(( tick + 1 ))
+    done
+    spin_clear
+    wait "$DEPS_PID" || true
+    DEPS_PID=""
+    cat "$DEPS_LOG"
+    rm -f "$DEPS_LOG"
+    DEPS_LOG=""
     # Newer-release lookup uses the network and can take a few seconds: do it while the station starts.
     UPDATES_FILE="$(mktemp)"
     ( "$PY" "$CONSOLE" deps --updates 2>/dev/null | sed -n -E '/(newer library|up to date)/,$p' > "$UPDATES_FILE" ) &
@@ -166,11 +197,12 @@ PY
 ok "Ports $BACKEND_PORT (backend) and $FRONTEND_PORT (frontend) are free"
 
 READY_SECS=0
-wait_ready() {  # pid, url, service name, spinner label
-    local pid="$1" url="$2" service="$3" label="${4:-$3 starting}"
+wait_ready() {  # pid, url, service name, spinner label, log file
+    local pid="$1" url="$2" service="$3" label="${4:-$3 starting}" log_file="${5:-}"
     for ((i=0; i<1800; i++)); do  # 0.1 s ticks, 3 min
         if ! kill -0 "$pid" 2>/dev/null; then
             spin_clear; fail "$service exited before becoming ready."
+            [[ -n "$log_file" && -f "$log_file" ]] && tail -n 25 "$log_file" >&2
             return 1
         fi
         if (( i % 10 == 0 )) && curl --fail --silent --max-time 2 "$url" >/dev/null 2>&1; then
@@ -180,22 +212,28 @@ wait_ready() {  # pid, url, service name, spinner label
         sleep 0.1
     done
     spin_clear; fail "$service startup timed out."
+    [[ -n "$log_file" && -f "$log_file" ]] && tail -n 25 "$log_file" >&2
     return 1
 }
 took() { (( $1 > 0 )) && echo " ${D}· ${1}s${N}" || true; }
 
 # ── start ─────────────────────────────────────────────────────────────────────
 section "Starting"
+touch "$BOOTING_FILE"
+: > "$BACKEND_LOG"
+: > "$FRONTEND_LOG"
+chmod 600 "$BACKEND_LOG" "$FRONTEND_LOG"
 [[ $ANIM -eq 1 ]] || echo "  ${D}…${N} backend  (FastAPI + YOLO) on port $BACKEND_PORT"
 cd "$PROJECT_DIR/backend"
 # Keep-alive longer than the web server's proxy reuses idle connections: at uvicorn's default
 # 5 s, Next sometimes reused a socket uvicorn had just closed (ECONNRESET → HTTP 500 on /api).
 # Live streams end on the stop signal (app/core/shutdown.py); anything still open after 5 s is
 # cut instead of holding the stop forever.
-venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" --log-level warning --timeout-keep-alive 75 --timeout-graceful-shutdown 5 > >(tidy) 2>&1 &
+venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port "$BACKEND_PORT" --log-level warning --timeout-keep-alive 75 --timeout-graceful-shutdown 5 > >(service_log "$BACKEND_LOG") 2>&1 &
 BACKEND_PID=$!
-wait_ready "$BACKEND_PID" "http://127.0.0.1:$BACKEND_PORT/api/system/status" Backend "backend (FastAPI + YOLO) starting on port $BACKEND_PORT"
+wait_ready "$BACKEND_PID" "http://127.0.0.1:$BACKEND_PORT/api/system/status" Backend "AI model + backend starting on port $BACKEND_PORT" "$BACKEND_LOG"
 ok "backend ready (pid $BACKEND_PID)$(took $READY_SECS)"
+"$PY" "$CONSOLE" model-status --backend-port "$BACKEND_PORT" || true
 
 cd "$PROJECT_DIR/frontend"
 export BACKEND_URL="http://127.0.0.1:$BACKEND_PORT"
@@ -225,16 +263,17 @@ if [[ "$MODE" == "prod" ]]; then
         ok "frontend built$(took $(( tick / 10 )))"
     fi
     [[ $ANIM -eq 1 ]] || echo "  ${D}…${N} frontend (Next.js production) on port $FRONTEND_PORT"
-    node node_modules/next/dist/bin/next start -p "$FRONTEND_PORT" > >(tidy) 2>&1 &
+    node node_modules/next/dist/bin/next start -p "$FRONTEND_PORT" > >(service_log "$FRONTEND_LOG") 2>&1 &
     FRONTEND_LABEL="frontend (Next.js production) starting on port $FRONTEND_PORT"
 else
     [[ $ANIM -eq 1 ]] || echo "  ${D}…${N} frontend (Next.js dev server) on port $FRONTEND_PORT"
-    node node_modules/next/dist/bin/next dev -p "$FRONTEND_PORT" > >(tidy) 2>&1 &
+    node node_modules/next/dist/bin/next dev -p "$FRONTEND_PORT" > >(service_log "$FRONTEND_LOG") 2>&1 &
     FRONTEND_LABEL="frontend (Next.js dev server) starting on port $FRONTEND_PORT"
 fi
 FRONTEND_PID=$!
-wait_ready "$FRONTEND_PID" "http://127.0.0.1:$FRONTEND_PORT" Frontend "$FRONTEND_LABEL"
+wait_ready "$FRONTEND_PID" "http://127.0.0.1:$FRONTEND_PORT" Frontend "$FRONTEND_LABEL" "$FRONTEND_LOG"
 ok "frontend ready (pid $FRONTEND_PID)$(took $READY_SECS)"
+rm -f "$BOOTING_FILE"
 
 # ── what is running ───────────────────────────────────────────────────────────
 "$PY" "$CONSOLE" status --backend-port "$BACKEND_PORT" --frontend-port "$FRONTEND_PORT" --mode "$MODE" \
