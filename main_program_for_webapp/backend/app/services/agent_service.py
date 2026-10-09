@@ -779,6 +779,7 @@ async def _generate(client: httpx.AsyncClient, model: str, headers: Dict[str, st
         if res.status_code not in chat_service.RETRYABLE:
             raise RuntimeError(last)
         logger.info("Agent model %s busy (%s), retrying", model, res.status_code)
+    chat_service.rest(model, chat_service.BUSY_REST_SEC, "stayed busy")
     raise _ModelBusy(last)
 
 

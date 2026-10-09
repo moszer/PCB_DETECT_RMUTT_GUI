@@ -53,6 +53,8 @@ _dead_models: set = set()
 _resting: Dict[str, float] = {}
 QUOTA_REST_SEC = 600.0
 TIMEOUT_REST_SEC = 300.0
+# Busy (429/5xx) even after a retry: a gap so the next questions don't wait on it either.
+BUSY_REST_SEC = 120.0
 # A model that has said nothing for this long is treated as down and the next one is tried.
 READ_TIMEOUT_SEC = 60.0
 
@@ -221,7 +223,7 @@ async def _stream_gemini(messages: List[Dict[str, Any]]) -> AsyncIterator[str]:
                                 rest(model, wait, "is out of quota")
                                 continue
                             if res.status_code in RETRYABLE:
-                                logger.info("Gemini %s busy (%s), trying next", model, res.status_code)
+                                rest(model, BUSY_REST_SEC, f"is busy ({res.status_code})")
                                 continue
                             yield f"\n⚠️ AI ตอบไม่ได้ — {last_error}"
                             return

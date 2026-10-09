@@ -131,8 +131,9 @@ class RetiredModelTests(unittest.TestCase):
         from app.services import chat_service
 
         self.chat_service = chat_service
-        chat_service._dead_models.clear()
-        self.addCleanup(chat_service._dead_models.clear)
+        for store in (chat_service._dead_models, chat_service._resting):
+            store.clear()
+            self.addCleanup(store.clear)
 
     def _handler(self, calls):
         def handler(request):
@@ -182,6 +183,13 @@ class RetiredModelTests(unittest.TestCase):
 
 
 class AllBusyTests(unittest.TestCase):
+    def setUp(self):
+        from app.services import chat_service
+
+        for store in (chat_service._dead_models, chat_service._resting):
+            store.clear()
+            self.addCleanup(store.clear)
+
     def test_goes_round_all_models_again_before_giving_up(self):
         calls = []
 
