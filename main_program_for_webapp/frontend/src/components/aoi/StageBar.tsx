@@ -123,16 +123,17 @@ export function StageBar({
   };
 
   return (
-    <div className="flex items-center gap-2 flex-wrap px-4 py-2.5 border-b border-line bg-surface" data-tour="stage">
-      <div className="flex items-center gap-2 mr-1">
+    // Phones get one row: short labels, icon-only secondary buttons, no hints.
+    <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap px-3 sm:px-4 py-2 sm:py-2.5 border-b border-line bg-surface" data-tour="stage">
+      <div className="flex items-center gap-2 sm:mr-1" title="สเตจ XY">
         <StatusDot tone={!connected ? "neutral" : machine?.homed ? "pass" : "review"} pulse={machine?.is_moving} />
-        <span className="text-sm font-medium">สเตจ XY</span>
+        <span className="hidden sm:inline text-sm font-medium">สเตจ XY</span>
         {connected && <Badge tone={machine?.mode === "serial" ? "accent" : "review"}>{machine?.mode === "serial" ? "Serial" : "จำลอง"}</Badge>}
       </div>
 
       {!connected ? (
         <>
-          <Select value={port} onChange={(e) => setPort(e.target.value)} className="w-56! h-8! text-xs" aria-label="พอร์ตอนุกรม">
+          <Select value={port} onChange={(e) => setPort(e.target.value)} className="min-w-0 flex-1 sm:flex-none sm:w-56! h-8! text-xs" aria-label="พอร์ตอนุกรม">
             {ports.map((p) => (
               <option key={p.device} value={p.device}>
                 {p.device}
@@ -160,9 +161,9 @@ export function StageBar({
             loading={busy === "connect"}
             disabled={locked}
             onClick={() => run("connect", () => api.connectMachine("simulation"), "เปิดสเตจจำลองไม่สำเร็จ")}
-            title="ทดลองใช้งานโดยไม่ต่อฮาร์ดแวร์"
+            title="จำลอง — ทดลองใช้งานโดยไม่ต่อฮาร์ดแวร์"
           >
-            จำลอง
+            <span className="hidden sm:inline">จำลอง</span>
           </Button>
         </>
       ) : (
@@ -195,7 +196,7 @@ export function StageBar({
           </Button>
           {machine?.homed && machine.home_info && (
             <span
-              className="text-[11px] text-subtle font-mono tabular"
+              className="hidden sm:inline text-[11px] text-subtle font-mono tabular"
               title="HOME แตะ limit ช้าๆ หลายครั้งแล้วใช้ค่าเฉลี่ย — ตัวเลขคือระยะที่จุดสัมผัสแต่ละครั้งต่างกัน (ความซ้ำของสวิตช์)"
             >
               ±{Math.round((Math.max(machine.home_info.X?.spread_steps ?? 0, machine.home_info.Y?.spread_steps ?? 0) / 512) * 1000)} µm
@@ -210,14 +211,18 @@ export function StageBar({
             </span>
             <span className="text-subtle">mm</span>
           </div>
-          {!machine?.homed && <span className="text-xs text-review font-medium">← กด HOME ก่อนเคลื่อนที่</span>}
-          {machine?.homed && machine.mode === "serial" && <StageErrorReadout state={stageError} />}
+          {!machine?.homed && <span className="hidden sm:inline text-xs text-review font-medium">← กด HOME ก่อนเคลื่อนที่</span>}
+          {machine?.homed && machine.mode === "serial" && (
+            <span className="hidden sm:contents">
+              <StageErrorReadout state={stageError} />
+            </span>
+          )}
           <div className="ml-auto flex items-center gap-1">
-            <Button size="sm" variant="ghost" icon={Power} disabled={scanning || locked} onClick={motorsOff}>
-              ปิดมอเตอร์
+            <Button size="sm" variant="ghost" icon={Power} disabled={scanning || locked} onClick={motorsOff} title="ปิดมอเตอร์">
+              <span className="hidden sm:inline">ปิดมอเตอร์</span>
             </Button>
-            <Button size="sm" variant="ghost" icon={Unplug} disabled={locked} onClick={disconnect}>
-              ตัดการเชื่อมต่อ
+            <Button size="sm" variant="ghost" icon={Unplug} disabled={locked} onClick={disconnect} title="ตัดการเชื่อมต่อ">
+              <span className="hidden sm:inline">ตัดการเชื่อมต่อ</span>
             </Button>
           </div>
         </>
