@@ -337,40 +337,115 @@ input[type="number"]::-webkit-outer-spin-button {
   box-shadow: var(--shadow);
   backdrop-filter: blur(12px);
 }
-/* The whole station chat window picks up a soft, wide rim only while waiting for AI. */
-.ai-assistant-panel {
-  isolation: isolate;
-  transition: box-shadow 400ms ease;
+/* Station chat while waiting for the AI: an Apple-Intelligence-style rainbow light runs round
+   the window, seeps in from its edges, and lights the avatar and the input. It fades in and
+   out with the thinking state (transitions only: the layers are always there). */
+@property --ai-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: true;
 }
-.ai-assistant-panel-thinking {
-  box-shadow: var(--shadow-lg), 0 0 28px rgb(95 145 225 / 0.18);
+.ai-assistant-frame {
+  --ai-colors: #8d9fff, #bc82f3, #f5b9ea, #ff6778, #ffba71, #c686ff, #8d9fff;
 }
-.ai-assistant-panel-thinking::before {
+.ai-glow,
+.ai-glow-edge,
+.ai-glow-orb,
+.ai-glow-input {
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 900ms ease;
+}
+.ai-assistant-frame.is-thinking :is(.ai-glow, .ai-glow-edge, .ai-glow-orb, .ai-glow-input) {
+  opacity: 1;
+}
+.ai-glow,
+.ai-glow-edge {
   position: absolute;
-  z-index: 2;
-  inset: -2px;
-  padding: 6px;
+  inset: 0;
   border-radius: inherit;
-  background: linear-gradient(
-    110deg,
-    transparent 4%,
-    rgb(92 143 215 / 0.18) 24%,
-    rgb(130 170 225 / 0.48) 45%,
-    rgb(151 165 222 / 0.3) 57%,
-    transparent 78%
-  );
-  background-size: 240% 100%;
-  filter: blur(5px);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+}
+.ai-glow > span,
+.ai-glow-edge > span,
+.ai-glow-orb,
+.ai-glow-input > span {
+  position: absolute;
+  border-radius: inherit;
+  background: conic-gradient(from var(--ai-angle), var(--ai-colors));
+  animation: ai-glow-spin 4s linear infinite;
+}
+/* outside the window: a crisp ring and two soft halos */
+.ai-glow .ring {
+  inset: -2px;
+  padding: 2px;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
+}
+.ai-glow .near { inset: -3px; filter: blur(14px); opacity: 0.7; }
+.ai-glow .far { inset: -10px; filter: blur(38px); opacity: 0.4; }
+/* inside the window: light seeping in from the edges, over the content */
+.ai-glow-edge {
+  z-index: 3;
+  overflow: hidden;
+}
+.ai-glow-edge > span {
+  inset: 0;
+  padding: 14px;
+  filter: blur(16px);
+  opacity: 0.32;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+.ai-glow-orb {
+  inset: -40%;
+  border-radius: 0;
+  animation-duration: 3s;
+}
+.ai-glow-input {
+  position: absolute;
+  inset: 0;
+  border-radius: 0.5rem;
+}
+.ai-glow-input > span { inset: -1.5px; animation-duration: 3s; }
+.ai-glow-input > span + span { inset: -2px; filter: blur(10px); opacity: 0.6; }
+@keyframes ai-glow-spin {
+  to { --ai-angle: 360deg; }
+}
+/* A fresh answer comes into focus block by block, then one light sweep passes over it. */
+.ai-reveal > *,
+.ai-reveal li {
+  animation: ai-reveal 650ms ease-out both;
+}
+.ai-reveal > :nth-child(2), .ai-reveal li:nth-child(2) { animation-delay: 90ms; }
+.ai-reveal > :nth-child(3), .ai-reveal li:nth-child(3) { animation-delay: 180ms; }
+.ai-reveal > :nth-child(4), .ai-reveal li:nth-child(4) { animation-delay: 270ms; }
+.ai-reveal > :nth-child(5), .ai-reveal li:nth-child(5) { animation-delay: 360ms; }
+.ai-reveal > :nth-child(6), .ai-reveal li:nth-child(6) { animation-delay: 450ms; }
+.ai-reveal > :nth-child(n + 7), .ai-reveal li:nth-child(n + 7) { animation-delay: 540ms; }
+@keyframes ai-reveal {
+  from { opacity: 0; filter: blur(6px); transform: translateY(3px); }
+  to { opacity: 1; filter: blur(0); transform: none; }
+}
+.ai-reveal-sweep {
+  position: relative;
+  overflow: hidden;
+}
+.ai-reveal-sweep::after {
+  position: absolute;
+  inset: 0;
   pointer-events: none;
   content: "";
-  animation: ai-assistant-rim 7s ease-in-out infinite;
+  mix-blend-mode: screen;
+  background: linear-gradient(100deg, transparent 35%, rgb(245 185 234 / 0.26) 45%, rgb(188 130 243 / 0.3) 50%,
+    rgb(141 159 255 / 0.26) 55%, transparent 65%) no-repeat;
+  background-size: 300% 100%;
+  animation: ai-reveal-sweep 1.6s ease-out 0.7s both;
 }
-@keyframes ai-assistant-rim {
-  0%, 100% { background-position: 0% 50%; opacity: 0.55; }
-  50% { background-position: 100% 50%; opacity: 0.95; }
+@keyframes ai-reveal-sweep {
+  from { background-position: 100% 0; }
+  to { background-position: 0% 0; }
 }
 .ai-thinking-orb {
   position: relative;
