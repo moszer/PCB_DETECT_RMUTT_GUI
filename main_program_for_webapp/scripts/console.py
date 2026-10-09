@@ -4,7 +4,7 @@
     console.py banner  < lines      RMUTT ASCII logo (scripts/rmutt-ascii.txt) beside the text lines
     console.py deps    [--updates]  are the installed libraries what requirements.txt asks for?
                                     --updates also looks for newer releases (cached for a day)
-    console.py status  --backend-port N --frontend-port N --mode dev|prod [--backend-pid N --frontend-pid N]
+    console.py status  --backend-port N --frontend-port N --mode dev|prod [--backend-pid N --frontend-pid N] [--live]
 
 Colours are used only on a terminal (NO_COLOR disables; PCB_FORCE_COLOR=1 forces them).
 Standard library only.
@@ -349,33 +349,66 @@ def _version(cmd: list) -> str:
         return "?"
 
 
-def cmd_status(args) -> int:
-    base = f"http://127.0.0.1:{args.backend_port}"
-    health = _get(f"{base}/api/health") or {}
-    system = _get(f"{base}/api/system/status") or {}
-    cam = _get(f"{base}/api/camera/status") or {}
-    chat = _get(f"{base}/api/chat/status") or {}
-    stats = _get(f"{base}/api/history/statistics") or {}
-    boards = (_get(f"{base}/api/aoi/point-sets") or {}).get("sets", [])
-    machine = system.get("machine") or {}
-
+def _ocr_name() -> str:
     sys.path.insert(0, str(BACKEND))
     try:
         from app.core.ocr import engine_name  # type: ignore
 
-        ocr = {"apple-vision": "Apple Vision", "tesseract": "tesseract"}.get(engine_name() or "", "none (install tesseract-ocr)")
+        return {"apple-vision": "Apple Vision", "tesseract": "tesseract"}.get(engine_name() or "", "none (install tesseract-ocr)")
     except Exception:
-        ocr = "unknown"
+        return "unknown"
+
+
+class Poller:
+    """Reads the station's API for the status panel. Light data every call, heavier data
+    (statistics, boards, hardware) every few seconds, so a 1 s refresh stays cheap."""
+
+    def __init__(self, port: int):
+        self.base = f"http://127.0.0.1:{port}"
+        self.slow: dict = {}
+        self.slow_at = 0.0
+        self.chat: dict = {}
+        self.chat_at = 0.0
+
+    def read(self) -> dict:
+        get = lambda path, t=1.5: _get(f"{self.base}{path}", t) or {}  # noqa: E731
+        now = time.time()
+        if now - self.slow_at > 5 or not self.slow:
+            self.slow = {
+                "stats": get("/api/history/statistics", 3),
+                "boards": (get("/api/aoi/point-sets", 3)).get("sets", []),
+                "hw": get("/api/system/hardware", 3),
+            }
+            self.slow_at = now
+        if now - self.chat_at > 30:
+            self.chat, self.chat_at = get("/api/chat/status", 3), now
+        return {
+            "health": get("/api/health"),
+            "system": get("/api/system/status"),
+            "cam": get("/api/camera/status"),
+            "chat": self.chat,
+            "scan": get("/api/aoi/scan/status"),
+            **self.slow,
+        }
+
+
+def render_status(args, d: dict, ocr: str, started: float | None = None) -> list[str]:
+    """The panel as lines (no trailing newlines)."""
+    health, system, cam, chat, scan = d["health"], d["system"], d["cam"], d["chat"], d.get("scan") or {}
+    stats, boards, hw = d.get("stats") or {}, d.get("boards") or [], d.get("hw") or {}
+    machine = system.get("machine") or {}
+    out: list[str] = []
 
     def row(label: str, text: str, state: str = "ok") -> None:
         mark = {"ok": green("●"), "warn": yellow("●"), "off": dim("○"), "bad": red("●")}[state]
-        print(f"  {mark} {bold(label):<{14 + (len(bold(label)) - len(label))}} {text}")
+        out.append(f"  {mark} {bold(label):<{14 + (len(bold(label)) - len(label))}} {text}")
 
     model_file = Path(system.get("model_path") or "").name
     model_run = Path(system.get("model_path") or "").parent.parent.name if "weights" in (system.get("model_path") or "") else ""
     pid = lambda p: f"pid {p}  " if p else ""  # noqa: E731
-    print()
-    print(f"  {bold(green('กำลังทำงาน · RUNNING'))}   {dim(time.strftime('%Y-%m-%d %H:%M:%S'))}")
+    up = f"   {dim('up ' + _duration(time.time() - started))}" if started else ""
+    out.append("")
+    out.append(f"  {bold(green('กำลังทำงาน · RUNNING'))}   {dim(time.strftime('%Y-%m-%d %H:%M:%S'))}{up}")
     row("Backend", f"FastAPI/uvicorn · {pid(args.backend_pid)}Python {platform.python_version()} · http://127.0.0.1:{args.backend_port}",
         "ok" if health else "bad")
     row("Frontend", f"Next.js ({'production' if args.mode == 'prod' else 'development, hot reload'}) · {pid(args.frontend_pid)}Node {_version(['node', '--version'])} · port {args.frontend_port}")
@@ -383,23 +416,127 @@ def cmd_status(args) -> int:
         if health.get("model_loaded") else "not loaded — choose one in Settings", "ok" if health.get("model_loaded") else "warn")
     if cam.get("active"):
         r = cam.get("resolution") or [0, 0]
-        row("Camera", f"{'test camera' if cam.get('is_mock') else 'live'} · {r[0]}×{r[1]} @ {cam.get('fps', 0):.0f} fps · {cam.get('output_mode')}", "warn" if cam.get("is_mock") else "ok")
+        viewers = cam.get("live_streams", 0)
+        row("Camera", f"{'test camera' if cam.get('is_mock') else 'live'} · {r[0]}×{r[1]} @ {cam.get('fps', 0):.0f} fps · {cam.get('output_mode')}"
+            f" · {viewers} viewer{'s' if viewers != 1 else ''}", "warn" if cam.get("is_mock") else "ok")
     else:
         row("Camera", "idle — opens when the live view is used", "off")
     if machine.get("connected"):
-        row("XY stage", f"{machine.get('mode')} · {'homed' if machine.get('homed') else 'not homed'}", "ok" if machine.get("homed") else "warn")
+        x, y = machine.get("position_mm") or (0, 0)
+        row("XY stage", f"{machine.get('mode')} · {'homed' if machine.get('homed') else 'not homed'} · X {x:.2f} Y {y:.2f} mm"
+            f"{' · moving' if machine.get('is_moving') else ''}", "ok" if machine.get("homed") else "warn")
     else:
         row("XY stage", "not connected — connect in the AOI page", "off")
+    # The scan: progress while running, the last result after.
+    status = scan.get("status")
+    total = scan.get("total_points") or len(scan.get("points") or [])
+    done = len(scan.get("results") or [])
+    if status == "running":
+        row("Scan", f"{bold('RUNNING')} {done}/{total} points · pass {scan.get('pass_count', 0)} · fail {scan.get('fail_count', 0)}"
+            f"{' · ' + str(scan['plan']['serial']) if (scan.get('plan') or {}).get('serial') else ''}", "warn")
+    elif status in ("complete", "aborted", "error"):
+        v = scan.get("overall_verdict", "")
+        word = {"PASS": green("PASS"), "FAIL": red("FAIL"), "REVIEW": yellow("REVIEW")}.get(v, v)
+        label = word if status == "complete" else yellow(status)
+        ago = f" · {_duration(time.time() - scan['completed_at'])} ago" if scan.get("completed_at") else ""
+        row("Scan", f"last: {label} · {done}/{total} points{ago}", "ok" if status == "complete" and v == "PASS" else "warn")
+    else:
+        row("Scan", "none since start", "off")
     if chat.get("configured"):
         row("AI assistant", f"{chat.get('provider')} · {chat.get('model')} (API key set)")
     else:
         row("AI assistant", "no API key — add GEMINI_API_KEY to backend/.env", "warn")
     row("OCR", ocr, "ok" if "none" not in ocr else "warn")
     row("Data", f"{stats.get('total_runs', 0)} scan runs · {stats.get('single_inspections_count', 0)} single inspections · {len(boards)} saved boards")
+    if hw.get("cpu"):
+        temps = {t["name"]: t["c"] for t in hw.get("temperatures") or []}
+        mem = hw.get("memory") or {}
+        gpu = (hw.get("gpu") or {}).get("usage")
+        hot = max(temps.values(), default=0)
+        bits = [f"CPU {hw['cpu'].get('usage', 0):.0f}%"]
+        if gpu is not None:
+            bits.append(f"GPU {gpu:.0f}%")
+        bits.append(f"RAM {mem.get('used_mb', 0) / 1024:.1f}/{mem.get('total_mb', 0) / 1024:.1f} GB")
+        if mem.get("swap_total_mb"):
+            bits.append(f"swap {mem.get('swap_used_mb', 0) / 1024:.1f}/{mem['swap_total_mb'] / 1024:.0f} GB")
+        if temps:
+            bits.append(f"{hot:.0f}°C")
+        row("Machine", " · ".join(bits), "bad" if hot >= 85 else "warn" if hot >= 75 else "ok")
+    out.append("")
+    out.append(f"  {bold('Open')}   http://localhost:{args.frontend_port}    {dim('LAN')} http://{_lan_ip()}:{args.frontend_port}")
+    out.append(f"  {dim('Operator passcode: PCB_OPERATOR_PASSCODE in backend/.env (default rmutt-aoi).  Ctrl+C stops everything.')}")
+    return out
+
+
+def _duration(seconds: float) -> str:
+    s = max(0, int(seconds))
+    if s >= 86400:
+        return f"{s // 86400}d {s % 86400 // 3600}h"
+    if s >= 3600:
+        return f"{s // 3600}h {s % 3600 // 60:02d}m"
+    if s >= 60:
+        return f"{s // 60}m {s % 60:02d}s"
+    return f"{s}s"
+
+
+def cmd_status(args) -> int:
+    poller, ocr = Poller(args.backend_port), _ocr_name()
+    size = shutil.get_terminal_size((100, 24))
+    first = render_status(args, poller.read(), ocr)
+    if args.live and ANIMATE and COLOR and size.lines >= len(first) + 8:
+        return _live_status(args, poller, ocr, first)
+    print("\n".join(first))
     print()
-    print(f"  {bold('Open')}   http://localhost:{args.frontend_port}    {dim('LAN')} http://{_lan_ip()}:{args.frontend_port}")
-    print(f"  {dim('Operator passcode: PCB_OPERATOR_PASSCODE in backend/.env (default rmutt-aoi).  Ctrl+C stops everything.')}")
-    print()
+    return 0
+
+
+def _live_status(args, poller: Poller, ocr: str, first: list[str]) -> int:
+    """Keeps the panel pinned to the bottom rows of the terminal and refreshes it every second.
+
+    The rows above are a scroll region, so the stations' own log lines keep scrolling there
+    and never disturb the panel. Restores the terminal (region, cursor) on exit or a signal.
+    """
+    import signal
+
+    out = sys.stdout
+    started = time.time()
+    n = len(first)
+    layout = {"lines": 0}
+
+    def setup() -> None:
+        size = shutil.get_terminal_size((100, 24))
+        top = size.lines - n + 1  # first panel row (1-based)
+        out.write("\033[r" + "\n" * n)  # room for the panel: what is on screen scrolls up
+        out.write(f"\033[1;{top - 1}r\033[{top - 1};1H")  # log region above, cursor at its bottom
+        layout.update(lines=size.lines, top=top)
+
+    def restore(*_a) -> None:
+        out.write("\033[r\033[?25h" + f"\033[{shutil.get_terminal_size((100, 24)).lines};1H\n")
+        out.flush()
+
+    def stop(*_a) -> None:
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    setup()
+    lines = first
+    try:
+        while True:
+            if shutil.get_terminal_size((100, 24)).lines != layout["lines"]:
+                setup()  # the window was resized
+            top = layout["top"]
+            frame = "\0337"  # save the cursor (where the logs continue)
+            for i in range(n):
+                text = lines[i] if i < len(lines) else ""
+                frame += f"\033[{top + i};1H\033[2K{text}"
+            out.write(frame + "\0338")
+            out.flush()
+            time.sleep(1.0)
+            lines = render_status(args, poller.read(), ocr, started)
+            lines = (lines + [""] * n)[:n]
+    finally:
+        restore()
     return 0
 
 
@@ -416,6 +553,7 @@ def main() -> int:
     s.add_argument("--mode", default="dev")
     s.add_argument("--backend-pid", default="")
     s.add_argument("--frontend-pid", default="")
+    s.add_argument("--live", action="store_true", help="keep the panel at the bottom of the terminal and refresh it every second")
     s.set_defaults(fn=cmd_status)
     args = ap.parse_args()
     return args.fn(args)

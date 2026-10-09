@@ -38,6 +38,7 @@ CONSOLE="$PROJECT_DIR/scripts/console.py"
 BACKEND_PID=""
 FRONTEND_PID=""
 BUILD_PID=""
+STATUS_PID=""
 UPDATES_FILE=""
 UPDATES_PID=""
 
@@ -73,7 +74,7 @@ cleanup() {
     code=$?
     trap - EXIT INT TERM
     spin_clear
-    for pid in "$BUILD_PID" "$FRONTEND_PID" "$BACKEND_PID"; do
+    for pid in "$STATUS_PID" "$BUILD_PID" "$FRONTEND_PID" "$BACKEND_PID"; do
         if [[ -n "$pid" ]]; then kill "$pid" 2>/dev/null || true; fi
     done
     [[ -n "$UPDATES_FILE" ]] && rm -f "$UPDATES_FILE"
@@ -89,6 +90,7 @@ cleanup() {
         kill -KILL "$pid" 2>/dev/null || true
         pkill -KILL -P "$pid" 2>/dev/null || true
     }
+    stop_within 2 "$STATUS_PID"  # puts the terminal back (scroll region, cursor)
     stop_within 3 "$FRONTEND_PID"
     stop_within 8 "$BACKEND_PID"
     stop_within 1 "$BUILD_PID"
@@ -237,8 +239,13 @@ wait_ready "$FRONTEND_PID" "http://127.0.0.1:$FRONTEND_PORT" Frontend "$FRONTEND
 ok "frontend ready (pid $FRONTEND_PID)$(took $READY_SECS)"
 
 # ── what is running ───────────────────────────────────────────────────────────
+# On a terminal the panel stays pinned at the bottom and refreshes every second (log lines
+# scroll above it); anywhere else (a log file, a short terminal) it is printed once.
+if [[ $ANIM -eq 1 ]]; then LIVE_ARG="--live"; else LIVE_ARG=""; fi
 "$PY" "$CONSOLE" status --backend-port "$BACKEND_PORT" --frontend-port "$FRONTEND_PORT" --mode "$MODE" \
-    --backend-pid "$BACKEND_PID" --frontend-pid "$FRONTEND_PID" || true
+    --backend-pid "$BACKEND_PID" --frontend-pid "$FRONTEND_PID" $LIVE_ARG &
+STATUS_PID=$!
+if [[ -n "$LIVE_ARG" ]]; then sleep 0.5; else wait "$STATUS_PID" 2>/dev/null || true; STATUS_PID=""; fi
 if [[ -n "$UPDATES_FILE" ]]; then
     # The lookup runs in the background; give it a few more seconds, but never block the station on it.
     for ((i=0; i<20; i++)); do kill -0 "$UPDATES_PID" 2>/dev/null || break; sleep 1; done
