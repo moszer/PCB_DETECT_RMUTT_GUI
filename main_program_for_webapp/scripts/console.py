@@ -172,6 +172,50 @@ def _snake_banner(lines: list[str], top: int, rows: int) -> None:
         out.flush()
 
 
+# Block letters, 5 rows; each "#" becomes a full block (twice, for squarer letters).
+_GLYPHS = {
+    "N": ["#   #", "##  #", "# # #", "#  ##", "#   #"],
+    "V": ["#   #", "#   #", "#   #", " # # ", "  #  "],
+    "I": ["###", " # ", " # ", " # ", "###"],
+    "D": ["#### ", "#   #", "#   #", "#   #", "#### "],
+    "A": [" ### ", "#   #", "#####", "#   #", "#   #"],
+}
+NVIDIA_GREEN = (118, 185, 0)
+
+
+def _jetson() -> str | None:
+    """The board's name when running on an NVIDIA Jetson (else None)."""
+    if not Path("/etc/nv_tegra_release").is_file():
+        return None
+    try:
+        model = Path("/proc/device-tree/model").read_bytes().rstrip(b"\0").decode("utf-8", "replace").strip()
+    except OSError:
+        model = "NVIDIA Jetson"
+    try:
+        rel = Path("/etc/nv_tegra_release").read_text().split(",")
+        l4t = rel[0].replace("#", "").replace("(release)", "").split()
+        model += f" · L4T {l4t[0]}.{rel[1].split(':')[-1].strip()}" if l4t else ""
+    except (OSError, IndexError):
+        pass
+    return model.replace("Engineering Reference Developer Kit", "Developer Kit")
+
+
+def nvidia_lines(max_width: int) -> list[str]:
+    """NVIDIA in green block letters and the Jetson board's name (wide or compact letters)."""
+    board = _jetson()
+    if not board:
+        return []
+    word = "NVIDIA"
+    for scale in (2, 1):
+        rows = ["  ".join(_GLYPHS[ch][r].replace("#", "█" * scale).replace(" ", " " * scale) for ch in word) for r in range(5)]
+        if len(rows[0]) <= max_width:
+            break
+    else:
+        return [c("1;32", "NVIDIA"), dim(board)]
+    paint = (lambda t: f"{_fg(NVIDIA_GREEN)}{t}\033[0m") if COLOR else (lambda t: t)
+    return ["", *[paint(r) for r in rows], "", f"{dim('powered by')} {bold(board)}"]
+
+
 def cmd_banner(_args) -> int:
     lines = [ln.rstrip("\n") for ln in sys.stdin]
     # The art is for people at a terminal; a log file only gets the text.
@@ -180,8 +224,10 @@ def cmd_banner(_args) -> int:
         print("\n".join(lines))
         return 0
     width = logo[0][1]
-    text_width = max((_visible_len(ln) for ln in lines), default=0)
     size = shutil.get_terminal_size((100, 24))
+    # On a Jetson the NVIDIA mark goes under the station text, as wide as the terminal allows.
+    lines += nvidia_lines(size.columns - (2 + width + 3) - 1)
+    text_width = max((_visible_len(ln) for ln in lines), default=0)
     if size.columns < 2 + width + 3 + text_width:  # narrow terminal: the text goes below the art
         print("\n".join(f"  {ln}" for ln, _ in logo))
         print()
