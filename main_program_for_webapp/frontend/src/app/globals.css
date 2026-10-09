@@ -382,21 +382,25 @@ input[type="number"]::-webkit-outer-spin-button {
   -webkit-mask-composite: xor;
   mask-composite: exclude;
 }
-.ai-glow .near { inset: -3px; filter: blur(14px); opacity: 0.7; }
-.ai-glow .far { inset: -10px; filter: blur(38px); opacity: 0.4; }
+.ai-glow .near { inset: -2px; filter: blur(12px); opacity: 0.55; }
+.ai-glow .far { inset: -8px; filter: blur(36px); opacity: 0.35; }
 /* inside the window: light seeping in from the edges, over the content */
 .ai-glow-edge {
   z-index: 3;
   overflow: hidden;
 }
+/* A mask that fades out from every edge (no blur: a blurred layer cut by a mask leaves a
+   hard rectangle where the mask ends). */
 .ai-glow-edge > span {
   inset: 0;
-  padding: 14px;
-  filter: blur(16px);
-  opacity: 0.32;
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
+  opacity: 0.3;
+  --ai-fade: 34px;
+  -webkit-mask:
+    linear-gradient(to right, #000, transparent var(--ai-fade), transparent calc(100% - var(--ai-fade)), #000),
+    linear-gradient(to bottom, #000, transparent var(--ai-fade), transparent calc(100% - var(--ai-fade)), #000);
+  mask:
+    linear-gradient(to right, #000, transparent var(--ai-fade), transparent calc(100% - var(--ai-fade)), #000),
+    linear-gradient(to bottom, #000, transparent var(--ai-fade), transparent calc(100% - var(--ai-fade)), #000);
 }
 .ai-glow-orb {
   inset: -40%;
