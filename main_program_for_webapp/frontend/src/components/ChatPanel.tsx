@@ -236,7 +236,7 @@ export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContex
       }
       subtitle={`ส่งภาพจุดนี้ + ชิ้นส่วน + ตัวอักษรที่อ่านได้ ให้ AI ทุกคำถาม${conversationKey ? " · บันทึกประวัติแชทของจุดนี้" : ""}${model ? ` · ${model}` : ""}`}
     >
-      <div className="flex flex-col h-[62vh] min-h-[420px]">
+      <div className="flex flex-col h-[62dvh] min-h-[360px]">
         <div className="flex-1 overflow-y-auto flex flex-col gap-3 pr-1">
           {loadingHistory && (
             <div className="m-auto flex items-center gap-2 text-sm text-muted">
@@ -298,7 +298,8 @@ export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContex
                 send(input);
               }
             }}
-            placeholder="พิมพ์คำถาม… (Enter ส่ง, Shift+Enter ขึ้นบรรทัด)"
+            placeholder="พิมพ์คำถาม…"
+            title="Enter ส่ง · Shift+Enter ขึ้นบรรทัด"
             className="flex-1 resize-none max-h-32 min-h-9 rounded-lg border border-line bg-surface px-3 py-2 text-sm focus:outline-none focus:border-accent"
           />
           {busy ? (

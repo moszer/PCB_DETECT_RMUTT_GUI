@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useId } from "react";
+import { createPortal } from "react-dom";
 import { Loader2, Lock, X, type LucideIcon } from "lucide-react";
 import type { Verdict } from "@/types";
 import { VERDICT_LABEL, VERDICT_TONE } from "@/lib/format";
@@ -553,7 +554,9 @@ export function Modal({
 
   if (!open) return null;
   const width = { sm: "max-w-md", md: "max-w-2xl", lg: "max-w-4xl", xl: "max-w-6xl" }[size];
-  return (
+  // Rendered into <body>: inside a page the animated tab wrapper (animate-fade) is its own
+  // stacking context, which put the phone bottom bar and the AI button (z-40) over the dialog.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-[2px] p-0 sm:p-4 animate-fade"
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
@@ -562,7 +565,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         className={cx(
-          "w-full flex flex-col max-h-[94vh] bg-surface border border-line shadow-pop animate-modal",
+          "w-full flex flex-col max-h-[94dvh] bg-surface border border-line shadow-pop animate-modal",
           "rounded-t-2xl sm:rounded-2xl",
           width
         )}
@@ -577,8 +580,9 @@ export function Modal({
             <IconButton icon={X} label="ปิด" onClick={onClose} />
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto p-5">{children}</div>
+        <div className="flex-1 overflow-y-auto p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
