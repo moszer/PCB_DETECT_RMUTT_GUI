@@ -245,3 +245,78 @@ class BoardToolTests(unittest.TestCase):
         self.assertEqual((detail["point_count"], detail["untaught_points"], detail["parts_by_class"]), (2, 1, {"ic": 2}))
         self.assertEqual(detail["points"][1]["zoom"], 2)
         self.assertIn("error", agent_service.run_tool("get_board", {"name": "ไม่มีจริง"}))
+
+
+class QuotaAndTimeoutTests(unittest.TestCase):
+    """The 2026-10 failure: two models out of quota (429), the third hanging (read timeout).
+    The turn must go on to the model that still answers, and skip the bad ones next time."""
+
+    QUOTA = {"error": {"code": 429, "message": "You exceeded your current quota, please check your plan and billing details.",
+                       "status": "RESOURCE_EXHAUSTED", "details": [{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "37s"}]}}
+
+    def setUp(self):
+        from app.services import chat_service
+
+        self.chat_service = chat_service
+        for store in (chat_service._dead_models, chat_service._resting):
+            store.clear()
+            self.addCleanup(store.clear)
+
+    def _handler(self, calls, stream=False):
+        def handler(request):
+            model = request.url.path.split("/")[-1].split(":")[0]
+            calls.append(model)
+            if model in ("quota-a", "quota-b"):
+                return httpx.Response(429, json=self.QUOTA)
+            if model == "hangs":
+                raise httpx.ReadTimeout("no answer", request=request)
+            if stream:
+                return httpx.Response(200, text='data: {"candidates":[{"content":{"parts":[{"text":"hi"}]}}]}\n\n')
+            return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "ok"}]}}]})
+
+        return handler
+
+    def _env(self):
+        return {"AI_PROVIDER": "gemini", "GEMINI_API_KEY": "k", "GEMINI_MODELS": "quota-a,quota-b,hangs,works"}
+
+    def test_agent_falls_through_quota_and_timeout(self):
+        calls = []
+        real = httpx.AsyncClient
+        with patch.dict(os.environ, self._env()), \
+                patch("app.services.agent_service.httpx.AsyncClient", lambda **kw: real(transport=httpx.MockTransport(self._handler(calls)), **kw)):
+            async def run():
+                return [json.loads(l) async for l in agent_service.run_agent([{"role": "user", "content": "q"}], None)]
+
+            events = asyncio.run(run())
+            self.assertEqual(events[-1], {"type": "text", "text": "ok", "model": "works"})
+            self.assertEqual(calls, ["quota-a", "quota-b", "hangs", "works"])  # quota is not retried
+            labels = [e["label"] for e in events if e.get("name") == "retry"]
+            self.assertEqual(labels, ["quota-a โควต้าหมด — เปลี่ยนรุ่น AI แล้วลองใหม่",
+                                      "quota-b โควต้าหมด — เปลี่ยนรุ่น AI แล้วลองใหม่",
+                                      "hangs ไม่ตอบ — เปลี่ยนรุ่น AI แล้วลองใหม่"])
+            calls.clear()
+            asyncio.run(run())
+            self.assertEqual(calls, ["works"])  # the resting models are skipped
+
+    def test_board_chat_falls_through_quota_and_timeout(self):
+        calls = []
+        real = httpx.AsyncClient
+        with patch.dict(os.environ, self._env()), \
+                patch("app.services.chat_service.httpx.AsyncClient", lambda **kw: real(transport=httpx.MockTransport(self._handler(calls, stream=True)), **kw)):
+            async def run():
+                return [p async for p in self.chat_service._stream_gemini([{"role": "user", "content": "q"}])]
+
+            self.assertEqual("".join(asyncio.run(run())), "hi")
+            self.assertEqual(calls, ["quota-a", "quota-b", "hangs", "works"])
+
+    def test_quota_rest_uses_the_retry_delay(self):
+        raw = json.dumps(self.QUOTA)
+        self.assertEqual(self.chat_service.quota_rest(429, raw), 60.0)  # 37 s, at least a minute
+        self.assertIsNone(self.chat_service.quota_rest(429, '{"error":{"message":"Resource has been exhausted, try later"}}'))
+        self.assertIsNone(self.chat_service.quota_rest(503, raw))
+
+    def test_all_resting_still_leaves_something_to_try(self):
+        with patch.dict(os.environ, {"GEMINI_MODELS": "a,b"}):
+            self.chat_service.rest("a", 600, "test")
+            self.chat_service.rest("b", 600, "test")
+            self.assertEqual(self.chat_service.gemini_models(), ["a", "b"])

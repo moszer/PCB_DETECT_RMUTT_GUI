@@ -12,6 +12,8 @@ import base64
 import json
 import logging
 import os
+import re
+import time
 from contextlib import aclosing
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
@@ -46,6 +48,13 @@ RETRYABLE = (429, 500, 502, 503, 504)
 UNAVAILABLE = (404,)
 # Models that answered 404 this session: skipped from then on (cleared on restart).
 _dead_models: set = set()
+# Models resting until a time.monotonic(): out of quota (429 "exceeded your current quota",
+# which retrying does not fix) or not answering at all (read timeout).
+_resting: Dict[str, float] = {}
+QUOTA_REST_SEC = 600.0
+TIMEOUT_REST_SEC = 300.0
+# A model that has said nothing for this long is treated as down and the next one is tried.
+READ_TIMEOUT_SEC = 60.0
 
 
 def provider() -> str:
@@ -62,8 +71,27 @@ def configured() -> bool:
 def gemini_models() -> List[str]:
     raw = os.environ.get("GEMINI_MODELS") or os.environ.get("GEMINI_MODEL") or DEFAULT_GEMINI_MODELS
     models = [m.strip() for m in raw.split(",") if m.strip()]
-    alive = [m for m in models if m not in _dead_models]
-    return alive or models  # never end up with nothing to try
+    now = time.monotonic()
+    alive = [m for m in models if m not in _dead_models and _resting.get(m, 0.0) <= now]
+    return alive or [m for m in models if m not in _dead_models] or models  # never nothing to try
+
+
+def rest(model: str, seconds: float, why: str) -> None:
+    """Skip `model` for `seconds` (quota used up, or it did not answer)."""
+    logger.warning("Gemini model %s %s; skipping it for %d s", model, why, seconds)
+    _resting[model] = time.monotonic() + seconds
+
+
+def quota_rest(status: int, detail: str) -> Optional[float]:
+    """Seconds to rest a model when this answer means its quota is used up, else None.
+
+    429 also means "too many requests right now", which a short retry fixes; only the quota
+    message is worth skipping the model for. Gemini says when to retry (RetryInfo "37s").
+    """
+    if status != 429 or "quota" not in detail.lower():
+        return None
+    m = re.search(r'"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"', detail)
+    return min(3600.0, max(60.0, float(m.group(1)))) if m else QUOTA_REST_SEC
 
 
 def mark_unavailable(model: str) -> None:
@@ -171,39 +199,52 @@ async def _stream_gemini(messages: List[Dict[str, Any]]) -> AsyncIterator[str]:
     plan = [(m, 0.0) for m in models] + [(models[0], 4.0)]
     last_error = ""
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=15)) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(READ_TIMEOUT_SEC, connect=15)) as client:
             for model, pause in plan:
                 if pause:
                     await asyncio.sleep(pause)
-                async with client.stream("POST", GEMINI_URL.format(model=model), headers=headers, json=body) as res:
-                    if res.status_code != 200:
-                        detail = (await res.aread()).decode("utf-8", "replace")
-                        try:
-                            detail = json.loads(detail).get("error", {}).get("message", detail)
-                        except ValueError:
-                            pass
-                        last_error = f"HTTP {res.status_code} ({model}): {detail[:200]}"
-                        if res.status_code in UNAVAILABLE:
-                            mark_unavailable(model)
-                            continue
-                        if res.status_code in RETRYABLE:
-                            logger.info("Gemini %s busy (%s), trying next", model, res.status_code)
-                            continue
-                        yield f"\n⚠️ AI ตอบไม่ได้ — {last_error}"
+                sent = False
+                try:
+                    async with client.stream("POST", GEMINI_URL.format(model=model), headers=headers, json=body) as res:
+                        if res.status_code != 200:
+                            raw = (await res.aread()).decode("utf-8", "replace")
+                            try:
+                                detail = json.loads(raw).get("error", {}).get("message", raw)
+                            except ValueError:
+                                detail = raw
+                            last_error = f"HTTP {res.status_code} ({model}): {detail[:200]}"
+                            if res.status_code in UNAVAILABLE:
+                                mark_unavailable(model)
+                                continue
+                            wait = quota_rest(res.status_code, raw)
+                            if wait:
+                                rest(model, wait, "is out of quota")
+                                continue
+                            if res.status_code in RETRYABLE:
+                                logger.info("Gemini %s busy (%s), trying next", model, res.status_code)
+                                continue
+                            yield f"\n⚠️ AI ตอบไม่ได้ — {last_error}"
+                            return
+                        async for line in res.aiter_lines():
+                            if not line.startswith("data:"):
+                                continue
+                            try:
+                                chunk = json.loads(line[5:])
+                            except ValueError:
+                                continue
+                            for cand in chunk.get("candidates") or []:
+                                for part in (cand.get("content") or {}).get("parts") or []:
+                                    if part.get("text") and not part.get("thought"):
+                                        sent = True
+                                        yield part["text"]
                         return
-                    async for line in res.aiter_lines():
-                        if not line.startswith("data:"):
-                            continue
-                        try:
-                            chunk = json.loads(line[5:])
-                        except ValueError:
-                            continue
-                        for cand in chunk.get("candidates") or []:
-                            for part in (cand.get("content") or {}).get("parts") or []:
-                                if part.get("text") and not part.get("thought"):
-                                    yield part["text"]
-                    return
-        yield f"\n⚠️ Gemini ทุกรุ่นไม่ว่างตอนนี้ (ไม่ใช่โควตาหมดเสมอไป) ลองใหม่ในอีกสักครู่ — {last_error}"
+                except httpx.TimeoutException:
+                    if sent:
+                        raise  # half an answer is on screen: don't start another one after it
+                    rest(model, TIMEOUT_REST_SEC, "did not answer")
+                    last_error = f"{model} ไม่ตอบ"
+                    continue
+        yield f"\n⚠️ Gemini ทุกรุ่นไม่ว่างตอนนี้ (โควต้าหมดหรือไม่ตอบ) ลองใหม่ในอีกสักครู่ — {last_error}"
     except httpx.HTTPError as exc:
         logger.warning("Gemini request failed: %s", exc)
         yield f"\n⚠️ เชื่อมต่อ AI ไม่ได้: {exc.__class__.__name__}"

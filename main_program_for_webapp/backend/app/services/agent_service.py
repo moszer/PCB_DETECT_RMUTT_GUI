@@ -752,7 +752,11 @@ MODEL_ROUNDS = 2
 
 
 class _ModelBusy(Exception):
-    pass
+    """The model can't answer now. `label` says why, for the step shown in the chat."""
+
+    def __init__(self, detail: str, label: str = "ใช้ไม่ได้ตอนนี้"):
+        super().__init__(detail)
+        self.label = label
 
 
 async def _generate(client: httpx.AsyncClient, model: str, headers: Dict[str, str], body: Dict[str, Any]) -> Dict[str, Any]:
@@ -767,7 +771,11 @@ async def _generate(client: httpx.AsyncClient, model: str, headers: Dict[str, st
         last = f"HTTP {res.status_code} ({model}): {res.text[:200]}"
         if res.status_code in chat_service.UNAVAILABLE:
             chat_service.mark_unavailable(model)
-            raise _ModelBusy(last)  # same handling as a busy model: restart the turn on the next one
+            raise _ModelBusy(last, "ใช้ไม่ได้แล้ว")  # same handling as a busy model: restart the turn on the next one
+        wait = chat_service.quota_rest(res.status_code, res.text)
+        if wait:
+            chat_service.rest(model, wait, "is out of quota")
+            raise _ModelBusy(last, "โควต้าหมด")
         if res.status_code not in chat_service.RETRYABLE:
             raise RuntimeError(last)
         logger.info("Agent model %s busy (%s), retrying", model, res.status_code)
@@ -790,7 +798,7 @@ async def run_agent(history: List[Dict[str, str]], page: Optional[str]) -> Async
     navigated: set = set()
     last_error = ""
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=15)) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(chat_service.READ_TIMEOUT_SEC, connect=15)) as client:
             for round_no in range(MODEL_ROUNDS):
                 if round_no:
                     await asyncio.sleep(ROUND_PAUSE_SEC)
@@ -839,7 +847,12 @@ async def run_agent(history: List[Dict[str, str]], page: Optional[str]) -> Async
                         return
                     except _ModelBusy as exc:
                         last_error = str(exc)
-                        yield _event("tool", name="retry", label=f"{model} ใช้ไม่ได้ตอนนี้ — เปลี่ยนรุ่น AI แล้วลองใหม่", args={})
+                        yield _event("tool", name="retry", label=f"{model} {exc.label} — เปลี่ยนรุ่น AI แล้วลองใหม่", args={})
+                        continue
+                    except httpx.TimeoutException:
+                        chat_service.rest(model, chat_service.TIMEOUT_REST_SEC, "did not answer")
+                        last_error = f"{model} ไม่ตอบ"
+                        yield _event("tool", name="retry", label=f"{model} ไม่ตอบ — เปลี่ยนรุ่น AI แล้วลองใหม่", args={})
                         continue
                     except RuntimeError as exc:
                         yield _event("error", message=f"AI ตอบไม่ได้ — {exc}")

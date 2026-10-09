@@ -1,14 +1,15 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Bot, Check, Send, Sparkles, Square, Trash2, User, X } from "lucide-react";
+import { Bot, Check, RefreshCw, Send, Sparkles, Square, Trash2, User, X } from "lucide-react";
 import { API_BASE, authHeaders } from "@/lib/api";
 import { sfx } from "@/lib/sound";
 import type { TabId } from "./AppShell";
 import { Rich } from "./ChatPanel";
 import { Button, Spinner, cx } from "./ui";
 
-type Step = { label: string; done: boolean };
+/** One step of an answer; `retry` = a model could not answer and the next one is tried. */
+type Step = { label: string; done: boolean; retry?: boolean };
 type Msg = { role: "user" | "assistant"; content: string; steps?: Step[]; error?: boolean };
 
 const SUGGESTIONS = ["สรุปสถานะและการตั้งค่าทั้งหมดของเครื่อง", "สรุปโครงงานในเล่มปริญญานิพนธ์", "รางแม่นแค่ไหน ควรตั้งชดเชยไหม", "รอบสแกนล่าสุดผลเป็นยังไง", "มี error อะไรล่าสุดบ้าง", "สรุป yield ตอนนี้"];
@@ -92,7 +93,7 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
           if (ev.type === "ping") continue; // keep-alive while the AI waits
           if (ev.type === "tool") {
             sfx.chatStep();
-            updateLast((m) => ({ ...m, steps: [...(m.steps ?? []).map((s) => ({ ...s, done: true })), { label: ev.label, done: false }] }));
+            updateLast((m) => ({ ...m, steps: [...(m.steps ?? []).map((s) => ({ ...s, done: true })), { label: ev.label, done: false, retry: ev.name === "retry" }] }));
           } else if (ev.type === "navigate") {
             sfx.whoosh();
             onNavigate(ev.page as TabId);
@@ -213,8 +214,14 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
                     {m.role === "assistant" && !!m.steps?.length && (
                       <div className={cx("flex flex-col gap-1", m.content ? "mb-1.5" : "mt-2.5 pl-8")}>
                         {m.steps.map((s, k) => (
-                          <span key={k} className="flex items-center gap-1.5 text-[11px] text-muted animate-fade">
-                            {s.done ? <Check className="size-3 text-pass" aria-hidden="true" /> : <span className="ai-thinking-step-dot" aria-hidden="true" />}
+                          <span key={k} className={cx("flex items-center gap-1.5 text-[11px] animate-fade", s.retry ? "text-review" : "text-muted")}>
+                            {s.retry ? (
+                              <RefreshCw className="size-3 shrink-0" aria-hidden="true" />
+                            ) : s.done ? (
+                              <Check className="size-3 text-pass" aria-hidden="true" />
+                            ) : (
+                              <span className="ai-thinking-step-dot" aria-hidden="true" />
+                            )}
                             {s.label}
                           </span>
                         ))}
