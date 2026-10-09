@@ -4,6 +4,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { Bot, Send, Square, Trash2, User } from "lucide-react";
 import { API_BASE, authHeaders } from "@/lib/api";
 import { sfx } from "@/lib/sound";
+import * as speech from "@/lib/speech";
+import { SpeakButton, VoiceToggle } from "./Speech";
 import { Button, Modal, Spinner, cx } from "./ui";
 
 export interface BoardContext {
@@ -15,7 +17,7 @@ export interface BoardContext {
 }
 
 /** `fresh`: written in this page (revealed with an animation; history is not). */
-type Msg = { role: "user" | "assistant"; content: string; fresh?: boolean };
+type Msg = { role: "user" | "assistant"; content: string; fresh?: boolean; id?: string };
 
 const SUGGESTIONS = ["บอร์ดนี้คืออะไร ใช้ทำอะไรได้บ้าง", "ชิปหลักบนบอร์ดนี้ทำหน้าที่อะไร", "ทำไมจุดนี้ถึงได้ผลตรวจแบบนี้", "เอาบอร์ดนี้ไปทำโปรเจกต์อะไรได้บ้าง"];
 
@@ -182,7 +184,10 @@ export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContex
     const q = text.trim();
     if (!q || busy) return;
     const history: Msg[] = [...messages, { role: "user", content: q }];
-    setMessages([...history, { role: "assistant", content: "", fresh: true }]);
+    const replyId = `board-${Date.now()}`;
+    speech.stop();
+    speech.unlock(); // inside the tap: iOS then lets the reply be read aloud when it arrives
+    setMessages([...history, { role: "assistant", content: "", fresh: true, id: replyId }]);
     setInput("");
     setBusy(true);
     sfx.chatSend();
@@ -217,7 +222,11 @@ export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContex
     } finally {
       setBusy(false);
       abort.current = null;
-      if (reply.trim() && !controller.signal.aborted) (reply.includes("⚠️") ? sfx.error : sfx.chatReply)();
+      if (reply.trim() && !controller.signal.aborted) {
+        const failed = reply.includes("⚠️");
+        (failed ? sfx.error : sfx.chatReply)();
+        if (!failed && speech.isAuto()) speech.speak(replyId, reply);
+      }
     }
   };
 
@@ -227,7 +236,11 @@ export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContex
   return (
     <Modal
       open
-      onClose={onClose}
+      onClose={() => {
+        speech.stop();
+        onClose();
+      }}
+      actions={<VoiceToggle />}
       size="lg"
       glow={thinking}
       title={
@@ -277,6 +290,9 @@ export function ChatPanel({ context, imageUrl, onClose }: { context: BoardContex
                 ) : m.content ? (
                   <div className={m.fresh ? "ai-reveal" : undefined}>
                     <Rich text={m.content} />
+                    {!(busy && i === messages.length - 1) && !m.content.includes("⚠️") && (
+                      <SpeakButton id={m.id ?? `board-history-${i}`} text={m.content} />
+                    )}
                   </div>
                 ) : null}
                 {thinking && i === messages.length - 1 && <ThinkingIndicator />}

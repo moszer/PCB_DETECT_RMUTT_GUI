@@ -4,14 +4,16 @@ import React, { useEffect, useRef, useState } from "react";
 import { Bot, Check, RefreshCw, Send, Sparkles, Square, Trash2, User, X } from "lucide-react";
 import { API_BASE, authHeaders } from "@/lib/api";
 import { sfx } from "@/lib/sound";
+import * as speech from "@/lib/speech";
 import type { TabId } from "./AppShell";
 import { Rich } from "./ChatPanel";
+import { SpeakButton, VoiceToggle } from "./Speech";
 import { Button, Spinner, cx } from "./ui";
 
 /** One step of an answer; `retry` = a model could not answer and the next one is tried. */
 type Step = { label: string; done: boolean; retry?: boolean };
 /** `fresh`: the answer just arrived in this page (it is revealed with an animation; history is not). */
-type Msg = { role: "user" | "assistant"; content: string; steps?: Step[]; error?: boolean; fresh?: boolean };
+type Msg = { role: "user" | "assistant"; content: string; steps?: Step[]; error?: boolean; fresh?: boolean; id?: string };
 
 const SUGGESTIONS = ["สรุปสถานะและการตั้งค่าทั้งหมดของเครื่อง", "สรุปโครงงานในเล่มปริญญานิพนธ์", "รางแม่นแค่ไหน ควรตั้งชดเชยไหม", "รอบสแกนล่าสุดผลเป็นยังไง", "มี error อะไรล่าสุดบ้าง", "สรุป yield ตอนนี้"];
 
@@ -62,7 +64,10 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
     const q = text.trim();
     if (!q || busy) return;
     const history = [...messages.filter((m) => !m.error && m.content), { role: "user" as const, content: q }];
-    setMessages((m) => [...m, { role: "user", content: q }, { role: "assistant", content: "", steps: [] }]);
+    const replyId = `agent-${Date.now()}`;
+    speech.stop();
+    speech.unlock(); // inside the tap: iOS then lets the reply be read aloud when it arrives
+    setMessages((m) => [...m, { role: "user", content: q }, { role: "assistant", content: "", steps: [], id: replyId }]);
     setInput("");
     setBusy(true);
     sfx.chatSend();
@@ -101,6 +106,7 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
           } else if (ev.type === "text") {
             sfx.chatReply();
             updateLast((m) => ({ ...m, content: ev.text, fresh: true, steps: (m.steps ?? []).map((s) => ({ ...s, done: true })) }));
+            if (speech.isAuto()) speech.speak(replyId, ev.text);
           } else if (ev.type === "error") {
             sfx.error();
             updateLast((m) => ({ ...m, content: `⚠️ ${ev.message}`, error: true, steps: (m.steps ?? []).map((s) => ({ ...s, done: true })) }));
@@ -137,7 +143,10 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
       <button
         type="button"
         onClick={() => {
-          if (open) sfx.chatClose();
+          if (open) {
+            sfx.chatClose();
+            speech.stop();
+          }
           else sfx.chatOpen();
           setOpen((o) => !o);
           setTimeout(() => inputRef.current?.focus(), 50);
@@ -182,6 +191,7 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
                 <div className="text-sm font-semibold">ผู้ช่วย AI ประจำสถานี</div>
                 <div className="text-[11px] text-muted truncate">ถามข้อมูลสถานีและเล่มโครงงาน · พาไปหน้าต่างๆ ได้</div>
               </div>
+              <VoiceToggle />
               {messages.length > 0 && (
                 <button type="button" onClick={clear} disabled={busy} title="ลบประวัติแชท" className="size-8 grid place-items-center rounded-md text-subtle hover:text-fail hover:bg-fail-soft cursor-pointer">
                   <Trash2 className="size-4" />
@@ -245,6 +255,7 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
                       ) : m.content ? (
                         <div className={cx(m.error && "text-fail", m.fresh && "ai-reveal")}>
                           <Rich text={m.content} />
+                          {!m.error && <SpeakButton id={m.id ?? `agent-history-${i}`} text={m.content} />}
                         </div>
                       ) : null}
                     </div>
