@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Bot, Check, Loader2, Send, Sparkles, Square, Trash2, User, X } from "lucide-react";
+import { Bot, Check, Send, Sparkles, Square, Trash2, User, X } from "lucide-react";
 import { API_BASE, authHeaders } from "@/lib/api";
 import { sfx } from "@/lib/sound";
 import type { TabId } from "./AppShell";
@@ -12,6 +12,17 @@ type Step = { label: string; done: boolean };
 type Msg = { role: "user" | "assistant"; content: string; steps?: Step[]; error?: boolean };
 
 const SUGGESTIONS = ["สรุปสถานะและการตั้งค่าทั้งหมดของเครื่อง", "รางแม่นแค่ไหน ควรตั้งชดเชยไหม", "รอบสแกนล่าสุดผลเป็นยังไง", "มี error อะไรล่าสุดบ้าง", "สรุป yield ตอนนี้"];
+
+function ThinkingIndicator({ reading }: { reading: boolean }) {
+  return (
+    <div className="flex items-center gap-2.5 min-h-6" role="status" aria-live="polite">
+      <span className="ai-thinking-orb" aria-hidden="true" />
+      <span className="text-xs font-medium text-text">
+        {reading ? "กำลังอ่านข้อมูลสถานี…" : "กำลังคิด…"}
+      </span>
+    </div>
+  );
+}
 
 /**
  * Station-wide AI assistant: a floating button on every page. It answers from live station
@@ -144,7 +155,7 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
       {open && (
         <div className="fixed bottom-36 md:bottom-20 right-2 sm:right-4 z-40 w-[440px] max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2.5rem)] h-[620px] max-h-[calc(100dvh-13rem)] md:max-h-[calc(100dvh-7rem)] rounded-2xl border border-line bg-surface shadow-2xl flex flex-col animate-rise">
           <div className="flex items-center gap-2 px-4 py-3 border-b border-line">
-            <span className="size-8 rounded-full bg-accent-soft text-accent grid place-items-center">
+            <span className="ai-assistant-icon size-8 rounded-xl text-white grid place-items-center">
               <Bot className="size-4" />
             </span>
             <div className="flex-1 min-w-0">
@@ -184,12 +195,19 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
                   <span className={cx("size-6 shrink-0 rounded-full grid place-items-center", m.role === "user" ? "bg-accent text-on-accent" : "bg-surface-2 text-accent")}>
                     {m.role === "user" ? <User className="size-3" /> : <Bot className="size-3" />}
                   </span>
-                  <div className={cx("rounded-xl px-3 py-2 text-sm leading-relaxed max-w-[88%] break-words min-w-0", m.role === "user" ? "bg-accent-soft whitespace-pre-wrap" : "bg-surface-2")}>
+                  <div className={cx(
+                    "rounded-xl px-3 py-2 text-sm leading-relaxed max-w-[88%] break-words min-w-0",
+                    m.role === "user" ? "bg-accent-soft whitespace-pre-wrap" : "bg-surface-2",
+                    m.role === "assistant" && busy && last && !m.content && "ai-thinking-bubble"
+                  )}>
+                    {m.role === "assistant" && busy && last && !m.content && (
+                      <ThinkingIndicator reading={!!m.steps?.length} />
+                    )}
                     {m.role === "assistant" && !!m.steps?.length && (
-                      <div className="flex flex-col gap-1 mb-1.5">
+                      <div className={cx("flex flex-col gap-1", m.content ? "mb-1.5" : "mt-2.5 pl-8")}>
                         {m.steps.map((s, k) => (
                           <span key={k} className="flex items-center gap-1.5 text-[11px] text-muted animate-fade">
-                            {s.done ? <Check className="size-3 text-pass" /> : <Loader2 className="size-3 animate-spin text-accent" />}
+                            {s.done ? <Check className="size-3 text-pass" aria-hidden="true" /> : <span className="ai-thinking-step-dot" aria-hidden="true" />}
                             {s.label}
                           </span>
                         ))}
@@ -201,18 +219,7 @@ export function AgentWidget({ page, onNavigate }: { page: TabId; onNavigate: (pa
                       <div className={m.error ? "text-fail" : undefined}>
                         <Rich text={m.content} />
                       </div>
-                    ) : (
-                      busy && last && (
-                        <span className="flex items-center gap-2 text-xs text-muted">
-                          <span className="flex items-end gap-1 h-3" aria-hidden>
-                            {[0, 1, 2].map((d) => (
-                              <span key={d} className="size-1.5 rounded-full bg-accent chat-dot" style={{ animationDelay: `${d * 160}ms` }} />
-                            ))}
-                          </span>
-                          {m.steps?.length ? "กำลังสรุปคำตอบ…" : "กำลังคิด…"}
-                        </span>
-                      )
-                    )}
+                    ) : null}
                   </div>
                 </div>
               );

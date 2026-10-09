@@ -326,6 +326,52 @@ input[type="number"]::-webkit-outer-spin-button {
   30% { transform: translateY(-5px); opacity: 1; }
 }
 
+/* Station assistant: quiet glass surface and a small breathing light while waiting. */
+.ai-assistant-icon {
+  background: linear-gradient(145deg, #60adff, #326cdb);
+  box-shadow: 0 3px 10px rgb(37 99 235 / 0.2);
+}
+.ai-thinking-bubble {
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+}
+.ai-thinking-orb {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  background: conic-gradient(from 15deg, #7aa9ff, #83d9d4, #b6a4f5, #f5b8cb, #7aa9ff);
+  box-shadow: 0 0 0 3px rgb(96 165 250 / 0.12), 0 0 12px rgb(96 165 250 / 0.34);
+  animation: ai-thinking-orbit 3s ease-in-out infinite;
+}
+.ai-thinking-orb::after {
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  content: "";
+}
+.ai-thinking-step-dot {
+  display: inline-block;
+  flex: none;
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  animation: ai-thinking-step 1.5s ease-in-out infinite;
+}
+@keyframes ai-thinking-orbit {
+  0%, 100% { transform: rotate(0deg) scale(0.92); }
+  50% { transform: rotate(180deg) scale(1.07); }
+}
+@keyframes ai-thinking-step {
+  50% { opacity: 0.38; }
+}
+
 /* Bright, minimal start-up screen. Its palette stays light even when the station is dark. */
 .splash-screen {
   overflow: auto;
