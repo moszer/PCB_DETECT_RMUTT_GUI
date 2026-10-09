@@ -820,6 +820,13 @@ async def run_agent(history: List[Dict[str, str]], page: Optional[str]) -> Async
                                 name, args = call.get("name", ""), call.get("args") or {}
                                 yield _event("tool", name=name, label=TOOL_LABELS.get(name, name), args=args)
                                 result = await asyncio.to_thread(run_tool, name, args)
+                                if name in {"get_project_book_overview", "search_project_book", "read_project_book_page"} \
+                                        and isinstance(result, dict) and result.get("error"):
+                                    yield _event("text", text=f"ยังตอบจากเล่มไม่ได้: {result['error']}", model=model)
+                                    return
+                                if name == "search_project_book" and isinstance(result, dict) and not result.get("results"):
+                                    yield _event("text", text="ค้นในเล่มแล้วไม่พบข้อมูลที่ตรงกับคำถาม ลองระบุหัวข้อหรือบทให้เจาะจงขึ้น", model=model)
+                                    return
                                 if name == "navigate" and isinstance(result, dict) and result.get("ok") and result["page"] not in navigated:
                                     navigated.add(result["page"])
                                     yield _event("navigate", page=result["page"])

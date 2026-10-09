@@ -58,10 +58,23 @@ class BookKnowledgeTests(unittest.TestCase):
         self.assertIn("รอผลจริง", overview["note"])
 
     def test_missing_pdf_returns_actionable_error(self):
-        with patch.object(book_knowledge, "_book_path", return_value=self.path.with_name("missing.pdf")):
+        with patch.object(book_knowledge, "_book_path", return_value=self.path.with_name("missing.pdf")), \
+                patch.object(book_knowledge, "BUNDLED_INDEX_PATH", self.path.with_name("missing.json")):
             result = agent_service.run_tool("search_project_book", {"query": "โมเดล"})
         self.assertIn("error", result)
         self.assertIn("project_book.pdf", result["error"])
+
+    def test_bundled_text_works_without_station_pdf(self):
+        bundled = self.path.with_name("pages.json")
+        bundled.write_text(json.dumps({"pages": [
+            {"pdf_page": 64, "text": "ชุดข้อมูลหลักมีภาพทั้งหมด 652 ภาพ แบ่งเป็น Train Validation Test"}
+        ]}, ensure_ascii=False), encoding="utf-8")
+        with patch.object(book_knowledge, "_book_path", return_value=self.path.with_name("missing.pdf")), \
+                patch.object(book_knowledge, "BUNDLED_INDEX_PATH", bundled):
+            result = agent_service.run_tool("search_project_book", {"query": "ชุดข้อมูลหลักมีภาพทั้งหมด"})
+            status = book_knowledge.book_status()
+        self.assertEqual(result["results"][0]["citation"], "PDF หน้า 64")
+        self.assertEqual(status["source"], "bundled_text")
 
     def test_agent_receives_book_excerpts_and_page_numbers(self):
         requests = []
@@ -87,6 +100,26 @@ class BookKnowledgeTests(unittest.TestCase):
         self.assertIn("PDF หน้า 64", events[-1]["text"])
         self.assertIn("PDF หน้า 64", json.dumps(requests[1], ensure_ascii=False))
         self.assertIn("search_project_book", requests[0]["systemInstruction"]["parts"][0]["text"])
+
+    def test_agent_stops_when_book_source_is_missing(self):
+        requests = []
+
+        def handler(request):
+            requests.append(json.loads(request.content))
+            return httpx.Response(200, json={"candidates": [{"content": {"parts": [
+                {"functionCall": {"name": "get_project_book_overview", "args": {}}}
+            ]}}]})
+
+        real_client = httpx.AsyncClient
+        with patch.dict(os.environ, {"AI_PROVIDER": "gemini", "GEMINI_API_KEY": "test-key", "GEMINI_MODELS": "test-model"}), \
+                patch("app.services.agent_service.httpx.AsyncClient",
+                      lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs)), \
+                patch.dict(agent_service.TOOLS, {"get_project_book_overview": lambda: {"error": "ไม่พบข้อมูลเล่ม"}}):
+            events = asyncio.run(_collect_agent())
+
+        self.assertEqual(len(requests), 1)
+        self.assertEqual([event["type"] for event in events], ["tool", "text"])
+        self.assertIn("ยังตอบจากเล่มไม่ได้", events[-1]["text"])
 
 
 async def _collect_agent():

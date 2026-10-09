@@ -1,10 +1,11 @@
-"""Local, page-cited retrieval from the station's project thesis PDF.
+"""Page-cited retrieval from bundled thesis text or a station-local PDF.
 
-The PDF stays in ignored station storage. Only selected content pages are sent to
-the configured AI provider when the agent calls a book tool.
+The bundled text contains content pages only. A local PDF in ignored station storage
+overrides it. Only selected excerpts are sent to the configured AI provider.
 """
 from __future__ import annotations
 
+import json
 import math
 import os
 import re
@@ -17,6 +18,7 @@ from ..config import STORAGE_DIR
 
 BOOK_TITLE = "ระบบตรวจสอบความสมบูรณ์ของแผ่น PCB ด้วยปัญญาประดิษฐ์"
 DEFAULT_BOOK_PATH = STORAGE_DIR / "knowledge" / "project_book.pdf"
+BUNDLED_INDEX_PATH = Path(__file__).resolve().parents[1] / "resources" / "project_book_pages.json"
 # PDF pages 1–6 contain signatures, student IDs and acknowledgements; 94–97
 # contain author biographies. The searchable material is the TOC and chapters.
 FIRST_CONTENT_PAGE = 7
@@ -49,30 +51,59 @@ def _features(text: str) -> Counter[str]:
     return terms
 
 
+def _read_pages(path: Path) -> list[dict[str, Any]]:
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        raise RuntimeError("ยังไม่มี pypdf; ติดตั้ง dependency จาก backend/requirements.txt") from None
+    reader = PdfReader(path)
+    pages = []
+    for idx in range(FIRST_CONTENT_PAGE - 1, min(LAST_CONTENT_PAGE, len(reader.pages))):
+        content = _clean(reader.pages[idx].extract_text() or "")
+        if len(content) >= 30:
+            pages.append({"pdf_page": idx + 1, "book_page": idx + 1 - 12 if idx + 1 >= 13 else None,
+                          "text": content, "features": _features(content)})
+    if not pages:
+        raise ValueError("PDF ไม่มีข้อความที่ค้นหาได้ในช่วงเนื้อหา; อาจต้องใช้ OCR ก่อน")
+    return pages
+
+
+def book_status() -> dict[str, Any]:
+    try:
+        pages = _load()
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        return {"available": False, "message": str(exc)}
+    return {"available": True, "title": BOOK_TITLE, "pages_indexed": len(pages),
+            "source": "station_pdf" if _book_path().is_file() else "bundled_text"}
+
+
 def _load() -> list[dict[str, Any]]:
     global _cache
-    path = _book_path()
+    pdf_path = _book_path()
+    path = pdf_path if pdf_path.is_file() else BUNDLED_INDEX_PATH
     try:
         stat = path.stat()
     except FileNotFoundError:
-        raise FileNotFoundError(f"ไม่พบไฟล์เล่มที่ {path}; วาง PDF ไว้ใน backend/data/knowledge/project_book.pdf") from None
+        raise FileNotFoundError("ไม่พบข้อมูลเล่ม; อัปเดตโค้ดสถานี หรือวาง PDF ไว้ใน backend/data/knowledge/project_book.pdf") from None
     key = (str(path.resolve()), stat.st_mtime_ns, stat.st_size)
     with _lock:
         if _cache and _cache[0] == key:
             return _cache[1]
-        try:
-            from pypdf import PdfReader
-        except ImportError:
-            raise RuntimeError("ยังไม่มี pypdf; ติดตั้ง dependency จาก backend/requirements.txt") from None
-        reader = PdfReader(path)
-        pages = []
-        for idx in range(FIRST_CONTENT_PAGE - 1, min(LAST_CONTENT_PAGE, len(reader.pages))):
-            content = _clean(reader.pages[idx].extract_text() or "")
-            if len(content) >= 30:
-                pages.append({"pdf_page": idx + 1, "book_page": idx + 1 - 12 if idx + 1 >= 13 else None,
-                              "text": content, "features": _features(content)})
-        if not pages:
-            raise ValueError("PDF ไม่มีข้อความที่ค้นหาได้ในช่วงเนื้อหา; อาจต้องใช้ OCR ก่อน")
+        if path == pdf_path:
+            pages = _read_pages(path)
+        else:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            pages = []
+            for item in data["pages"]:
+                number = int(item["pdf_page"])
+                if not FIRST_CONTENT_PAGE <= number <= LAST_CONTENT_PAGE:
+                    continue
+                content = _clean(item["text"])
+                if len(content) >= 30:
+                    pages.append({"pdf_page": number, "book_page": number - 12 if number >= 13 else None,
+                                  "text": content, "features": _features(content)})
+            if not pages:
+                raise ValueError("ดัชนีข้อมูลเล่มไม่มีเนื้อหาที่ค้นหาได้")
         _cache = (key, pages)
         return pages
 
