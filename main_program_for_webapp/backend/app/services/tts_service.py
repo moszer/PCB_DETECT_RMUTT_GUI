@@ -35,7 +35,7 @@ from . import chat_service
 logger = logging.getLogger(__name__)
 
 DEFAULT_ENGINES = "edge,gemini"
-DEFAULT_EDGE_VOICE = "th-TH-PremwadeeNeural"  # or th-TH-NiwatNeural
+DEFAULT_EDGE_VOICE = "th-TH-NiwatNeural"  # male, ~1 s a piece; or th-TH-PremwadeeNeural (female, ~4 s)
 EDGE_TIMEOUT_SEC = 20.0
 EDGE_REST_SEC = 300.0
 DEFAULT_MODELS = "gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts,gemini-2.5-flash-preview-tts"
