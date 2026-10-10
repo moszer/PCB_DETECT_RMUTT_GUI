@@ -80,6 +80,8 @@ type WorkMode = "engineer" | "operator";
 
 const POINTS_KEY = "pcb_aoi_points";
 const VIEW_GAP = 12;
+/** Smallest card width a short screen may squeeze the viewers to before the column scrolls. */
+const MIN_VIEWER = 560;
 const ZOOMS = [1, 1.5, 2, 3, 4];
 const ARROWS: Record<string, [number, number]> = { ArrowUp: [0, 1], ArrowDown: [0, -1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
 
@@ -615,8 +617,13 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
   const dockSpace = dock.height ? dock.height + VIEW_GAP : 0;
   // Below lg the page scrolls, so only the width limits the cards (full-width, stacked).
   const scrolls = typeof window !== "undefined" && window.innerWidth < 1024;
-  const availH = scrolls ? Number.POSITIVE_INFINITY : Math.max(200, area.height - dockSpace);
-  const fit = area.width > 0 && (scrolls || area.height > 0) ? fitViewers(area.width, availH, showLive && (showOutput || twin) ? 2 : 1, ratio) : null;
+  const viewers = showLive && (showOutput || twin) ? 2 : 1;
+  // On a wide but short screen (an iPad in landscape) fitting the height left small cards with
+  // empty space beside them and crowded camera controls: there, use the width (up to
+  // MIN_VIEWER px a card) and let the column scroll.
+  const fillW = Math.min(MIN_VIEWER, (area.width - VIEW_GAP * (viewers - 1)) / viewers);
+  const availH = scrolls ? Number.POSITIVE_INFINITY : Math.max(200, area.height - dockSpace, fillW / ratio);
+  const fit = area.width > 0 && (scrolls || area.height > 0) ? fitViewers(area.width, availH, viewers, ratio) : null;
 
   const tourOpen = tourManual || (introReady && !tourDone);
   const closeTour = () => {
@@ -764,7 +771,7 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
         </aside>
 
         {/* ── Right: camera + results ── */}
-        <section className="order-1 lg:order-none min-h-[560px] lg:min-h-0 p-3 flex flex-col gap-3">
+        <section className="order-1 lg:order-none min-h-[560px] lg:min-h-0 lg:overflow-y-auto p-3 flex flex-col gap-3">
           <div className="flex items-center gap-2 flex-wrap mx-auto w-full" style={fit ? { maxWidth: Math.max(fit.total, 480) } : undefined}>
             <Segmented
               size="sm"

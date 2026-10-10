@@ -170,7 +170,8 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
   const imgClass = "absolute inset-0 size-full object-contain transition-transform duration-300 ease-out pointer-events-none";
 
   return (
-    <div className={cx("relative overflow-hidden rounded-xl bg-viewport border border-line select-none", className)}>
+    // @container: the HUD gets compact on a small card (@max-md, < 28rem) whatever the screen size.
+    <div className={cx("@container relative overflow-hidden rounded-xl bg-viewport border border-line select-none", className)}>
       {mode === "stream" ? (
         streamSrc && (
           <MjpegImage
@@ -212,14 +213,14 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
           {mode === "stream" ? "LIVE" : "SNAPSHOT"}
         </HudPill>
         {info && (
-          <HudPill>
+          <HudPill className="@max-md:hidden">
             <span className="font-mono tabular">
               {info.resolution[0]}×{info.resolution[1]}
             </span>
           </HudPill>
         )}
         {info?.mock && <HudPill className="text-amber-300">กล้องจำลอง</HudPill>}
-        {info?.output_mode === "crop" && <HudPill className="text-cyan-300">1:1 crop</HudPill>}
+        {info?.output_mode === "crop" && <HudPill className="text-cyan-300 @max-md:hidden">1:1 crop</HudPill>}
         {zoomed && <HudPill className="text-amber-300 font-mono">ZOOM {zoom.toFixed(1)}×</HudPill>}
       </div>
 
@@ -281,8 +282,9 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
       {/* Bottom: stage position + zoom */}
       <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between gap-2 pointer-events-none">
         {stagePosition !== undefined ? (
-          <HudPill className="font-mono tabular">
-            X {formatMm(stagePosition?.[0])} · Y {formatMm(stagePosition?.[1])} mm
+          <HudPill className="font-mono tabular whitespace-nowrap shrink-0">
+            X {formatMm(stagePosition?.[0])} · Y {formatMm(stagePosition?.[1])}
+            <span className="@max-md:hidden">mm</span>
           </HudPill>
         ) : (
           <span />
@@ -295,7 +297,7 @@ export function LiveCameraFeed({ className, zoom = 1, onZoomChange, stagePositio
                 type="button"
                 onClick={() => onZoomChange(z)}
                 className={cx(
-                  "h-7 pointer-coarse:h-10 px-2 pointer-coarse:px-3 rounded-md text-[11px] font-mono cursor-pointer",
+                  "h-7 pointer-coarse:h-10 px-2 pointer-coarse:px-3 @max-md:px-1.5 @max-md:pointer-coarse:px-2 rounded-md text-[11px] font-mono cursor-pointer",
                   Math.abs(zoom - z) < 0.05 ? "bg-white text-black font-bold" : "text-white/75 hover:text-white"
                 )}
               >
