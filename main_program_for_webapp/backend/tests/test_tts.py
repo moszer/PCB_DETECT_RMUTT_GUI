@@ -54,6 +54,21 @@ class TTSServiceTests(unittest.TestCase):
         self.assertEqual((again, cached), (audio, "cache"))
         self.assertEqual(self.calls, ["tts-a"])  # the second read came from the cache
 
+    def test_always_asks_for_thai_and_copes_with_a_model_without_it(self):
+        bodies = []
+
+        def handler(request):
+            body = json.loads(request.content)
+            bodies.append(body["generationConfig"]["speechConfig"].get("languageCode"))
+            if body["generationConfig"]["speechConfig"].get("languageCode"):
+                return httpx.Response(400, json={"error": {"message": "languageCode is not supported for this model"}})
+            return _audio("audio/wav", b"RIFF....WAVEdata")
+
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "k", "GEMINI_TTS_MODELS": "tts-a"}), self._client(handler):
+            _, model = tts_service.synthesize("ผล PASS ครับ")
+        self.assertEqual(model, "tts-a")
+        self.assertEqual(bodies, ["th-TH", None])
+
     def test_out_of_quota_model_is_skipped(self):
         def handler(request):
             model = request.url.path.split("/")[-1].split(":")[0]

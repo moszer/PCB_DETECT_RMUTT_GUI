@@ -31,6 +31,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MODELS = "gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts,gemini-2.5-flash-preview-tts"
 DEFAULT_VOICE = "Kore"
+# Always Thai: left to itself the model guesses the language per sentence, and an answer with
+# English words in it (PASS, Yield, YOLO) could switch accent.
+DEFAULT_LANGUAGE = "th-TH"
 URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 CACHE_DIR = BACKEND_ROOT.parent / ".cache" / "tts"
 CACHE_MAX_FILES = 400
@@ -55,6 +58,10 @@ def voice() -> str:
     return (os.environ.get("GEMINI_TTS_VOICE") or DEFAULT_VOICE).strip()
 
 
+def language() -> str:
+    return (os.environ.get("GEMINI_TTS_LANGUAGE") or DEFAULT_LANGUAGE).strip()
+
+
 def available() -> bool:
     return bool(os.environ.get("GEMINI_API_KEY"))
 
@@ -77,7 +84,7 @@ def _to_wav(data: bytes, mime: str) -> bytes:
 
 
 def _cache_path(text: str) -> Path:
-    key = hashlib.sha256(f"{voice()}|{text}".encode("utf-8")).hexdigest()[:32]
+    key = hashlib.sha256(f"{voice()}|{language()}|{text}".encode("utf-8")).hexdigest()[:32]
     return CACHE_DIR / f"{key}.wav"
 
 
@@ -100,18 +107,21 @@ def synthesize(text: str) -> Tuple[bytes, str]:
         path.touch()
         return path.read_bytes(), "cache"
 
-    body = {
-        "contents": [{"parts": [{"text": text}]}],
-        "generationConfig": {
-            "responseModalities": ["AUDIO"],
-            "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice()}}},
-        },
-    }
+    def body(with_language: bool):
+        speech = {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice()}}}
+        if with_language and language():
+            speech["languageCode"] = language()
+        return {"contents": [{"parts": [{"text": text}]}], "generationConfig": {"responseModalities": ["AUDIO"], "speechConfig": speech}}
+
     last = ""
     with httpx.Client(timeout=httpx.Timeout(TIMEOUT_SEC, connect=10)) as client:
         for model in models():
             try:
-                res = client.post(URL.format(model=model), headers={"x-goog-api-key": key}, json=body)
+                res = client.post(URL.format(model=model), headers={"x-goog-api-key": key}, json=body(True))
+                if res.status_code == 400 and "language" in res.text.lower():
+                    # A model that doesn't take a language code: ask again without it.
+                    logger.info("TTS model %s rejects languageCode; retrying without it", model)
+                    res = client.post(URL.format(model=model), headers={"x-goog-api-key": key}, json=body(False))
             except httpx.TimeoutException:
                 chat_service.rest(model, chat_service.TIMEOUT_REST_SEC, "did not answer (TTS)")
                 last = f"{model} ไม่ตอบ"
