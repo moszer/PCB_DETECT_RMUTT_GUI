@@ -181,7 +181,6 @@ function Station() {
               progress={scanProgress}
               pointFrames={pointFrames}
               stageError={stageError}
-              references={references}
               params={params}
               setParams={setParams}
               onRefreshStatus={refreshStatus}

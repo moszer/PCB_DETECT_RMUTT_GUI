@@ -27,7 +27,7 @@ The repository holds two stations that share the model and the matching logic:
 | --- | --- | --- |
 | Folder | [`main_program_for_webapp/`](main_program_for_webapp/) | [`main_program/`](main_program/) |
 | Stack | FastAPI + Next.js 16, any browser on the LAN | PyQt6 desktop app |
-| XY stage scanning | ✅ boards, marked points, grids | ✅ grid scan ([docs/AOI.md](docs/AOI.md)) |
+| XY stage scanning | ✅ boards and marked points | ✅ grid scan ([docs/AOI.md](docs/AOI.md)) |
 | Runs on | macOS, Linux, NVIDIA Jetson, Docker | macOS, Jetson |
 
 ---
@@ -120,7 +120,6 @@ sidebar on phones). The sidebar has eight pages.
   frame as it is analyzed.
 - **Point detail:** per-component status, **OCR of part markings** (Apple Vision on macOS,
   tesseract on Linux), and a rough **3D height map** from camera motion stereo.
-- **Grid scan:** serpentine raster with a golden-board teach run.
 - **Operator / engineer modes:**
   - Operator mode shows only *pick board → start → big PASS/FAIL*.
   - Engineer mode keeps marking, references and parameters.

@@ -1,21 +1,12 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Home, LocateFixed, Navigation, Play, Sparkles } from "lucide-react";
-import type { MachineState, ReferenceSummary } from "@/types";
+import React, { useState } from "react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Home, Navigation } from "lucide-react";
+import type { MachineState } from "@/types";
 import { IMGSZ_OPTIONS, percent } from "@/lib/format";
 import type { InspectionParams, SetParams } from "@/lib/params";
 import { useHoldRepeat } from "@/hooks/useHoldRepeat";
 import { Button, Field, NumberInput, SectionLabel, Segmented, Select, Slider, Toggle, cx } from "../ui";
-
-export interface GridPlan {
-  originX: number;
-  originY: number;
-  pitchX: number;
-  pitchY: number;
-  columns: number;
-  rows: number;
-}
 
 export interface MotionSettings {
   speed: number;
@@ -23,7 +14,6 @@ export interface MotionSettings {
   jogStep: number;
 }
 
-export const DEFAULT_GRID: GridPlan = { originX: 0, originY: 0, pitchX: 10, pitchY: 10, columns: 2, rows: 2 };
 export const DEFAULT_MOTION: MotionSettings = { speed: 800, settleSec: 0.5, jogStep: 1 };
 
 /* ── Jog ─────────────────────────────────────────────────── */
@@ -108,115 +98,6 @@ export function JogPanel({
         <Field label="เวลานิ่งก่อนถ่าย">
           <NumberInput value={motion.settleSec} min={0} max={5} step={0.1} suffix="s" onChange={(settleSec) => setMotion({ settleSec })} />
         </Field>
-      </div>
-    </div>
-  );
-}
-
-/* ── Grid scan ───────────────────────────────────────────── */
-
-export function GridPanel({
-  grid,
-  setGrid,
-  machine,
-  references,
-  referenceId,
-  setReferenceId,
-  disabled,
-  onStart,
-}: {
-  grid: GridPlan;
-  setGrid: (g: Partial<GridPlan>) => void;
-  machine: MachineState | null;
-  references: ReferenceSummary[];
-  referenceId: string;
-  setReferenceId: (id: string) => void;
-  disabled: boolean;
-  onStart: (golden: boolean) => void;
-}) {
-  const total = grid.columns * grid.rows;
-  const limits = machine?.soft_limits_mm ?? [38, 38];
-  const path = useMemo(() => {
-    const pts: Array<[number, number]> = [];
-    for (let r = 0; r < grid.rows; r++) {
-      for (let i = 0; i < grid.columns; i++) {
-        const c = r % 2 === 0 ? i : grid.columns - 1 - i;
-        pts.push([grid.originX + c * grid.pitchX, grid.originY + r * grid.pitchY]);
-      }
-    }
-    return pts;
-  }, [grid]);
-  const outOfRange = path.some(([x, y]) => x < 0 || y < 0 || x > limits[0] || y > limits[1]);
-  const tooMany = total > 400;
-  const invalid = outOfRange || tooMany;
-
-  return (
-    <div className="flex flex-col gap-5">
-      <div className="grid grid-cols-2 gap-3">
-        <Field
-          label="จุดเริ่ม X / Y (mm)"
-          className="col-span-2"
-          aside={
-            <button
-              type="button"
-              className="text-xs text-accent hover:underline cursor-pointer disabled:opacity-40"
-              disabled={!machine?.connected}
-              onClick={() => machine && setGrid({ originX: machine.position_mm[0], originY: machine.position_mm[1] })}
-            >
-              <LocateFixed className="inline size-3 mr-1" />
-              ใช้ตำแหน่งปัจจุบัน
-            </button>
-          }
-        >
-          <div className="grid grid-cols-2 gap-2">
-            <NumberInput value={grid.originX} min={0} step={0.5} suffix="X" onChange={(originX) => setGrid({ originX })} />
-            <NumberInput value={grid.originY} min={0} step={0.5} suffix="Y" onChange={(originY) => setGrid({ originY })} />
-          </div>
-        </Field>
-        <Field label="ระยะห่าง X">
-          <NumberInput value={grid.pitchX} min={0.5} step={0.5} suffix="mm" onChange={(pitchX) => setGrid({ pitchX })} />
-        </Field>
-        <Field label="ระยะห่าง Y">
-          <NumberInput value={grid.pitchY} min={0.5} step={0.5} suffix="mm" onChange={(pitchY) => setGrid({ pitchY })} />
-        </Field>
-        <Field label="คอลัมน์">
-          <NumberInput value={grid.columns} min={1} max={100} step={1} onChange={(v) => setGrid({ columns: Math.round(v) })} />
-        </Field>
-        <Field label="แถว">
-          <NumberInput value={grid.rows} min={1} max={100} step={1} onChange={(v) => setGrid({ rows: Math.round(v) })} />
-        </Field>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <SectionLabel>เส้นทางสแกน · {total} จุด</SectionLabel>
-          <span className="text-xs text-subtle font-mono">
-            พื้นที่ {limits[0]}×{limits[1]} mm
-          </span>
-        </div>
-        <PathPreview path={path} limits={limits} />
-        {outOfRange && <p className="text-xs text-fail">บางจุดเกินขอบเขตการเคลื่อนที่ — ลดจุดเริ่ม ระยะห่าง หรือจำนวนจุด</p>}
-        {tooMany && <p className="text-xs text-fail">สแกนได้สูงสุด 400 จุดต่อรอบ</p>}
-      </div>
-
-      <Field label="โปรไฟล์ตารางอ้างอิง" hint={references.length ? "ต้องสร้างจากการสแกนต้นแบบด้วยตารางเดียวกัน" : "ยังไม่มี — กด “สแกนบอร์ดต้นแบบ” เพื่อสร้าง"}>
-        <Select value={referenceId} onChange={(e) => setReferenceId(e.target.value)}>
-          <option value="">ไม่เทียบ (ผลเป็น REVIEW)</option>
-          {references.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.name} · {r.points_count} จุด
-            </option>
-          ))}
-        </Select>
-      </Field>
-
-      <div className="flex flex-col gap-2">
-        <Button variant="primary" size="lg" icon={Play} disabled={disabled || invalid} onClick={() => onStart(false)}>
-          เริ่มสแกนตาราง ({total} จุด)
-        </Button>
-        <Button icon={Sparkles} disabled={disabled || invalid} onClick={() => onStart(true)}>
-          สแกนบอร์ดต้นแบบ → สร้างโปรไฟล์
-        </Button>
       </div>
     </div>
   );
@@ -326,7 +207,7 @@ export function ParamsPanel({ params, setParams, disabled }: { params: Inspectio
       </div>
 
       <div className="flex flex-col gap-4">
-        <SectionLabel>การเทียบตำแหน่ง (โปรไฟล์ตาราง)</SectionLabel>
+        <SectionLabel>การเทียบตำแหน่งกับต้นแบบ</SectionLabel>
         <Slider
           label="ระยะจับคู่สูงสุด"
           value={params.matchDist}

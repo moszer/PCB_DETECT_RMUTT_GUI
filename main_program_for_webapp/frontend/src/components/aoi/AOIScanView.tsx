@@ -6,7 +6,6 @@ import {
   Box,
   Camera,
   Columns2,
-  Grid3x3,
   HelpCircle,
   Home,
   Image as ImageIcon,
@@ -17,11 +16,11 @@ import {
   Video,
   Wrench,
 } from "lucide-react";
-import type { AOIPointResult, AOIRunReport, CustomPointRequest, InspectionResult, PointFrames, ReferenceSummary, ScanProgressEvent, StageErrorState, SystemStatus } from "@/types";
+import type { AOIPointResult, AOIRunReport, CustomPointRequest, InspectionResult, PointFrames, ScanProgressEvent, StageErrorState, SystemStatus } from "@/types";
 import { API_BASE, api, errorMessage } from "@/lib/api";
 import { captureInspection } from "@/lib/capture-inspection";
 import type { ExpectedComponent } from "@/lib/board-inspection";
-import { formatMm, refsOfType } from "@/lib/format";
+import { formatMm } from "@/lib/format";
 import type { InspectionParams, SetParams } from "@/lib/params";
 import { usePersistentState } from "@/hooks/usePersistentState";
 import { useElementSize } from "@/hooks/useElementSize";
@@ -35,7 +34,7 @@ import { useToast } from "../Toast";
 import { StageBar } from "./StageBar";
 import { PointsPanel } from "./PointsPanel";
 import { PointSets, type ActiveBoard } from "./PointSets";
-import { DEFAULT_GRID, DEFAULT_MOTION, GridPanel, JogPanel, ParamsPanel, type GridPlan, type MotionSettings } from "./panels";
+import { DEFAULT_MOTION, JogPanel, ParamsPanel, type MotionSettings } from "./panels";
 import { OutputView, type OutputItem, type PendingFrame } from "./ScanResults";
 import { ScanDock } from "./ScanDock";
 import { JogOverlay } from "./JogOverlay";
@@ -66,7 +65,6 @@ interface AOIScanViewProps {
   pointFrames: PointFrames | null;
   /** Live positioning error of the stage's moves (camera-measured). */
   stageError: StageErrorState | null;
-  references: ReferenceSummary[];
   params: InspectionParams;
   setParams: SetParams;
   onRefreshStatus: () => void;
@@ -76,7 +74,7 @@ interface AOIScanViewProps {
   introReady: boolean;
 }
 
-type PanelTab = "points" | "grid" | "jog" | "params";
+type PanelTab = "points" | "jog" | "params";
 type ViewMode = "live" | "output" | "split" | "twin";
 type WorkMode = "engineer" | "operator";
 
@@ -131,7 +129,7 @@ const OPERATOR_TOUR: TourStep[] = [
   { target: "help", title: "ความช่วยเหลือ", body: "กด ? เพื่อดูคีย์ลัด และเปิดทัวร์นี้อีกครั้งได้" },
 ];
 
-export function AOIScanView({ status, report, progress, pointFrames, stageError, references, params, setParams, onRefreshStatus, viewOnly, introReady }: AOIScanViewProps) {
+export function AOIScanView({ status, report, progress, pointFrames, stageError, params, setParams, onRefreshStatus, viewOnly, introReady }: AOIScanViewProps) {
   const toast = useToast();
   const machine = status?.machine ?? null;
   const scanning = report?.status === "running";
@@ -155,12 +153,10 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
   });
   // Board whose points are being edited (autosaved to the station); required before marking.
   const [board, setBoard] = usePersistentState<ActiveBoard>("pcb_aoi_board", null);
-  const [grid, setGridState] = usePersistentState<GridPlan>("pcb_aoi_grid", DEFAULT_GRID, { merge: true });
   const [motion, setMotionState] = usePersistentState<MotionSettings>("pcb_aoi_motion", DEFAULT_MOTION, { merge: true });
   const [mode, setMode] = usePersistentState<WorkMode>("pcb_aoi_mode", "engineer");
   const [jogHidden, setJogHidden] = usePersistentState("pcb_aoi_jog_hidden", false);
   const [tourDone, setTourDone] = usePersistentState("pcb_aoi_tour_done", false);
-  const setGrid = (g: Partial<GridPlan>) => setGridState((s) => ({ ...s, ...g }));
   const setMotion = (m: Partial<MotionSettings>) => setMotionState((s) => ({ ...s, ...m }));
   const operator = mode === "operator";
 
@@ -176,7 +172,6 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
   const arrivedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [teachProgress, setTeachProgress] = useState<{ current: number; total: number } | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [pickedGridRef, setGridReferenceId] = useState("");
   const [snapping, setSnapping] = useState(false);
   // Serial number / barcode of the board about to be scanned (traceability in history).
   const [serial, setSerial] = useState("");
@@ -191,8 +186,6 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
   const jogBusy = useRef(false);
 
   const selected = Math.min(selectedRaw, Math.max(0, points.length - 1));
-  const gridRefs = useMemo(() => refsOfType(references, "aoi_grid"), [references]);
-  const gridReferenceId = gridRefs.some((r) => r.id === pickedGridRef) ? pickedGridRef : "";
 
   // The output pane follows the newest point result; a manual pick (filmstrip or test
   // snap) sticks until the next point finishes.
@@ -365,23 +358,6 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
         custom_points: stripImages(points),
       },
       false
-    );
-
-  const startGridScan = (golden: boolean) =>
-    startScan(
-      {
-        plan_mode: "grid",
-        origin_x_mm: grid.originX,
-        origin_y_mm: grid.originY,
-        columns: grid.columns,
-        rows: grid.rows,
-        pitch_x_mm: grid.pitchX,
-        pitch_y_mm: grid.pitchY,
-        speed: motion.speed,
-        settle_sec: motion.settleSec,
-      },
-      golden,
-      golden ? undefined : gridReferenceId || undefined
     );
 
   const stopScan = guarded("หยุดสแกนไม่สำเร็จ", async () => {
@@ -683,7 +659,6 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
                   onChange={setTab}
                   options={[
                     { value: "points", label: "จุดตรวจ", icon: MapPin },
-                    { value: "grid", label: "ตาราง", icon: Grid3x3 },
                     { value: "jog", label: "เคลื่อนที่", icon: Move },
                     { value: "params", label: "ค่าตรวจ", icon: SlidersHorizontal },
                   ]}
@@ -770,18 +745,6 @@ export function AOIScanView({ status, report, progress, pointFrames, stageError,
                       />
                     )}
                   </div>
-                )}
-                {tab === "grid" && (
-                  <GridPanel
-                    grid={grid}
-                    setGrid={setGrid}
-                    machine={machine}
-                    references={gridRefs}
-                    referenceId={gridReferenceId}
-                    setReferenceId={setGridReferenceId}
-                    disabled={!canMove || panelDisabled}
-                    onStart={startGridScan}
-                  />
                 )}
                 {tab === "jog" && (
                   <JogPanel

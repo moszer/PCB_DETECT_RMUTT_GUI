@@ -16,7 +16,7 @@ views, and the bottom bar does the same on small screens.
 
 | View | Component | What it does |
 | --- | --- | --- |
-| สแกน AOI | `components/aoi/AOIScanView.tsx` | Boards, stage control, marking and teaching points, point/grid scans |
+| สแกน AOI | `components/aoi/AOIScanView.tsx` | Boards, stage control, marking and teaching points, point scans |
 | ตรวจภาพเดี่ยว | `InspectionView.tsx`, `BoardInspection.tsx` | Inspect a live frame or an uploaded image against a reference |
 | ชุดข้อมูลเทรน | `dataset/DatasetView.tsx`, `dataset/LabelEditor.tsx` | Whole-board capture, label editing (marquee select, bulk delete), dataset download |
 | บอร์ด | `BoardsView.tsx`, `ReferencesView.tsx` | Taught boards (pictures, readiness, per-board history/yield), golden reference profiles, import the desktop `Refs.json` |
@@ -50,7 +50,7 @@ Shared across all pages:
 | `ResultOverlay.tsx` | Box-by-box result reveal and the per-frame capture progress |
 | `OperatorPanel.tsx` | Operator mode: one big start button and a big PASS/FAIL |
 | `ShortcutHelp.tsx` | Shortcut sheet (`?`) |
-| `panels.tsx` | Grid scan, jog, and inspection-parameter tabs |
+| `panels.tsx` | Jog and inspection-parameter tabs |
 
 Keyboard shortcuts on this page:
 
