@@ -12,6 +12,7 @@ pypdf>=5.0.0  # local project-book search for the station agent
 pyserial>=3.5
 psutil>=5.9  # CPU/memory readings on the performance page
 segno>=1.6  # QR codes for opening the station on a phone
+edge-tts>=7.0  # free natural Thai voice for the AI answers (Microsoft Edge read-aloud)
 
 # Computer Vision & Deep Learning (Standard / macOS Apple Silicon)
 # On macOS, native arm64 PyTorch uses MPS automatically

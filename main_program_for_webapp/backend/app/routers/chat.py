@@ -34,19 +34,19 @@ class TTSRequest(BaseModel):
 @router.get("/tts/status")
 def tts_status():
     """Whether answers can be read with Gemini TTS (otherwise the browser uses its own voice)."""
-    return {"available": tts_service.available(), "voice": tts_service.voice(), "model": tts_service.model_name()}
+    return {"available": tts_service.available(), "engine": tts_service.engine_name(), "engines": tts_service.engines()}
 
 
 @router.post("/tts")
 def tts(req: TTSRequest):
-    """One piece of an AI answer as WAV (Gemini TTS, cached). 503 = use the browser voice."""
+    """One piece of an AI answer as audio (Edge or Gemini TTS, cached). 503 = use the browser voice."""
     try:
-        audio, model = tts_service.synthesize(req.text)
+        audio, model, mime = tts_service.synthesize(req.text)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     except tts_service.TTSUnavailable as exc:
         raise HTTPException(503, str(exc))
-    return Response(content=audio, media_type="audio/wav", headers={"X-TTS-Model": model, "Cache-Control": "private, max-age=86400"})
+    return Response(content=audio, media_type=mime, headers={"X-TTS-Model": model, "Cache-Control": "private, max-age=86400"})
 
 
 @router.get("/status")

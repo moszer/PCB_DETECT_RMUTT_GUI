@@ -1,16 +1,21 @@
-"""Natural-sounding speech for the AI answers with Gemini TTS.
+"""Natural-sounding speech for the AI answers.
+
+Engines are tried in order (PCB_TTS_ENGINES, default "edge,gemini"):
+- edge: Microsoft Edge's read-aloud voices (edge-tts), free, no key or quota; an unofficial
+  service, so Gemini and then the browser's own voice take over if it stops answering.
+- gemini: Gemini TTS with the chat key (daily quota per model). Models are tried in order; a
+  model out of quota, busy or silent rests for a while (chat_service.rest).
 
 The browser sends one short piece of an answer at a time (it plays a piece while fetching
-the next). Models are tried in order; a model out of quota, busy or silent rests for a while
-(chat_service.rest), like the chat models. Audio is cached per (model list, voice, text) in
-.cache/tts, so reading the same answer again costs no quota. The cache sits outside the
-station data, so backups don't grow with it.
+the next). Audio is cached per (engine, voice, language, text) in .cache/tts, so reading the
+same answer again is instant. The cache sits outside the station data, so backups don't grow.
 
-Newer models answer WAV; older ones raw 16-bit PCM ("audio/L16;rate=24000"), which gets a
-WAV header so every browser can play it.
+Gemini's newer models answer WAV, older ones raw 16-bit PCM ("audio/L16;rate=24000"), which
+gets a WAV header; Edge answers MP3.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import logging
@@ -29,6 +34,10 @@ from . import chat_service
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_ENGINES = "edge,gemini"
+DEFAULT_EDGE_VOICE = "th-TH-PremwadeeNeural"  # or th-TH-NiwatNeural
+EDGE_TIMEOUT_SEC = 20.0
+EDGE_REST_SEC = 300.0
 DEFAULT_MODELS = "gemini-3.8-flash-tts,gemini-3.8-flash-lite-tts,gemini-2.5-flash-preview-tts"
 DEFAULT_VOICE = "Kore"
 # Always Thai: left to itself the model guesses the language per sentence, and an answer with
@@ -43,7 +52,24 @@ _lock = threading.Lock()
 
 
 class TTSUnavailable(Exception):
-    """No key, or no model could speak right now: the browser uses its own voice instead."""
+    """No engine could speak right now: the browser uses its own voice instead."""
+
+
+def engines() -> List[str]:
+    raw = os.environ.get("PCB_TTS_ENGINES") or DEFAULT_ENGINES
+    return [e.strip().lower() for e in raw.split(",") if e.strip().lower() in ("edge", "gemini")]
+
+
+def edge_voice() -> str:
+    return (os.environ.get("EDGE_TTS_VOICE") or DEFAULT_EDGE_VOICE).strip()
+
+
+def _edge_ready() -> bool:
+    try:
+        import edge_tts  # noqa: F401
+    except ImportError:
+        return False
+    return chat_service._resting.get("edge-tts", 0.0) <= time.monotonic()
 
 
 def models() -> List[str]:
@@ -63,7 +89,16 @@ def language() -> str:
 
 
 def available() -> bool:
-    return bool(os.environ.get("GEMINI_API_KEY"))
+    return any(e == "edge" and _edge_ready() or e == "gemini" and os.environ.get("GEMINI_API_KEY") for e in engines())
+
+
+def engine_name() -> Optional[str]:
+    for e in engines():
+        if e == "edge" and _edge_ready():
+            return f"edge · {edge_voice()}"
+        if e == "gemini" and os.environ.get("GEMINI_API_KEY"):
+            return f"gemini · {model_name()} · {voice()}"
+    return None
 
 
 def wav_from_pcm(pcm: bytes, rate: int = 24000, channels: int = 1, bits: int = 16) -> bytes:
@@ -83,29 +118,79 @@ def _to_wav(data: bytes, mime: str) -> bytes:
     return wav_from_pcm(data, rate, channels)
 
 
-def _cache_path(text: str) -> Path:
-    key = hashlib.sha256(f"{voice()}|{language()}|{text}".encode("utf-8")).hexdigest()[:32]
-    return CACHE_DIR / f"{key}.wav"
+def _cache_path(engine: str, text: str) -> Path:
+    who = edge_voice() if engine == "edge" else f"{voice()}|{language()}"
+    key = hashlib.sha256(f"{engine}|{who}|{text}".encode("utf-8")).hexdigest()[:32]
+    return CACHE_DIR / f"{key}.{'mp3' if engine == 'edge' else 'wav'}"
+
+
+def _store(path: Path, audio: bytes) -> None:
+    with _lock:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(audio)
+        _prune()
 
 
 def _prune() -> None:
-    files = sorted(CACHE_DIR.glob("*.wav"), key=lambda p: p.stat().st_mtime)
+    files = sorted([*CACHE_DIR.glob("*.wav"), *CACHE_DIR.glob("*.mp3")], key=lambda p: p.stat().st_mtime)
     for old in files[: max(0, len(files) - CACHE_MAX_FILES)]:
         old.unlink(missing_ok=True)
 
 
-def synthesize(text: str) -> Tuple[bytes, str]:
-    """WAV audio of `text` and the model that made it ("cache" when it was stored)."""
+MIME = {"mp3": "audio/mpeg", "wav": "audio/wav"}
+
+
+def synthesize(text: str) -> Tuple[bytes, str, str]:
+    """(audio, what made it, mime type) for `text`; "cache" when it was stored before."""
     text = " ".join(str(text or "").split())[:MAX_CHARS]
     if not text:
         raise ValueError("empty text")
+    problems = []
+    for engine in engines():
+        path = _cache_path(engine, text)
+        if path.is_file():
+            path.touch()
+            return path.read_bytes(), "cache", MIME[path.suffix[1:]]
+        try:
+            if engine == "edge":
+                audio, who = _edge(text)
+            else:
+                audio, who = _gemini(text)
+        except TTSUnavailable as exc:
+            problems.append(str(exc))
+            continue
+        _store(path, audio)
+        return audio, who, MIME[path.suffix[1:]]
+    raise TTSUnavailable(" · ".join(problems) or "ไม่ได้เปิดเสียง AI (PCB_TTS_ENGINES)")
+
+
+def _edge(text: str) -> Tuple[bytes, str]:
+    if not _edge_ready():
+        raise TTSUnavailable("Edge TTS ไม่พร้อม")
+    import edge_tts
+
+    async def run() -> bytes:
+        data = bytearray()
+        async for chunk in edge_tts.Communicate(text, edge_voice()).stream():
+            if chunk.get("type") == "audio":
+                data += chunk["data"]
+        return bytes(data)
+
+    try:
+        audio = asyncio.run(asyncio.wait_for(run(), EDGE_TIMEOUT_SEC))
+    except Exception as exc:  # network, service change, timeout: rest it, try the next engine
+        chat_service.rest("edge-tts", EDGE_REST_SEC, f"failed ({exc.__class__.__name__})")
+        raise TTSUnavailable(f"Edge TTS ใช้ไม่ได้: {exc.__class__.__name__}") from None
+    if not audio:
+        chat_service.rest("edge-tts", EDGE_REST_SEC, "sent no audio")
+        raise TTSUnavailable("Edge TTS ไม่ได้ส่งเสียงกลับมา")
+    return audio, f"edge · {edge_voice()}"
+
+
+def _gemini(text: str) -> Tuple[bytes, str]:
     key = os.environ.get("GEMINI_API_KEY")
     if not key:
         raise TTSUnavailable("ไม่มี Gemini API key")
-    path = _cache_path(text)
-    if path.is_file():
-        path.touch()
-        return path.read_bytes(), "cache"
 
     def body(with_language: bool):
         speech = {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voice()}}}
@@ -144,10 +229,6 @@ def synthesize(text: str) -> Tuple[bytes, str]:
             except (KeyError, IndexError, ValueError, TypeError):
                 last = f"{model} ไม่ได้ส่งเสียงกลับมา"
                 continue
-            with _lock:
-                CACHE_DIR.mkdir(parents=True, exist_ok=True)
-                path.write_bytes(audio)
-                _prune()
             return audio, model
     raise TTSUnavailable(f"Gemini TTS ไม่ว่างตอนนี้ — {last}")
 

@@ -94,7 +94,8 @@ Settings come from `backend/.env`, which `install.sh` copies from `.env.example`
 | `PCB_OPERATOR_PASSCODE` | Optional explicit passcode; otherwise one is generated in the station data directory |
 | `AI_PROVIDER`, `GEMINI_API_KEY`, `GEMINI_MODELS` | AI assistant via Google Gemini (models tried in order) |
 | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` | AI assistant via OpenRouter instead |
-| `GEMINI_TTS_MODELS`, `GEMINI_TTS_VOICE`, `GEMINI_TTS_LANGUAGE` | Voice for reading AI answers aloud (language fixed to `th-TH` by default) (`POST /api/chat/tts`, cached in `.cache/tts`); without them the defaults are used, and the browser voice takes over when Gemini can't speak |
+| `PCB_TTS_ENGINES`, `EDGE_TTS_VOICE` | Voice for reading AI answers aloud (`POST /api/chat/tts`, cached in `.cache/tts`): `edge,gemini` by default — Microsoft Edge voices first (free, unofficial), then Gemini; the browser voice takes over when neither can speak |
+| `GEMINI_TTS_MODELS`, `GEMINI_TTS_VOICE`, `GEMINI_TTS_LANGUAGE` | The Gemini TTS engine (language fixed to `th-TH` by default) |
 | `PCB_DEVICE` | `auto` / `cuda:0` / `mps` / `cpu` |
 | `PCB_CORS_ORIGINS` | Comma-separated browser origins allowed to call the backend directly (the Next.js LAN proxy is same-origin) |
 | `PCB_BACKUP_INTERVAL_HOURS`, `PCB_BACKUP_KEEP` | Automatic station-data backup frequency (default 24h) and number of archives kept (default 7); set interval to `0` to disable |
