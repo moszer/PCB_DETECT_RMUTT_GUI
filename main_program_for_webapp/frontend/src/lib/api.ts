@@ -182,6 +182,11 @@ export const api = {
   },
   listHubModels: () => request<{ repo: string; url: string; models: HubModel[] }>("/api/system/models/hub"),
   downloadHubModel: (file: string) => post<{ path: string; size_mb: number }>("/api/system/models/hub/download", { file }),
+  hubDownloadProgress: () =>
+    request<{ downloads: Array<{ file: string; status: "downloading" | "verifying" | "done" | "error"; done: number; total: number; percent: number; speed_bps: number; eta_s: number | null; error: string | null }> }>(
+      "/api/system/models/hub/progress"
+    ),
+  deleteHubModel: (file: string) => post<{ success: boolean; file: string }>("/api/system/models/hub/delete", { file }),
   uploadModel: (file: File) =>
     postForm<{ filename: string; path: string; size_mb: number; message: string }>("/api/system/models/upload", { file }),
 

@@ -177,6 +177,47 @@ class HubApiTests(unittest.TestCase):
             self.assertEqual(res.json()["path"], str(saved))
             self.assertTrue(str(dl.call_args.args[1]).endswith("run_a__best.pt"))
 
+    def test_download_reports_progress(self):
+        from conftest import operator_headers
+        saved = Path(self.tmp.name) / "m.pt"
+        saved.write_bytes(b"x" * 100)
+
+        def fake(file, out, repo, progress=None):
+            progress(40, 100)
+            progress(100, 100)
+            return saved
+
+        with operator_headers() as headers, mock.patch.object(hub, "download", side_effect=fake):
+            res = self.client.post("/api/system/models/hub/download", json={"file": "run_a/weights/best.pt"}, headers=headers)
+            self.assertEqual(res.status_code, 200)
+        prog = self.client.get("/api/system/models/hub/progress").json()["downloads"]
+        entry = next(d for d in prog if d["file"] == "run_a/weights/best.pt")
+        self.assertEqual(entry["status"], "done")
+        self.assertEqual(entry["percent"], 100.0)
+
+    def test_delete_removes_local_copy_but_not_the_model_in_use(self):
+        from conftest import operator_headers
+        local = Path(self.tmp.name) / "models" / "hub" / REPO.replace("/", "__") / "run_a__best.pt"
+        local.parent.mkdir(parents=True)
+        local.write_bytes(b"x" * 10)
+        with operator_headers() as headers:
+            with mock.patch("app.routers.system.inference_service._model_path", str(local)):
+                res = self.client.post("/api/system/models/hub/delete", json={"file": "run_a/weights/best.pt"}, headers=headers)
+                self.assertEqual(res.status_code, 409)
+                self.assertTrue(local.exists())
+            with mock.patch("app.routers.system.inference_service._model_path", "/somewhere/else.pt"):
+                res = self.client.post("/api/system/models/hub/delete", json={"file": "run_a/weights/best.pt"}, headers=headers)
+                self.assertEqual(res.status_code, 200)
+                self.assertFalse(local.exists())
+                res = self.client.post("/api/system/models/hub/delete", json={"file": "run_a/weights/best.pt"}, headers=headers)
+                self.assertEqual(res.status_code, 404)
+                res = self.client.post("/api/system/models/hub/delete", json={"file": "../x.pt"}, headers=headers)
+                self.assertEqual(res.status_code, 400)
+
+    def test_delete_needs_the_operator_lease(self):
+        res = self.client.post("/api/system/models/hub/delete", json={"file": "run_a/weights/best.pt"})
+        self.assertEqual(res.status_code, 403)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Check, CloudDownload, ExternalLink, FolderPlus, FolderSearch, HardDriveUpload, Layers, RefreshCw, Search, Trophy, X } from "lucide-react";
+import { Check, CloudDownload, ExternalLink, FolderPlus, FolderSearch, HardDriveUpload, Layers, RefreshCw, Search, Trash2, Trophy, X } from "lucide-react";
 import type { HubModel, ModelFile } from "@/types";
 import { api } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
@@ -14,6 +14,14 @@ interface Catalog {
   custom_dirs: string[];
   search_dirs: string[];
 }
+
+const formatMB = (bytes: number) => (bytes / 1024 ** 2).toFixed(1);
+/** 75 → "1 นาที 15 วินาที", 12 → "12 วินาที" */
+const formatEta = (s: number) => {
+  const sec = Math.max(0, Math.round(s));
+  const m = Math.floor(sec / 60);
+  return m ? `${m} นาที ${sec % 60} วินาที` : `${sec} วินาที`;
+};
 
 /** Pick YOLO weights: training runs (with mAP), project files, uploads and user-added folders. */
 export function ModelPicker({ onRefreshStatus }: { onRefreshStatus: () => void }) {
@@ -32,6 +40,36 @@ export function ModelPicker({ onRefreshStatus }: { onRefreshStatus: () => void }
   const [hubLoading, setHubLoading] = useState(false);
   const [hubBusy, setHubBusy] = useState<string | null>(null);
   const [hubLast, setHubLast] = useState(false);
+  // live progress of the download in flight (polled while its request is still open)
+  const [hubProgress, setHubProgress] = useState<{ status: string; done: number; total: number; percent: number; speed_bps: number; eta_s: number | null } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!hubBusy) return;
+    let alive = true;
+    const poll = async () => {
+      try {
+        const { downloads } = await api.hubDownloadProgress();
+        const d = downloads.find((x) => x.file === hubBusy);
+        if (alive && d) setHubProgress(d);
+      } catch {
+        // the download request itself reports failures
+      }
+    };
+    void poll();
+    const id = window.setInterval(poll, 500);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [hubBusy]);
+
+  useEffect(() => {
+    if (!confirmDelete) return;
+    const id = window.setTimeout(() => setConfirmDelete(null), 4000);
+    return () => window.clearTimeout(id);
+  }, [confirmDelete]);
 
   useEffect(() => {
     api
@@ -76,6 +114,7 @@ export function ModelPicker({ onRefreshStatus }: { onRefreshStatus: () => void }
   };
 
   const downloadHub = async (m: HubModel) => {
+    setHubProgress(null);
     setHubBusy(m.path);
     try {
       const res = await api.downloadHubModel(m.path);
@@ -86,6 +125,23 @@ export function ModelPicker({ onRefreshStatus }: { onRefreshStatus: () => void }
       toast.error("ดาวน์โหลดโมเดลไม่สำเร็จ", err);
     } finally {
       setHubBusy(null);
+      setHubProgress(null);
+    }
+  };
+
+  const deleteHub = async (m: HubModel) => {
+    if (confirmDelete !== m.path) return setConfirmDelete(m.path); // first click asks, second deletes
+    setConfirmDelete(null);
+    setDeleting(m.path);
+    try {
+      await api.deleteHubModel(m.path);
+      setHub((h) => (h ? { ...h, models: h.models.map((x) => (x.path === m.path ? { ...x, downloaded: false } : x)) } : h));
+      setReload((r) => r + 1);
+      toast.success("ลบไฟล์ออกจากเครื่องแล้ว", `${m.path} · ยังดาวน์โหลดใหม่ได้จาก Hugging Face`);
+    } catch (err) {
+      toast.error("ลบไฟล์ไม่สำเร็จ", err);
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -240,23 +296,63 @@ export function ModelPicker({ onRefreshStatus }: { onRefreshStatus: () => void }
             {hub.models
               .filter((m) => hubLast || m.kind !== "last")
               .map((m) => (
-                <li key={m.path} className="flex items-center gap-3 px-4 py-2">
-                  <span className="min-w-0 flex-1 text-sm truncate" title={m.path}>
-                    {m.path}
-                  </span>
-                  <span className="text-xs text-muted font-mono tabular shrink-0">{m.size_mb} MB</span>
-                  {m.downloaded ? (
-                    m.local_path === catalog?.current_model ? (
-                      <Badge tone="accent">ใช้งานอยู่</Badge>
+                <li key={m.path} className="px-4 py-2">
+                  <div className="flex items-center gap-3">
+                    <span className="min-w-0 flex-1 text-sm truncate" title={m.path}>
+                      {m.path}
+                    </span>
+                    <span className="text-xs text-muted font-mono tabular shrink-0">{m.size_mb} MB</span>
+                    {m.downloaded ? (
+                      m.local_path === catalog?.current_model ? (
+                        <Badge tone="accent">ใช้งานอยู่</Badge>
+                      ) : (
+                        <>
+                          <Button size="sm" variant="success" icon={Check} loading={loadingModel === m.local_path} disabled={!!loadingModel || deleting === m.path} onClick={() => choose(m.local_path)}>
+                            ใช้
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={confirmDelete === m.path ? "danger" : "ghost"}
+                            icon={Trash2}
+                            loading={deleting === m.path}
+                            disabled={!!deleting || !!loadingModel}
+                            onClick={() => deleteHub(m)}
+                            aria-label={`ลบ ${m.path} ออกจากเครื่อง`}
+                            title="ลบไฟล์ที่ดาวน์โหลดไว้ออกจากเครื่อง (ไฟล์บน Hugging Face ยังอยู่)"
+                          >
+                            {confirmDelete === m.path ? "ยืนยันลบ" : ""}
+                          </Button>
+                        </>
+                      )
                     ) : (
-                      <Button size="sm" variant="success" icon={Check} loading={loadingModel === m.local_path} disabled={!!loadingModel} onClick={() => choose(m.local_path)}>
-                        ใช้
+                      <Button size="sm" icon={CloudDownload} loading={hubBusy === m.path} disabled={!!hubBusy} onClick={() => downloadHub(m)}>
+                        {hubBusy === m.path && hubProgress ? `${Math.floor(hubProgress.percent)}%` : "ดาวน์โหลด"}
                       </Button>
-                    )
-                  ) : (
-                    <Button size="sm" icon={CloudDownload} loading={hubBusy === m.path} disabled={!!hubBusy} onClick={() => downloadHub(m)}>
-                      ดาวน์โหลด
-                    </Button>
+                    )}
+                  </div>
+                  {hubBusy === m.path && (
+                    <div className="mt-2" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(hubProgress?.percent ?? 0)} aria-label={`กำลังดาวน์โหลด ${m.path}`}>
+                      <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
+                        <div
+                          className={cx("h-full rounded-full bg-accent transition-[width] duration-500 ease-out", (!hubProgress || hubProgress.status === "verifying") && "animate-pulse")}
+                          style={{ width: `${hubProgress?.total ? hubProgress.percent : 3}%` }}
+                        />
+                      </div>
+                      <div className="mt-1 flex justify-between gap-3 text-[11px] text-muted font-mono tabular">
+                        <span>
+                          {!hubProgress || !hubProgress.total
+                            ? "กำลังเชื่อมต่อ Hugging Face…"
+                            : hubProgress.status === "verifying"
+                              ? "ตรวจความถูกต้องของไฟล์ (SHA-256)…"
+                              : `${formatMB(hubProgress.done)} / ${formatMB(hubProgress.total)} MB · ${hubProgress.percent.toFixed(0)}%`}
+                        </span>
+                        {hubProgress?.status === "downloading" && hubProgress.speed_bps > 0 && (
+                          <span>
+                            {(hubProgress.speed_bps / 1024 ** 2).toFixed(1)} MB/s{hubProgress.eta_s !== null ? ` · เหลือ ${formatEta(hubProgress.eta_s)}` : ""}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   )}
                 </li>
               ))}

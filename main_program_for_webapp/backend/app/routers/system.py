@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from typing import Literal
 import uuid
 import asyncio
+import time
 import torch
 
 from ..config import REPO_ROOT, STORAGE_DIR, save_settings_to_disk, settings
@@ -324,6 +325,30 @@ async def list_hub_models():
     return {"repo": hub.DEFAULT_REPO, "url": f"{hub.HUB}/{hub.DEFAULT_REPO}", "models": models}
 
 
+# Downloads in progress (or just finished / failed), keyed by repo path, so the Settings page
+# can draw a progress bar while its POST is still waiting. One entry per file, kept until the
+# next download of that file starts.
+_hub_progress: Dict[str, Dict[str, Any]] = {}
+
+
+def _progress_entry(file: str) -> Dict[str, Any]:
+    e = dict(_hub_progress[file])
+    elapsed = max(1e-6, time.monotonic() - e.pop("_t0"))
+    start = e.pop("_start_done")
+    fresh = e["done"] - (e["done"] if start is None else start)  # bytes moved in this session
+    speed = fresh / elapsed if fresh > 0 else 0.0
+    e["speed_bps"] = round(speed)
+    e["eta_s"] = round((e["total"] - e["done"]) / speed, 1) if speed > 0 and e["total"] else None
+    e["percent"] = round(e["done"] * 100 / e["total"], 1) if e["total"] else 0.0
+    return e
+
+
+@router.get("/models/hub/progress")
+async def hub_download_progress():
+    """Progress of Hugging Face downloads: bytes done / total, speed and time left."""
+    return {"downloads": [_progress_entry(f) for f in list(_hub_progress)]}
+
+
 @router.post("/models/hub/download")
 async def download_hub_model(
     req: HubDownloadRequest,
@@ -334,18 +359,79 @@ async def download_hub_model(
 
     Only the repo set in PCB_MODEL_REPO is allowed (a .pt file can run code when loaded, so
     arbitrary repos are not accepted over the network). The file is not loaded; use /models to switch.
+    Progress is readable at /models/hub/progress while this request runs.
     """
     token = x_operator_token or x_operator_id
     if not lease_manager.is_operator(token):
         raise HTTPException(status_code=403, detail="Active operator token required to download models.")
     if aoi_scan_service.is_running:
         raise HTTPException(status_code=400, detail="Cannot download models during an active AOI scan.")
+    current = _hub_progress.get(req.file)
+    if current and current["status"] in ("downloading", "verifying"):
+        raise HTTPException(status_code=409, detail="This file is already downloading.")
     try:
         hub.check_file(req.file)
-        path = await asyncio.to_thread(hub.download, req.file, _hub_dir() / hub.local_name(req.file), hub.DEFAULT_REPO)
     except hub.HubError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
-    return {"success": True, "path": str(path), "size_mb": round(path.stat().st_size / (1024 * 1024), 1)}
+    entry: Dict[str, Any] = {"file": req.file, "status": "downloading", "done": 0, "total": 0, "error": None, "_t0": time.monotonic(), "_start_done": None}
+    _hub_progress[req.file] = entry
+
+    def progress(done: int, total: int) -> None:
+        if entry["_start_done"] is None:  # a resumed download starts part way
+            entry["_start_done"], entry["_t0"] = done, time.monotonic()
+        entry["done"], entry["total"] = done, total
+        if total and done >= total:
+            entry["status"] = "verifying"  # SHA-256 check of the whole file comes next
+
+    try:
+        path = await asyncio.to_thread(hub.download, req.file, _hub_dir() / hub.local_name(req.file), hub.DEFAULT_REPO, progress=progress)
+    except hub.HubError as exc:
+        entry.update(status="error", error=str(exc))
+        if entry["_start_done"] is None:
+            entry["_start_done"] = 0
+        raise HTTPException(status_code=502, detail=str(exc))
+    size = path.stat().st_size
+    if entry["_start_done"] is None:  # already on disk: nothing was transferred
+        entry["_start_done"] = size
+    entry.update(status="done", done=size, total=size)
+    return {"success": True, "path": str(path), "size_mb": round(size / (1024 * 1024), 1)}
+
+
+@router.post("/models/hub/delete")
+async def delete_hub_model(
+    req: HubDownloadRequest,
+    x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token"),
+    x_operator_id: Optional[str] = Header(None, alias="X-Operator-Id"),
+):
+    """Delete a downloaded copy from backend/data/models/hub/ (the repo on Hugging Face is untouched).
+
+    The model in use cannot be deleted; switch to another one first.
+    """
+    token = x_operator_token or x_operator_id
+    if not lease_manager.is_operator(token):
+        raise HTTPException(status_code=403, detail="Active operator token required to delete models.")
+    if aoi_scan_service.is_running:
+        raise HTTPException(status_code=400, detail="Cannot delete models during an active AOI scan.")
+    try:
+        hub.check_file(req.file)
+    except hub.HubError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    current = _hub_progress.get(req.file)
+    if current and current["status"] in ("downloading", "verifying"):
+        raise HTTPException(status_code=409, detail="This file is still downloading.")
+    local = _hub_dir() / hub.local_name(req.file)
+    in_use = inference_service.model_path
+    if in_use and local.exists() and Path(in_use).resolve() == local.resolve():
+        raise HTTPException(status_code=409, detail="ลบโมเดลที่กำลังใช้งานอยู่ไม่ได้ — เปลี่ยนไปใช้โมเดลอื่นก่อน")
+    removed = False
+    for f in (local, local.with_name(local.name + ".part")):
+        if f.is_file():
+            f.unlink()
+            removed = True
+    if not removed:
+        raise HTTPException(status_code=404, detail="ไม่พบไฟล์นี้ในเครื่อง")
+    _hub_progress.pop(req.file, None)
+    return {"success": True, "file": req.file}
 
 
 # ── Performance & Jetson power ─────────────────────────────────────────────────
