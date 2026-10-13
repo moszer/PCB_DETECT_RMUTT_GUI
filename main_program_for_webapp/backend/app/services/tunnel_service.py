@@ -3,6 +3,9 @@
 Tailscale "serve" publishes the station's web page over HTTPS inside your tailnet (only your
 own devices); "funnel" also publishes it on the public internet. Only the station's own entry
 is ever added or removed: other serve/funnel entries on this machine are left alone.
+
+A Cloudflare Tunnel (cloudflared, set up in the Cloudflare dashboard) is only read, never
+changed: the public hostnames it routes to the station's web port are listed with the rest.
 """
 from __future__ import annotations
 
@@ -12,7 +15,9 @@ import os
 import shutil
 import subprocess
 import time
+import urllib.request
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlsplit
 
 import psutil
 
@@ -20,6 +25,9 @@ MAC_APP = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
 # Ports Tailscale allows for Funnel; the station uses the first one not taken by something else.
 PORTS = (443, 8443, 10000)
 TIMEOUT = 15
+# cloudflared's local metrics server (it takes the first free one of these ports); /config is
+# the ingress it is running, also when the tunnel is managed from the dashboard.
+CLOUDFLARED_PORTS = range(20241, 20246)
 
 
 class TunnelError(RuntimeError):
@@ -48,6 +56,33 @@ def lan_urls() -> List[Dict[str, str]]:
                 continue  # container bridges / Jetson USB-gadget network
             urls.append({"interface": name, "url": f"http://{a.address}:{port}"})
     return urls
+
+
+def cloudflare_urls() -> List[Dict[str, str]]:
+    """https://<hostname> for each Cloudflare Tunnel route to the station's web page (empty without
+    cloudflared). A route limited to a path, or to another service, is not the station's page."""
+    web = frontend_port()
+    for port in CLOUDFLARED_PORTS:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/config", timeout=1) as res:
+                cfg = json.loads(res.read() or b"{}")
+        except (OSError, ValueError):
+            continue
+        ingress = ((cfg.get("config") or {}).get("ingress") or []) if isinstance(cfg, dict) else []
+        urls = []
+        for rule in ingress:
+            host, service = rule.get("hostname"), str(rule.get("service") or "")
+            if not host or rule.get("path") or "*" in host:
+                continue
+            try:
+                u = urlsplit(service)
+                ours = u.scheme in ("http", "https") and u.hostname in ("127.0.0.1", "localhost", "::1") and u.port == web
+            except ValueError:  # a malformed port
+                ours = False
+            if ours:
+                urls.append({"hostname": host, "url": f"https://{host}"})
+        return urls
+    return []
 
 
 def _binary() -> Optional[str]:
@@ -107,7 +142,7 @@ def _entries(cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def status() -> Dict[str, Any]:
-    data: Dict[str, Any] = {"lan": lan_urls(), "frontend_port": frontend_port(), "installed": bool(_binary()), "time": time.time()}
+    data: Dict[str, Any] = {"lan": lan_urls(), "cloudflare": cloudflare_urls(), "frontend_port": frontend_port(), "installed": bool(_binary()), "time": time.time()}
     if not data["installed"]:
         return data
     res = _run("status", "--json")

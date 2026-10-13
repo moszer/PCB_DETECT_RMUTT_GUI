@@ -13,6 +13,7 @@ type Link = { key: string; label: string; hint: string; url: string; icon: typeo
 function linksOf(r: RemoteAccess | null): Link[] {
   if (!r) return [];
   const links: Link[] = [];
+  for (const c of r.cloudflare ?? []) links.push({ key: `cf:${c.hostname}`, label: "อินเทอร์เน็ต (Cloudflare)", hint: "ใครก็เปิดได้จากทุกที่", url: c.url, icon: Globe });
   if (r.serve) {
     links.push({
       key: "serve",

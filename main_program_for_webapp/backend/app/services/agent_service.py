@@ -540,6 +540,7 @@ def get_access() -> Dict[str, Any]:
         out["remote"] = {
             "tailscale_installed": t.get("installed"), "state": t.get("state"), "url": serve.get("url"),
             "public_internet_funnel": serve.get("funnel"), "lan": t.get("lan"), "direct_url_in_tailnet": t.get("direct_url"),
+            "public_internet_cloudflare": [c["url"] for c in t.get("cloudflare") or []],
         }
     except Exception as exc:
         out["remote"] = {"error": str(exc)[:120]}

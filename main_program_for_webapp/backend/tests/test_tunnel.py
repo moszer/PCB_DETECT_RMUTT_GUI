@@ -111,3 +111,50 @@ class FunnelPasscodeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CloudflareTests(unittest.TestCase):
+    """cloudflared is only read: the hostnames it routes to the station's web port are listed."""
+
+    def config(self, ingress, port=20241):
+        body = json.dumps({"version": 5, "config": {"ingress": ingress}}).encode()
+
+        def urlopen(url, timeout):
+            if f":{port}/" not in url:
+                raise OSError("connection refused")
+            res = mock.MagicMock()
+            res.__enter__.return_value.read.return_value = body
+            return res
+
+        return mock.patch.object(tun.urllib.request, "urlopen", side_effect=urlopen)
+
+    def test_lists_routes_to_the_station_only(self):
+        ingress = [
+            {"hostname": "ssh.example.com", "service": "ssh://localhost:22"},
+            {"hostname": "station.example.com", "path": None, "service": "http://localhost:3001"},
+            {"hostname": "api.example.com", "service": "http://localhost:8000"},
+            {"hostname": "part.example.com", "path": "^/blog", "service": "http://localhost:3001"},
+            {"hostname": "v6.example.com", "service": "http://[::1]:3001"},
+            {"hostname": "bad.example.com", "service": "http://localhost:notaport"},
+            {"service": "http_status:404"},
+        ]
+        with self.config(ingress, port=20243):
+            self.assertEqual(tun.cloudflare_urls(), [
+                {"hostname": "station.example.com", "url": "https://station.example.com"},
+                {"hostname": "v6.example.com", "url": "https://v6.example.com"},
+            ])
+
+    def test_no_cloudflared_means_no_links(self):
+        with mock.patch.object(tun.urllib.request, "urlopen", side_effect=OSError("refused")):
+            self.assertEqual(tun.cloudflare_urls(), [])
+
+    def test_visitor_through_cloudflare_is_from_the_internet(self):
+        from fastapi.testclient import TestClient
+        from app.main import app
+
+        client = TestClient(app)
+        self.assertEqual(client.get("/api/auth/origin").json()["origin"], "local")
+        cf = {"Cf-Connecting-Ip": "203.0.113.9"}
+        self.assertEqual(client.get("/api/auth/origin", headers=cf).json()["origin"], "internet")
+        # a guarded action without the control lease is refused
+        self.assertEqual(client.post("/api/system/libraries/check", headers=cf).status_code, 403)

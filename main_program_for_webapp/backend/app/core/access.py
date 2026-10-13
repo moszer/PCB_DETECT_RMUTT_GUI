@@ -7,6 +7,8 @@ The station is reached three ways, all through the web server (Next) on :3001:
     user's identity (Tailscale-User-Login; it strips any copy the client sent).
   * the same name from the internet (Funnel): proxied too, but with no identity, the client's
     public address in X-Forwarded-For, and (newer Tailscale) Tailscale-Funnel-Request.
+  * a Cloudflare Tunnel hostname (cloudflared on this machine): from the internet, with the
+    visitor's address in Cf-Connecting-Ip (cloudflared always sets it).
 
 An internet visitor can look (status, history, camera) but not spend the station's resources
 or take its data away unless they hold the control lease: the AI assistant (it uses the
@@ -49,9 +51,9 @@ def _is_public(ip: str) -> bool:
 
 
 def request_origin(request: Request) -> str:
-    """'internet' for a Funnel (or otherwise public) visitor, else 'local'."""
+    """'internet' for a Funnel / Cloudflare Tunnel (or otherwise public) visitor, else 'local'."""
     h = request.headers
-    if h.get("tailscale-funnel-request"):
+    if h.get("tailscale-funnel-request") or h.get("cf-connecting-ip"):
         return "internet"
     peer = request.client.host if request.client else ""
     hops = [p for p in (h.get("x-forwarded-for") or "").split(",") if p.strip()] + [peer]

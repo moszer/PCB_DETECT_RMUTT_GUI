@@ -381,6 +381,8 @@ export interface Statistics {
 
 export interface RemoteAccess {
   lan: Array<{ interface: string; url: string }>;
+  /** Cloudflare Tunnel hostnames routed to this station (read from cloudflared, set up in the Cloudflare dashboard). */
+  cloudflare?: Array<{ hostname: string; url: string }>;
   frontend_port: number;
   installed: boolean;
   default_passcode?: boolean;
