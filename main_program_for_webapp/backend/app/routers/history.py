@@ -30,6 +30,18 @@ def get_run_details(run_id: str):
     return run
 
 
+@router.get("/runs/{run_id}/report.pdf")
+def run_report_pdf(run_id: str):
+    """The run's report as a PDF (the one sent to Telegram)."""
+    from ..services import report_pdf
+
+    run = storage_service.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    return Response(report_pdf.run_pdf(run), media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="aoi_report_{run_id}.pdf"'})
+
+
 @router.get("/statistics")
 def get_statistics():
     return storage_service.get_statistics()

@@ -390,6 +390,25 @@ def send_history() -> List[str]:
     return problems
 
 
+def send_run_report(run_id: str) -> List[str]:
+    """One scan run as a PDF report (the same as its print view) with a short caption."""
+    from . import report_pdf
+    from .storage_service import storage_service
+
+    run = storage_service.get_run(run_id)
+    if not run:
+        return ["ไม่พบรอบสแกนนี้"]
+    who = " · ".join(x for x in (run.get("board_name"), f"เลข {run['serial']}" if run.get("serial") else None) if x) or run_id
+    verdict = run.get("overall_verdict") or "-"
+    caption = "\n".join([
+        f"📄 รายงานรอบสแกน · {who}",
+        f"ผล {verdict} ({report_pdf.VERDICT_LABEL.get(verdict, verdict)}) · ผ่าน {run.get('pass_count', 0)} · ไม่ผ่าน {run.get('fail_count', 0)}"
+        f" · ตรวจซ้ำ {run.get('review_count', 0)} จาก {run.get('total_points', 0)} จุด",
+        f"{report_pdf.thai_datetime(run.get('created_at') or time.time())} · {settings.station_name}" + (" · จำลอง" if run.get("is_simulation") else ""),
+    ])
+    return _send_file(f"aoi_report_{run_id}.pdf", report_pdf.run_pdf(run), caption, mime="application/pdf")
+
+
 def send_history_images(stamp: str) -> List[str]:
     """The latest failed board as an album, then the ZIP of every point (problems are logged)."""
     problems: List[str] = []

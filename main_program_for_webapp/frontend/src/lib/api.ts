@@ -162,6 +162,7 @@ export const api = {
       request<NotifyConfig>("/api/system/notify", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
     test: () => post<{ ok: boolean; problems: string[] }>("/api/system/notify/test"),
     sendHistory: () => post<{ ok: boolean; problems: string[] }>("/api/system/notify/send-history"),
+    sendRun: (runId: string) => post<{ ok: boolean; problems: string[] }>(`/api/system/notify/send-run/${encodeURIComponent(runId)}`),
   },
   libraries: {
     get: () => request<LibraryCatalog>("/api/system/libraries"),

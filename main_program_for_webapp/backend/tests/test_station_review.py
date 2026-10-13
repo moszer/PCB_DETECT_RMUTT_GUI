@@ -359,6 +359,65 @@ class SendHistoryTests(unittest.TestCase):
             out = cv2.imdecode(np.frombuffer(ns._jpeg(src), np.uint8), cv2.IMREAD_COLOR)
         self.assertEqual(max(out.shape[:2]), ns.IMAGE_MAX_SIDE)
 
+    RUN = {"id": "aoi_t1", "board_name": "บอร์ดทดสอบ", "serial": "SN-9", "overall_verdict": "FAIL", "status": "complete",
+           "created_at": 1_790_000_000, "pass_count": 1, "fail_count": 1, "review_count": 0, "total_points": 2,
+           "host": "jetson", "device": "cuda:0", "model": "/x/best.pt", "is_simulation": 0}
+
+    def test_run_report_is_a_pdf_with_a_page_per_failed_point(self):
+        import re
+
+        from app.services import report_pdf
+
+        run = {**self.RUN, "results": [self.POINTS[0], {**self.POINTS[1], "run_id": "aoi_t1"}]}
+        pdf = report_pdf.run_pdf(run)
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        self.assertEqual(len(re.findall(rb"/Type\s*/Page\b", pdf)), 2)  # summary + the FAIL point
+
+    def test_report_names_the_failed_components(self):
+        from app.services import report_pdf
+
+        self.assertEqual(report_pdf.problems_of(self.POINTS[0]), "resistor (P7) ขาด · display (P3) ผิดชนิด (พบ connector)")
+        self.assertEqual(report_pdf.problems_of(self.POINTS[2]), "Blurry")
+        self.assertEqual(report_pdf.thai_datetime(0).split()[2], "2513")  # Buddhist year
+
+    def test_report_text_switches_font_for_latin_and_thai(self):
+        from app.services import report_pdf
+
+        face = report_pdf.font(20)
+        runs = face.runs("ผล FAIL 5 จุด")
+        self.assertEqual([t for t, _ in runs], ["ผล ", "FAIL 5 ", "จุด"])
+        self.assertIs(runs[0][1], face.thai)
+        self.assertIs(runs[1][1], face.latin)
+        # Thai vowels stay on their letter when lines wrap
+        for line in report_pdf.wrap("ที่ไม่ผ่าน" * 6, face, 120):
+            self.assertFalse(line and report_pdf.unicodedata.category(line[0]) == "Mn")
+
+    def test_run_report_goes_to_telegram_as_a_pdf(self):
+        import os
+
+        cfg = ns.CONFIG_FILE.with_name("notify.run.json")
+        env = ns.CONFIG_FILE.with_name("env.run")
+        with patch.object(ns, "CONFIG_FILE", cfg):
+            try:
+                ns.update({"telegram_token": "123456789:" + "D" * 35, "telegram_chat_id": "42"}, env_path=env)
+                ok = MagicMock(status_code=200, headers={"content-type": "application/json"})
+                run = {**self.RUN, "results": []}
+                with patch("app.services.storage_service.storage_service.get_run", return_value=run), \
+                        patch.object(ns.httpx, "post", return_value=ok) as post:
+                    self.assertEqual(ns.send_run_report("aoi_t1"), [])
+                name, content, mime = post.call_args.kwargs["files"]["document"]
+                self.assertEqual((name, mime), ("aoi_report_aoi_t1.pdf", "application/pdf"))
+                self.assertTrue(content.startswith(b"%PDF"))
+                self.assertIn("บอร์ดทดสอบ · เลข SN-9", post.call_args.kwargs["data"]["caption"])
+                with patch("app.services.storage_service.storage_service.get_run", return_value=None):
+                    self.assertEqual(ns.send_run_report("nope"), ["ไม่พบรอบสแกนนี้"])
+                # needs the station password
+                self.assertEqual(TestClient(app).post("/api/system/notify/send-run/aoi_t1").status_code, 403)
+            finally:
+                cfg.unlink(missing_ok=True)
+                env.unlink(missing_ok=True)
+                os.environ.pop(ns.TOKEN_VAR, None)
+
     def test_agent_knows_about_telegram(self):
         from app.services import agent_service
 

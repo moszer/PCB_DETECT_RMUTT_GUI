@@ -30,6 +30,7 @@ GUARDED = [
     (("POST", "PUT", "DELETE"), re.compile(r"^/api/chat(/.*)?$")),
     (("POST",), re.compile(r"^/api/inspection/.+")),
     (("GET",), re.compile(r"^/api/boards/[^/]+/export$")),
+    (("GET",), re.compile(r"^/api/history/runs/[^/]+/report\.pdf$")),
     (("GET",), re.compile(r"^/api/datasets/[^/]+/download$")),
     (("GET",), re.compile(r"^/api/history/(export/.+|performance/export\.(csv|json))$")),
     (("POST",), re.compile(r"^/api/system/libraries/check$")),

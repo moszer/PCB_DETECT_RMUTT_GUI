@@ -95,7 +95,9 @@ export function HistoryView({ isOperator = false }: { isOperator?: boolean }) {
           </div>
         </div>
 
-        {tab === "aoi" ? <RunsTable refreshKey={refreshKey} /> : tab === "single" ? <SinglesTable refreshKey={refreshKey} /> : <PerformanceView refreshKey={refreshKey} />}
+        {tab === "aoi" ? (
+          <RunsTable refreshKey={refreshKey} sendLock={!chatReady ? "ยังไม่ได้ตั้งค่า Telegram — ตั้งค่าสถานี › แจ้งเตือนผลสแกน" : !isOperator ? "ต้องขอสิทธิ์ควบคุมสถานีก่อน" : null} />
+        ) : tab === "single" ? <SinglesTable refreshKey={refreshKey} /> : <PerformanceView refreshKey={refreshKey} />}
       </div>
     </div>
   );
@@ -113,7 +115,8 @@ function Pager({ offset, total, count, onOffset }: { offset: number; total: numb
   );
 }
 
-function RunsTable({ refreshKey }: { refreshKey: number }) {
+/** sendLock: why the run's PDF cannot go to Telegram now (null: it can). */
+function RunsTable({ refreshKey, sendLock }: { refreshKey: number; sendLock: string | null }) {
   const [page, setPage] = useState<{ key: string; runs: RunRecord[]; total: number } | null>(null);
   const [offset, setOffset] = useState(0);
   const [verdict, setVerdict] = useState("");
@@ -121,7 +124,21 @@ function RunsTable({ refreshKey }: { refreshKey: number }) {
   const [detail, setDetail] = useState<RunRecord | null>(null);
   const [point, setPoint] = useState<AOIPointResult | null>(null);
   const [printing, setPrinting] = useState<RunRecord | null>(null);
+  const [sendingRun, setSendingRun] = useState(false);
   const toast = useToast();
+
+  const sendRun = async (run: RunRecord) => {
+    setSendingRun(true);
+    try {
+      const r = await api.notify.sendRun(run.id);
+      if (r.ok) toast.success("ส่งรายงาน PDF แล้ว", "รายงานรอบสแกนนี้อยู่ใน Telegram แล้ว");
+      else toast.error("ส่งไม่สำเร็จ", r.problems.join(" · "));
+    } catch (err) {
+      toast.error("ส่งไม่สำเร็จ", err);
+    } finally {
+      setSendingRun(false);
+    }
+  };
   const key = `${verdict}|${search.trim()}|${offset}|${refreshKey}`;
   const loading = page?.key !== key;
   const runs = page?.runs ?? [];
@@ -296,7 +313,10 @@ function RunsTable({ refreshKey }: { refreshKey: number }) {
         }
       >
         {detail && (
-          <div className="mb-3 flex justify-end">
+          <div className="mb-3 flex justify-end gap-2 flex-wrap">
+            <Button size="sm" icon={Send} loading={sendingRun} disabled={sendLock !== null} reason={sendLock} onClick={() => sendRun(detail)}>
+              ส่ง PDF เข้า Telegram
+            </Button>
             <Button size="sm" icon={Printer} onClick={() => setPrinting(detail)}>
               พิมพ์ / บันทึกเป็น PDF
             </Button>

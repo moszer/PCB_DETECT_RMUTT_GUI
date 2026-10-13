@@ -618,6 +618,20 @@ def test_notify(x_operator_token: Optional[str] = Header(None, alias="X-Operator
     return {"ok": not problems, "problems": problems}
 
 
+@router.post("/notify/send-run/{run_id}")
+def send_run_to_chat(run_id: str, x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token")):
+    """Send one scan run as a PDF report to the configured channels."""
+    from ..services import notify_service
+    from ..services.storage_service import SAFE_ID_REGEX
+
+    if not lease_manager.is_operator(x_operator_token):
+        raise HTTPException(status_code=403, detail="ต้องขอสิทธิ์ควบคุมสถานี (รหัสผ่าน) ก่อนส่งรายงานออกไป")
+    if not SAFE_ID_REGEX.match(run_id):
+        raise HTTPException(status_code=400, detail="รหัสรอบสแกนไม่ถูกต้อง")
+    problems = notify_service.send_run_report(run_id)
+    return {"ok": not problems, "problems": problems}
+
+
 @router.post("/notify/send-history")
 def send_history_to_chat(x_operator_token: Optional[str] = Header(None, alias="X-Operator-Token")):
     """Send the whole scan history (CSV) and the yield summary to the configured channels."""
