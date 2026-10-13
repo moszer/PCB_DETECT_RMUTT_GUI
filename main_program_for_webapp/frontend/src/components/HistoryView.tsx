@@ -34,7 +34,7 @@ export function HistoryView({ isOperator = false }: { isOperator?: boolean }) {
     setSending(true);
     try {
       const r = await api.notify.sendHistory();
-      if (r.ok) toast.success("ส่งประวัติแล้ว", "ไฟล์ CSV ทุกรอบสแกนพร้อมสรุป yield");
+      if (r.ok) toast.success("ส่งประวัติแล้ว", "ไฟล์ CSV ทุกรอบสแกนพร้อมสรุป yield · รูปจุดที่ไม่ผ่านและผลทุกจุด (ZIP) จะตามไปใน Telegram อีกสักครู่");
       else toast.error("ส่งไม่สำเร็จ", r.problems.join(" · "));
     } catch (err) {
       toast.error("ส่งไม่สำเร็จ", err);

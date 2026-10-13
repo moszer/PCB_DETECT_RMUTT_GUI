@@ -5,6 +5,7 @@ import asyncio
 import json
 import time
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -276,8 +277,11 @@ class SendHistoryTests(unittest.TestCase):
             try:
                 ns.update({"telegram_token": "123456789:" + "C" * 35, "telegram_chat_id": "42"}, env_path=env)
                 ok = MagicMock(status_code=200, headers={"content-type": "application/json"})
-                with patch.object(ns.httpx, "post", return_value=ok) as post:
+                with patch.object(ns.httpx, "post", return_value=ok) as post, patch.object(ns.threading, "Thread") as thread:
                     self.assertEqual(ns.send_history(), [])
+                # the images follow in the background
+                self.assertIs(thread.call_args.kwargs["target"], ns.send_history_images)
+                thread.return_value.start.assert_called_once()
                 call = post.call_args
                 self.assertTrue(call.args[0].endswith("/sendDocument"))
                 name, content, mime = call.kwargs["files"]["document"]
@@ -290,6 +294,70 @@ class SendHistoryTests(unittest.TestCase):
                 cfg.unlink(missing_ok=True)
                 env.unlink(missing_ok=True)
                 os.environ.pop(ns.TOKEN_VAR, None)
+
+    POINTS = [
+        {"run_id": "aoi_b", "run_serial": "S2", "run_board": "บอร์ด", "run_verdict": "FAIL", "run_sim": 0, "run_golden": 0,
+         "point_index": 0, "name": "มุมซ้าย", "col": 0, "row": 0, "x_mm": 0, "y_mm": 0, "verdict": "FAIL", "reason": "Missing",
+         "annotated_path": "a.png", "created_at": 1_790_000_000,
+         "summary": {"ok": 2, "missing": 1, "wrong": 1, "extra": 2},
+         "component_eval": [
+             {"expected": {"id": "P1", "name": "ic"}, "status": "confirmed"},
+             {"expected": {"id": "P7", "name": "resistor"}, "status": "missing"},
+             {"expected": {"id": "P3", "name": "display"}, "status": "wrong", "wrong_label": "connector"},
+         ]},
+        {"run_id": "aoi_b", "run_serial": "S2", "run_board": "บอร์ด", "run_verdict": "FAIL", "run_sim": 0, "run_golden": 0,
+         "point_index": 1, "name": None, "col": 1, "row": 0, "x_mm": 10, "y_mm": 0, "verdict": "PASS", "reason": None,
+         "annotated_path": "b.png", "created_at": 1_790_000_000, "summary": {"ok": 3, "missing": 0, "wrong": 0, "extra": 0}},
+        {"run_id": "aoi_a", "run_serial": "S1", "run_board": "บอร์ด", "run_verdict": "REVIEW", "run_sim": 0, "run_golden": 0,
+         "point_index": 0, "name": None, "col": 0, "row": 0, "x_mm": 0, "y_mm": 0, "verdict": "REVIEW", "reason": "Blurry",
+         "annotated_path": "c.png", "created_at": 1_789_000_000, "summary": {}},
+    ]
+
+    def test_points_csv_says_which_component_failed_and_links_its_image(self):
+        import csv
+        import io
+        import zipfile
+
+        jpeg = lambda path: b"J" * 10  # noqa: E731
+        bundle, included, skipped = ns.history_bundle(points=self.POINTS, jpeg=jpeg)
+        z = zipfile.ZipFile(io.BytesIO(bundle))
+        rows = list(csv.DictReader(io.StringIO(z.read("points.csv").decode("utf-8-sig"))))
+        self.assertEqual([r["Point Verdict"] for r in rows], ["FAIL", "PASS", "REVIEW"])
+        self.assertEqual(rows[0]["Problems"], "P7 resistor: ไม่พบ; P3 display: ผิดชนิด (พบ connector); เกินมา 2 ชิ้น")
+        self.assertEqual(rows[1]["Problems"], "")
+        self.assertEqual(rows[2]["Problems"], "Blurry")
+        # only the points that did not pass carry an image, and it is in the ZIP
+        self.assertEqual(rows[0]["Image"], "images/aoi_b/point_001_FAIL.jpg")
+        self.assertEqual(rows[1]["Image"], "")
+        self.assertIn(rows[0]["Image"], z.namelist())
+        self.assertEqual((included, skipped), (2, 0))
+
+    def test_images_stop_at_the_size_limit_newest_first(self):
+        import zipfile, io
+
+        bundle, included, skipped = ns.history_bundle(max_bytes=15, points=self.POINTS, jpeg=lambda p: b"J" * 10)
+        self.assertEqual((included, skipped), (1, 1))
+        self.assertIn("images/aoi_b/point_001_FAIL.jpg", zipfile.ZipFile(io.BytesIO(bundle)).namelist())
+
+    def test_album_is_the_latest_failed_board(self):
+        photos = ns._latest_failed_board(self.POINTS, lambda p: b"J")
+        self.assertEqual(len(photos), 1)  # the PASS point is left out, the older run too
+        name, _, caption = photos[0]
+        self.assertEqual(name, "point_001.jpg")
+        self.assertIn("มุมซ้าย · FAIL", caption)
+        self.assertIn("P7 resistor: ไม่พบ", caption)
+
+    def test_jpeg_scales_the_image_down(self):
+        import tempfile
+
+        import cv2
+        import numpy as np
+
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "big.png"
+            cv2.imwrite(str(src), np.zeros((2160, 3840, 3), np.uint8))
+            out = cv2.imdecode(np.frombuffer(ns._jpeg(src), np.uint8), cv2.IMREAD_COLOR)
+        self.assertEqual(max(out.shape[:2]), ns.IMAGE_MAX_SIDE)
 
     def test_agent_knows_about_telegram(self):
         from app.services import agent_service
